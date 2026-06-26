@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" fill="none">
+  <!-- Cilindro superior -->
+  <ellipse cx="12" cy="6" rx="8" ry="3" fill="#1b64da" stroke="#1b64da" stroke-width="2" />
+  
+  <!-- Cilindro medio -->
+  <path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6" stroke="#1b64da" stroke-width="2" stroke-linejoin="round" />
+  <ellipse cx="12" cy="12" rx="8" ry="3" fill="#1b64da" fill-opacity="0.2" stroke="#1b64da" stroke-width="1.5" />
+  
+  <!-- Cilindro inferior -->
+  <path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" stroke="#1b64da" stroke-width="2" stroke-linejoin="round" />
+  <ellipse cx="12" cy="18" rx="8" ry="3" fill="#0f172a" fill-opacity="0.25" stroke="#1b64da" stroke-width="1.5" />
+</svg>
