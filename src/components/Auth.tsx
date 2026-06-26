@@ -36,9 +36,17 @@ interface AuthProps {
   onLogin: (email: string, role: string, token: string, sellerId: string) => void;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Error de conexión con el servidor.';
+}
+
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
-  const [email, setEmail] = useState('proveedor@gmail.com');
-  const [password, setPassword] = useState('admin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -71,26 +79,30 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         }
         let errMsg = 'Credenciales incorrectas o error de conexión.';
         try {
-          const errData = await response.json();
-          if (errData && errData.message) {
+          const errData: unknown = await response.json();
+          if (isRecord(errData) && typeof errData.message === 'string') {
             errMsg = errData.message;
           }
-        } catch (errJson) {
+        } catch {
           // ignore
         }
         throw new Error(errMsg);
       }
 
-      const data = await response.json();
+      const data: unknown = await response.json();
 
       // Check if user has a seller profile associated
-      if (!data.sellerId) {
+      if (!isRecord(data) || (typeof data.sellerId !== 'string' && typeof data.sellerId !== 'number')) {
         throw new Error('Acceso denegado. Esta cuenta está registrada como Comprador. Este panel es exclusivo para perfiles de tipo Proveedor (Vendedor).');
       }
 
+      if (!isRecord(data.usuario) || typeof data.usuario.email !== 'string' || typeof data.token !== 'string') {
+        throw new Error('Respuesta inválida del servidor.');
+      }
+
       onLogin(data.usuario.email, 'Vendedor', data.token, String(data.sellerId));
-    } catch (err: any) {
-      setError(err.message || 'Error de conexión con el servidor.');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -210,7 +222,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                     id="email"
                     type="email"
                     className="form-control"
-                    placeholder="proveedor@gmail.com"
+                    placeholder="correo@empresa.cl"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -257,10 +269,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             <p className="auth-help-text">
               ¿No recuerdas tus datos? Usa tu misma contraseña de la App móvil.
             </p>
-            
-            <div className="demo-credentials-box">
-              <strong>Credenciales demo:</strong> proveedor@gmail.com / admin
-            </div>
           </div>
         </div>
         

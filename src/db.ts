@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './utils/imageHelper';
+import { getStoredSession } from './utils/session';
 
 export interface Product {
   id: string;
@@ -25,20 +26,12 @@ export interface BatchResult {
   errors: { row: number; sku: string; error: string }[];
 }
 
-// Helper to retrieve JWT token and sellerId from localStorage
+// Helper to retrieve JWT token and sellerId from the current tab session.
 function getSession(): { token: string; sellerId: string } | null {
-  const savedSession = localStorage.getItem('repuestop_session');
-  if (!savedSession) return null;
-  try {
-    const parsed = JSON.parse(savedSession);
-    const user = parsed.user;
-    if (user && user.token && user.sellerId) {
-      return { token: user.token, sellerId: user.sellerId };
-    }
-  } catch (e) {
-    // ignore
-  }
-  return null;
+  const user = getStoredSession();
+  if (!user) return null;
+
+  return { token: user.token, sellerId: user.sellerId };
 }
 
 // Helper to map Spring Boot DTO (ProveedorProductoResponseDTO) to frontend Product interface

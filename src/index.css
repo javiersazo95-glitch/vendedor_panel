@@ -1342,23 +1342,6 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.5;
 }
 
-.auth-card .demo-credentials-box {
-  margin-top: 1.75rem;
-  padding: 0.9rem;
-  background: #f8fafc;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  font-size: 0.825rem;
-  text-align: center;
-  color: #475569;
-}
-
-[data-theme="dark"] .auth-card .demo-credentials-box {
-  background: #090d16;
-  border-color: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
-}
-
 .auth-footer {
   position: absolute;
   bottom: 1.5rem;
@@ -1689,6 +1672,5 @@ h1, h2, h3, h4, h5, h6 {
   background: rgba(139, 92, 246, 0.05);
   color: hsl(var(--primary));
 }
-
 
 
