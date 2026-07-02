@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">
+  <defs>
+    <pattern id="shelf-unit" width="240" height="240" patternUnits="userSpaceOnUse">
+      <!-- Postes verticales del estante -->
+      <rect x="14" y="10" width="6" height="220" fill="#1b64da" />
+      <rect x="220" y="10" width="6" height="220" fill="#1b64da" />
+
+      <!-- Niveles horizontales -->
+      <rect x="14" y="40" width="212" height="5" fill="#1b64da" />
+      <rect x="14" y="118" width="212" height="5" fill="#1b64da" />
+      <rect x="14" y="196" width="212" height="5" fill="#1b64da" />
+
+      <!-- Cajas nivel 1 -->
+      <rect x="28" y="14" width="30" height="24" rx="2" fill="#1b64da" />
+      <rect x="66" y="18" width="24" height="20" rx="2" fill="#1b64da" />
+      <rect x="150" y="16" width="34" height="22" rx="2" fill="#1b64da" />
+
+      <!-- Cajas nivel 2 -->
+      <rect x="40" y="92" width="26" height="24" rx="2" fill="#1b64da" />
+      <rect x="120" y="88" width="34" height="28" rx="2" fill="#1b64da" />
+      <rect x="180" y="94" width="24" height="22" rx="2" fill="#1b64da" />
+
+      <!-- Cajas nivel 3 -->
+      <rect x="30" y="168" width="28" height="26" rx="2" fill="#1b64da" />
+      <rect x="90" y="170" width="30" height="24" rx="2" fill="#1b64da" />
+      <rect x="160" y="166" width="28" height="28" rx="2" fill="#1b64da" />
+    </pattern>
+  </defs>
+  <rect width="240" height="240" fill="url(#shelf-unit)" />
+</svg>

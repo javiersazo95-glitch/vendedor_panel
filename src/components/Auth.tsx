@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Shield, Key, Mail, Zap, Cloud } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../utils/imageHelper';
 import loginHero from '../assets/login_hero.png';
 import logoImg from '../assets/logo.png';
@@ -44,6 +45,36 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Error de conexión con el servidor.';
 }
 
+async function procesarRespuestaLogin(response: Response, onLogin: AuthProps['onLogin']) {
+  if (!response.ok) {
+    let errMsg = response.status === 401
+      ? 'Credenciales incorrectas. Por favor, verifica tu correo y contraseña.'
+      : 'Credenciales incorrectas o error de conexión.';
+    try {
+      const errData: unknown = await response.json();
+      if (isRecord(errData) && typeof errData.message === 'string') {
+        errMsg = errData.message;
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(errMsg);
+  }
+
+  const data: unknown = await response.json();
+
+  // Check if user has a seller profile associated
+  if (!isRecord(data) || (typeof data.sellerId !== 'string' && typeof data.sellerId !== 'number')) {
+    throw new Error('Acceso denegado. Esta cuenta está registrada como Comprador. Este panel es exclusivo para perfiles de tipo Proveedor (Vendedor).');
+  }
+
+  if (!isRecord(data.usuario) || typeof data.usuario.email !== 'string' || typeof data.token !== 'string') {
+    throw new Error('Respuesta inválida del servidor.');
+  }
+
+  onLogin(data.usuario.email, 'Vendedor', data.token, String(data.sellerId));
+}
+
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -73,34 +104,31 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         })
       });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Credenciales incorrectas. Por favor, verifica tu correo y contraseña.');
-        }
-        let errMsg = 'Credenciales incorrectas o error de conexión.';
-        try {
-          const errData: unknown = await response.json();
-          if (isRecord(errData) && typeof errData.message === 'string') {
-            errMsg = errData.message;
-          }
-        } catch {
-          // ignore
-        }
-        throw new Error(errMsg);
-      }
+      await procesarRespuestaLogin(response, onLogin);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      const data: unknown = await response.json();
+  const handleGoogleSuccess = async (credential?: string) => {
+    if (!credential) {
+      setError('No se pudo obtener la credencial de Google.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/v1/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ idToken: credential })
+      });
 
-      // Check if user has a seller profile associated
-      if (!isRecord(data) || (typeof data.sellerId !== 'string' && typeof data.sellerId !== 'number')) {
-        throw new Error('Acceso denegado. Esta cuenta está registrada como Comprador. Este panel es exclusivo para perfiles de tipo Proveedor (Vendedor).');
-      }
-
-      if (!isRecord(data.usuario) || typeof data.usuario.email !== 'string' || typeof data.token !== 'string') {
-        throw new Error('Respuesta inválida del servidor.');
-      }
-
-      onLogin(data.usuario.email, 'Vendedor', data.token, String(data.sellerId));
+      await procesarRespuestaLogin(response, onLogin);
     } catch (err: unknown) {
       setError(getErrorMessage(err));
     } finally {
@@ -114,10 +142,8 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         
         {/* Columna Izquierda: Branding e Ilustración */}
         <div className="auth-left-panel">
-          <div className="logo-container">
-            <img src={logoImg} alt="RepuesTop Logo" className="logo-image-left" />
-          </div>
-          
+          <span className="auth-eyebrow">Panel de Proveedores</span>
+
           <h1>
             Gestiona tu inventario,<br />
             <span className="text-blue">impulsa tu negocio.</span>
@@ -257,15 +283,33 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                 </div>
               </div>
               
-              <button 
-                type="submit" 
-                className="btn-primary" 
+              <button
+                type="submit"
+                className="btn-primary"
                 disabled={loading}
               >
                 {loading ? 'Ingresando...' : 'Ingresar al Panel'}
               </button>
             </form>
-            
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '1.25rem 0' }}>
+              <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+              <span style={{ fontSize: 13, color: '#94a3b8' }}>o continua con</span>
+              <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <GoogleLogin
+                theme="outline"
+                shape="rectangular"
+                size="large"
+                width="100%"
+                text="continue_with"
+                onSuccess={(credentialResponse) => handleGoogleSuccess(credentialResponse.credential)}
+                onError={() => setError('No se pudo iniciar sesión con Google. Intenta nuevamente.')}
+              />
+            </div>
+
             <p className="auth-help-text">
               ¿No recuerdas tus datos? Usa tu misma contraseña de la App móvil.
             </p>
