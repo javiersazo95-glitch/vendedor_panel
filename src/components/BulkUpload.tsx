@@ -45,23 +45,93 @@ const productHasImage = (product: PreparedProduct) => {
   return Array.isArray(product.imageFile) ? product.imageFile.length > 0 : true;
 };
 
-const escapeSvgText = (value: string) =>
-  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-const createGenericProductImage = (product: PreparedProduct) => {
-  const label = escapeSvgText(product.name || product.sku || 'Producto');
+const createGenericProductImage = async (product: PreparedProduct) => {
   const filenameSku = (product.sku || 'producto').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
-      <rect width="1200" height="900" fill="#f8fafc"/>
-      <rect x="120" y="120" width="960" height="660" rx="36" fill="#ffffff" stroke="#cbd5e1" stroke-width="6"/>
-      <path d="M342 610h516l-148-188-112 132-74-88-182 144Z" fill="#dbeafe"/>
-      <circle cx="430" cy="330" r="62" fill="#bfdbfe"/>
-      <text x="600" y="720" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#334155">Imagen generica</text>
-      <text x="600" y="785" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#64748b">${label}</text>
-    </svg>
-  `;
-  return new File([svg], `${filenameSku}-imagen-generica.svg`, { type: 'image/svg+xml' });
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = 900;
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) {
+    throw new Error('No se pudo crear la imagen generica.');
+  }
+
+  const roundedRect = (x: number, y: number, w: number, h: number, r: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  };
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 6;
+  roundedRect(120, 120, 960, 660, 36);
+  ctx.fill();
+  ctx.stroke();
+
+  const gradient = ctx.createLinearGradient(260, 220, 920, 680);
+  gradient.addColorStop(0, '#dbeafe');
+  gradient.addColorStop(1, '#bfdbfe');
+
+  ctx.save();
+  ctx.translate(600, 380);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(0, 0, 168, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0, 0, 88, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#64748b';
+  ctx.lineWidth = 24;
+  ctx.beginPath();
+  ctx.arc(0, 0, 120, Math.PI * 0.15, Math.PI * 1.15);
+  ctx.stroke();
+
+  ctx.lineWidth = 18;
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 * i) / 8;
+    const x = Math.cos(angle) * 172;
+    const y = Math.sin(angle) * 172;
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = '#93c5fd';
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = '#1d4ed8';
+  ctx.beginPath();
+  ctx.roundRect(394, 560, 412, 74, 24);
+  ctx.fill();
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '700 44px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Repuesto genérico', 600, 665);
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = '400 28px Arial, sans-serif';
+  ctx.fillText(product.name || product.sku || 'Producto', 600, 725);
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) resolve(result);
+      else reject(new Error('No se pudo exportar la imagen generica.'));
+    }, 'image/png');
+  });
+
+  return new File([blob], `${filenameSku}-imagen-generica.png`, { type: 'image/png' });
 };
 
 interface ImportLog {
@@ -645,23 +715,28 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     });
   };
 
-  const handleProceedUpload = (continueWithGenericImage = false) => {
-    if (currentMissingImageRows.length > 0 && !continueWithGenericImage) {
-      setMissingImageRows(currentMissingImageRows);
-      return;
+  const handleProceedUpload = async (continueWithGenericImage = false) => {
+    try {
+      if (currentMissingImageRows.length > 0 && !continueWithGenericImage) {
+        setMissingImageRows(currentMissingImageRows);
+        return;
+      }
+
+      setMissingImageRows([]);
+
+      const finalProducts = continueWithGenericImage
+        ? await Promise.all(productsWithAssignedImages.map(async (product) => (
+          productHasImage(product)
+            ? product
+            : { ...product, imageFile: await createGenericProductImage(product) }
+        )))
+        : productsWithAssignedImages;
+
+      await handleStartUpload(finalProducts);
+    } catch (err: any) {
+      setLogs((prev) => [...prev, { id: `${Date.now()}-generic-image-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `No se pudo generar la imagen genérica: ${err?.message || 'error desconocido'}` }]);
+      setProcessing(false);
     }
-
-    setMissingImageRows([]);
-
-    const finalProducts = continueWithGenericImage
-      ? productsWithAssignedImages.map((product) => (
-        productHasImage(product)
-          ? product
-          : { ...product, imageFile: createGenericProductImage(product) }
-      ))
-      : productsWithAssignedImages;
-
-    handleStartUpload(finalProducts);
   };
 
   // Row-level actions: delete a log entry, or review/fix a duplicate SKU
