@@ -19,10 +19,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
   const [products, setProducts] = useState<Product[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<'inventory' | 'bulk'>('inventory');
   
   // Modals visibility state
   const [isManualOpen, setIsManualOpen] = useState(false);
-  const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // Filter states
@@ -145,7 +145,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
         </div>
 
         <nav className="nav-links">
-          <button className="nav-item active">
+          <button className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`} onClick={() => setActiveView('inventory')}>
             <Database size={18} />
             Inventario General
           </button>
@@ -155,7 +155,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
             Carga Manual 1:1
           </button>
           
-          <button className="nav-item" onClick={() => setIsBulkOpen(true)}>
+          <button className={`nav-item ${activeView === 'bulk' ? 'active' : ''}`} onClick={() => setActiveView('bulk')}>
             <UploadCloud size={18} />
             Carga Masiva
           </button>
@@ -172,12 +172,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
       </aside>
 
       {/* Main Panel Content Area */}
-      <main className="main-content">
+      <main className={`main-content ${activeView === 'bulk' ? 'main-content-bulk' : ''}`}>
         {/* Top Header Navigation */}
         <header className="top-header">
           <div className="header-title-section">
-            <h1>Inventario Automotriz</h1>
-            <p>Monitoreo y carga masiva de stock de repuestos</p>
+            <h1>{activeView === 'bulk' ? 'Carga Masiva' : 'Inventario Automotriz'}</h1>
+            <p>{activeView === 'bulk' ? 'Carga y validación masiva de stock de repuestos' : 'Monitoreo y carga masiva de stock de repuestos'}</p>
           </div>
 
           <div className="header-actions">
@@ -221,33 +221,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
           </div>
         )}
 
-        {/* Dashboard Metrics (KPIs) */}
-        <KPIs products={products} lastUpdated={lastUpdated} />
+        {activeView === 'bulk' ? (
+          <BulkUpload
+            isOpen={activeView === 'bulk'}
+            onClose={() => setActiveView('inventory')}
+            onUploadSuccess={fetchProducts}
+            embedded
+          />
+        ) : (
+          <>
+            {/* Dashboard Metrics (KPIs) */}
+            <KPIs products={products} lastUpdated={lastUpdated} />
 
-        {/* Filters Bar Control */}
-        <Filters
-          products={products}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          categoryFilter={categoryFilter}
-          setCategoryFilter={setCategoryFilter}
-          partBrandFilter={partBrandFilter}
-          setPartBrandFilter={setPartBrandFilter}
-          vehicleBrandFilter={vehicleBrandFilter}
-          setVehicleBrandFilter={setVehicleBrandFilter}
-          yearFilter={yearFilter}
-          setYearFilter={setYearFilter}
-          onClearFilters={handleClearFilters}
-        />
+            {/* Filters Bar Control */}
+            <Filters
+              products={products}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              categoryFilter={categoryFilter}
+              setCategoryFilter={setCategoryFilter}
+              partBrandFilter={partBrandFilter}
+              setPartBrandFilter={setPartBrandFilter}
+              vehicleBrandFilter={vehicleBrandFilter}
+              setVehicleBrandFilter={setVehicleBrandFilter}
+              yearFilter={yearFilter}
+              setYearFilter={setYearFilter}
+              onClearFilters={handleClearFilters}
+            />
 
-        {/* Main High Density Inventory Table */}
-        <InventoryTable
-          key={`${searchQuery}-${categoryFilter}-${partBrandFilter}-${vehicleBrandFilter}-${yearFilter}`}
-          products={filteredProducts}
-          onEdit={handleOpenEditModal}
-          onDelete={handleDeleteProduct}
-          onTogglePause={handleTogglePauseProduct}
-        />
+            {/* Main High Density Inventory Table */}
+            <InventoryTable
+              key={`${searchQuery}-${categoryFilter}-${partBrandFilter}-${vehicleBrandFilter}-${yearFilter}`}
+              products={filteredProducts}
+              onEdit={handleOpenEditModal}
+              onDelete={handleDeleteProduct}
+              onTogglePause={handleTogglePauseProduct}
+            />
+          </>
+        )}
       </main>
 
       {/* Modals & Slide-overs */}
@@ -256,12 +267,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
         onClose={() => { setIsManualOpen(false); setEditingProduct(null); }}
         onSave={handleSaveProduct}
         editProduct={editingProduct}
-      />
-
-      <BulkUpload
-        isOpen={isBulkOpen}
-        onClose={() => setIsBulkOpen(false)}
-        onUploadSuccess={fetchProducts}
       />
     </div>
   );

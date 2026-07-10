@@ -111,72 +111,41 @@ export async function addProduct(
     'Authorization': `Bearer ${session.token}`
   };
 
-  let response: Response;
-
   const imageFiles = imageInputList(imageFile).slice(0, 4);
 
-  if (imageFiles.length > 0) {
-    // Use the multipart endpoint
-    const formData = new FormData();
-    formData.append('skuProveedor', product.sku);
-    formData.append('nombrePublicado', product.name);
-    formData.append('categoria', product.category);
-    formData.append('marcaRepuesto', product.partBrand);
-    formData.append('referenciaOem', product.oem || '');
-    formData.append('compatibilidadMarca', product.vehicleBrand);
-    formData.append('compatibilidadModelo', product.vehicleModel);
-    formData.append('anioDesde', String(product.vehicleYear));
-    formData.append('anioHasta', String(product.vehicleYearTo ?? product.vehicleYear));
-    formData.append('motor', product.vehicleVersion);
-    formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
-    formData.append('precio', String(product.price));
-    formData.append('stock', String(product.stock));
-    formData.append('descripcion', product.description || '');
-    formData.append('condicion', product.condition || 'ORIGINAL');
-    formData.append('requiereChasis', String(product.requiresChassis === true));
-    formData.append('compatibilityGroupsJson', product.compatibilityGroupsJson || '');
-    (product.vehiculoCatalogoIds || []).forEach((id) => {
-      formData.append('vehiculoCatalogoIds', String(id));
-    });
-    formData.append('activo', 'true');
-    imageFiles.forEach((file) => formData.append('imagenes', file));
+  // Este panel solo crea productos personalizados (sin repuestoId de catálogo),
+  // así que siempre debe usar el endpoint multipart /personalizado, que crea el
+  // repuesto automáticamente. El endpoint JSON plano exige repuestoId y solo
+  // aplica para vincular un repuesto de catálogo ya existente.
+  const formData = new FormData();
+  formData.append('skuProveedor', product.sku);
+  formData.append('nombrePublicado', product.name);
+  formData.append('categoria', product.category);
+  formData.append('marcaRepuesto', product.partBrand);
+  formData.append('referenciaOem', product.oem || '');
+  formData.append('compatibilidadMarca', product.vehicleBrand);
+  formData.append('compatibilidadModelo', product.vehicleModel);
+  formData.append('anioDesde', String(product.vehicleYear));
+  formData.append('anioHasta', String(product.vehicleYearTo ?? product.vehicleYear));
+  formData.append('motor', product.vehicleVersion);
+  formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
+  formData.append('precio', String(product.price));
+  formData.append('stock', String(product.stock));
+  formData.append('descripcion', product.description || '');
+  formData.append('condicion', product.condition || 'ORIGINAL');
+  formData.append('requiereChasis', String(product.requiresChassis === true));
+  formData.append('compatibilityGroupsJson', product.compatibilityGroupsJson || '');
+  (product.vehiculoCatalogoIds || []).forEach((id) => {
+    formData.append('vehiculoCatalogoIds', String(id));
+  });
+  formData.append('activo', 'true');
+  imageFiles.forEach((file) => formData.append('imagenes', file));
 
-    response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
-      method: 'POST',
-      headers,
-      body: formData
-    });
-  } else {
-    // Use standard JSON endpoint
-    headers['Content-Type'] = 'application/json';
-    const payload = {
-      skuProveedor: product.sku,
-      nombrePublicado: product.name,
-      categoria: product.category,
-      marcaRepuesto: product.partBrand,
-      referenciaOem: product.oem || '',
-      compatibilidadMarca: product.vehicleBrand,
-      compatibilidadModelo: product.vehicleModel,
-      anioDesde: product.vehicleYear,
-      anioHasta: product.vehicleYearTo ?? product.vehicleYear,
-      motor: product.vehicleVersion,
-      pricingMode: product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE',
-      precio: product.price,
-      stock: product.stock,
-      descripcion: product.description || '',
-      condicion: product.condition || 'ORIGINAL',
-      requiereChasis: product.requiresChassis === true,
-      vehiculoCatalogoIds: product.vehiculoCatalogoIds || [],
-      compatibilityGroupsJson: product.compatibilityGroupsJson || '',
-      activo: true
-    };
-
-    response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload)
-    });
-  }
+  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
 
   if (!response.ok) {
     let errMsg = 'Error al registrar el producto en el servidor.';
@@ -337,7 +306,7 @@ export function resumeProduct(id: string): Promise<Product> {
 
 // Batch save for bulk upload
 export async function saveProductsBatch(
-  productsData: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | null })[],
+  productsData: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | (File | Blob)[] | null })[],
   overwriteExisting: boolean = true,
   onProgress?: (percent: number) => void
 ): Promise<BatchResult> {

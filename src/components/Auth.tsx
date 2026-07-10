@@ -138,6 +138,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   return (
     <div className="auth-page">
+      <div className="auth-content">
       <div className="auth-wrapper">
         
         {/* Columna Izquierda: Branding e Ilustración */}
@@ -292,7 +293,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               </button>
             </form>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '1.25rem 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: 'clamp(0.6rem, 2vh, 1.25rem) 0' }}>
               <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
               <span style={{ fontSize: 13, color: '#94a3b8' }}>o continua con</span>
               <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
@@ -315,9 +316,10 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             </p>
           </div>
         </div>
-        
+
       </div>
-      
+      </div>
+
       {/* Footer */}
       <div className="auth-footer">
         © 2024 RespuesTop. Todos los derechos reservados.

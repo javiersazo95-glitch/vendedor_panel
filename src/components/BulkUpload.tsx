@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Download, UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -10,16 +10,75 @@ interface BulkUploadProps {
   isOpen: boolean;
   onClose: () => void;
   onUploadSuccess: () => void;
+  embedded?: boolean;
 }
+
+type PreparedProduct = Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | (File | Blob)[] | null; sourceRow?: number };
+
+const MAX_IMAGES_PER_PRODUCT = 4;
+const BULK_UPLOAD_HISTORY_KEY = 'repuestop_bulk_upload_history';
+
+interface BulkUploadHistoryItem {
+  id: string;
+  createdAt: string;
+  total: number;
+  success: number;
+  warnings: number;
+  errors: number;
+  status: 'COMPLETADA' | 'CON_ERRORES';
+}
+
+const loadBulkUploadHistory = (): BulkUploadHistoryItem[] => {
+  try {
+    const raw = localStorage.getItem(BULK_UPLOAD_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const productHasImage = (product: PreparedProduct) => {
+  if (product.image && product.image.trim()) return true;
+  if (!product.imageFile) return false;
+  return Array.isArray(product.imageFile) ? product.imageFile.length > 0 : true;
+};
+
+const escapeSvgText = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+const createGenericProductImage = (product: PreparedProduct) => {
+  const label = escapeSvgText(product.name || product.sku || 'Producto');
+  const filenameSku = (product.sku || 'producto').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+      <rect width="1200" height="900" fill="#f8fafc"/>
+      <rect x="120" y="120" width="960" height="660" rx="36" fill="#ffffff" stroke="#cbd5e1" stroke-width="6"/>
+      <path d="M342 610h516l-148-188-112 132-74-88-182 144Z" fill="#dbeafe"/>
+      <circle cx="430" cy="330" r="62" fill="#bfdbfe"/>
+      <text x="600" y="720" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#334155">Imagen generica</text>
+      <text x="600" y="785" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" fill="#64748b">${label}</text>
+    </svg>
+  `;
+  return new File([svg], `${filenameSku}-imagen-generica.svg`, { type: 'image/svg+xml' });
+};
 
 interface ImportLog {
+  id: string;
   row: number;
   sku: string;
+  name?: string;
   status: 'SUCCESS' | 'WARNING' | 'ERROR';
   message: string;
+  // Producto ya armado y listo para re-encolar si el vendedor corrige el SKU.
+  pendingProduct?: PreparedProduct;
 }
 
-export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploadSuccess }) => {
+const isSkuIssueLog = (log: ImportLog) =>
+  log.status === 'ERROR' && /repetido|duplicad|SKU faltante/i.test(log.message);
+
+export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploadSuccess, embedded = false }) => {
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [imageFolderFiles, setImageFolderFiles] = useState<FileList | null>(null);
   const [imageZipFile, setImageZipFile] = useState<File | null>(null);
@@ -34,6 +93,27 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     errors: 0,
   });
 
+  const [preparedProducts, setPreparedProducts] = useState<PreparedProduct[]>([]);
+  const [analysisDone, setAnalysisDone] = useState(false);
+  const [uploadDone, setUploadDone] = useState(false);
+
+  const [reviewingLogId, setReviewingLogId] = useState<string | null>(null);
+  const [reviewSkuInput, setReviewSkuInput] = useState('');
+  const [reviewValidation, setReviewValidation] = useState<{ status: 'idle' | 'checking' | 'valid' | 'invalid'; message: string }>({ status: 'idle', message: '' });
+
+  const [pendingImageFiles, setPendingImageFiles] = useState<FileList | null>(null);
+  const [pendingImageCount, setPendingImageCount] = useState(0);
+
+  // Asignación manual de imágenes por SKU antes de iniciar la carga real
+  const [imagesModalOpen, setImagesModalOpen] = useState(false);
+  const [availableImages, setAvailableImages] = useState<Record<string, File | Blob>>({});
+  const [imageAssignments, setImageAssignments] = useState<Record<string, string[]>>({});
+  const [galleryOpenForSku, setGalleryOpenForSku] = useState<string | null>(null);
+  const [uploadSuccessCount, setUploadSuccessCount] = useState<number | null>(null);
+  const [missingImageRows, setMissingImageRows] = useState<{ row: number; tableRow: number; sku: string; name: string }[]>([]);
+  const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
+  const [uploadHistory, setUploadHistory] = useState<BulkUploadHistoryItem[]>(() => loadBulkUploadHistory());
+
   const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
@@ -46,11 +126,96 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     setLogs([]);
     setStats({ success: 0, warnings: 0, errors: 0 });
     setProcessing(false);
+    setPreparedProducts([]);
+    setAnalysisDone(false);
+    setUploadDone(false);
+    setImagesModalOpen(false);
+    setAvailableImages({});
+    setImageAssignments({});
+    setGalleryOpenForSku(null);
+    setUploadSuccessCount(null);
+    setMissingImageRows([]);
 
     if (dataFileInputRef.current) dataFileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
     if (zipInputRef.current) zipInputRef.current.value = '';
   };
+
+  const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+  // Selecciona una carpeta local usando la API moderna del navegador (sin el aviso
+  // de "sitio de confianza" que muestra el input clásico webkitdirectory). Si el
+  // navegador no la soporta, cae al input de carpeta tradicional.
+  const handlePickFolder = async () => {
+    if (processing) return;
+
+    const showDirectoryPicker = (window as any).showDirectoryPicker;
+    if (typeof showDirectoryPicker !== 'function') {
+      folderInputRef.current?.click();
+      return;
+    }
+
+    try {
+      const dirHandle = await showDirectoryPicker();
+      const files: File[] = [];
+      for await (const entry of dirHandle.values()) {
+        if (entry.kind === 'file') {
+          const ext = entry.name.split('.').pop()?.toLowerCase();
+          if (ext && IMAGE_EXTENSIONS.includes(ext)) {
+            files.push(await entry.getFile());
+          }
+        }
+      }
+
+      if (files.length === 0) return;
+
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      setPendingImageFiles(dt.files);
+      setPendingImageCount(files.length);
+    } catch {
+      // El usuario cerró el selector de carpetas sin elegir ninguna.
+    }
+  };
+
+  // Genera URLs temporales para mostrar las miniaturas de la galería de imágenes
+  const imageObjectUrls = useMemo(() => {
+    const urls: Record<string, string> = {};
+    Object.entries(availableImages).forEach(([filename, file]) => {
+      urls[filename] = URL.createObjectURL(file);
+    });
+    return urls;
+  }, [availableImages]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(imageObjectUrls).forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [imageObjectUrls]);
+
+  const productsWithAssignedImages = useMemo(() => (
+    preparedProducts.map((product) => {
+      const filenames = imageAssignments[product.sku] || [];
+      if (filenames.length === 0) return product;
+      const files = filenames.map((fn) => availableImages[fn]).filter(Boolean) as (File | Blob)[];
+      return { ...product, imageFile: files };
+    })
+  ), [availableImages, imageAssignments, preparedProducts]);
+
+  const currentMissingImageRows = useMemo(() => (
+    productsWithAssignedImages
+      .map((product, index) => ({
+        row: product.sourceRow ?? 0,
+        tableRow: index + 1,
+        sku: product.sku,
+        name: product.name,
+        hasImage: productHasImage(product)
+      }))
+      .filter((item) => !item.hasImage)
+      .map(({ hasImage, ...item }) => item)
+  ), [productsWithAssignedImages]);
+
+  const highlightedMissingImageSkus = new Set(missingImageRows.map((item) => item.sku));
 
   if (!isOpen) return null;
 
@@ -68,8 +233,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
       'version_vehiculo',
       'precio',
       'stock',
-      'descripcion',
-      'imagen'
+      'descripcion'
     ];
 
     const sampleRows = [
@@ -85,8 +249,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         version_vehiculo: '1.5 GLI',
         precio: 4500,
         stock: 50,
-        descripcion: 'Bujía de encendido de alta durabilidad.',
-        imagen: 'bujia_bosch_fr7.jpg'
+        descripcion: 'Bujía de encendido de alta durabilidad.'
       },
       {
         sku: 'BRE-BRK-P83085',
@@ -100,8 +263,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         version_vehiculo: '1.5 Sport',
         precio: 32000,
         stock: 15,
-        descripcion: 'Pastillas de freno cerámicas delanteras.',
-        imagen: 'pastilla_brembo_p83.png'
+        descripcion: 'Pastillas de freno cerámicas delanteras.'
       }
     ];
 
@@ -171,14 +333,17 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     return imageFilesMap;
   };
 
-  // Core reconciliation and import engine
-  const handleProcessImport = async () => {
+  // Core reconciliation engine: valida el archivo y las imágenes, pero no guarda nada aún
+  const handleAnalyze = async () => {
     if (!dataFile) return;
 
     setProcessing(true);
     setProgress(10);
     setLogs([]);
     setStats({ success: 0, warnings: 0, errors: 0 });
+    setPreparedProducts([]);
+    setAnalysisDone(false);
+    setUploadDone(false);
 
     try {
       // 1. Gather image files into a key-value dictionary (lowercase filename -> Blob/File)
@@ -190,7 +355,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
       } else if (imageSource === 'FOLDER' && imageFolderFiles) {
         imagesMap = extractFolderImages(imageFolderFiles);
       }
-      
+
+      setAvailableImages(imagesMap);
+      setImageAssignments({});
       setProgress(40);
 
       // 2. Parse Excel/CSV data file
@@ -210,7 +377,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
           }
 
           if (rows.length === 0) {
-            setLogs([{ row: 0, sku: 'N/A', status: 'ERROR', message: 'El archivo de datos está vacío.' }]);
+            setLogs([{ id: 'empty-file', row: 0, sku: 'N/A', status: 'ERROR', message: 'El archivo de datos está vacío.' }]);
             setStats(s => ({ ...s, errors: 1 }));
             setProcessing(false);
             return;
@@ -223,8 +390,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
           const existingSkus = new Set(existingProducts.map(p => p.sku.trim().toUpperCase()));
           const seenSkusInFile = new Set<string>();
 
-          const processedProducts: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | null })[] = [];
-          const localLogs: ImportLog[] = [];
+          const processedProducts: PreparedProduct[] = [];
+          const localLogs: Omit<ImportLog, 'id'>[] = [];
           let successCount = 0;
           let warningCount = 0;
           let errorCount = 0;
@@ -252,58 +419,36 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
             const price = Number(rawPrice);
             const stock = Number(rawStock);
 
-            // Validations
+            // Detecta problemas de SKU sin abandonar la fila todavía, para poder
+            // construir el producto y dejarlo listo por si el vendedor corrige el SKU.
+            const normalizedSku = sku ? sku.toUpperCase() : '';
+            let skuErrorMessage: string | null = null;
             if (!sku) {
-              localLogs.push({ row: rowNum, sku: 'VACÍO', status: 'ERROR', message: 'Fila omitida: SKU faltante o inválido.' });
-              errorCount++;
-              continue;
+              skuErrorMessage = 'Fila omitida: SKU faltante o inválido.';
+            } else if (seenSkusInFile.has(normalizedSku)) {
+              skuErrorMessage = `Fila omitida: El SKU "${sku}" está repetido dentro de la misma plantilla.`;
+            } else if (existingSkus.has(normalizedSku)) {
+              skuErrorMessage = `Fila omitida: El SKU ya existe en el catálogo (registro omitido por SKU duplicado).`;
+            } else {
+              seenSkusInFile.add(normalizedSku);
             }
 
-            const normalizedSku = sku.toUpperCase();
-
-            // Duplicate checks
-            if (seenSkusInFile.has(normalizedSku)) {
-              localLogs.push({
-                row: rowNum,
-                sku: normalizedSku,
-                status: 'ERROR',
-                message: `Fila omitida: El SKU "${sku}" está repetido dentro de la misma plantilla.`
-              });
-              errorCount++;
-              continue;
-            }
-            seenSkusInFile.add(normalizedSku);
-
-            if (existingSkus.has(normalizedSku)) {
-              localLogs.push({
-                row: rowNum,
-                sku: normalizedSku,
-                status: 'ERROR',
-                message: `Fila omitida: El SKU ya existe en el catálogo (registro omitido por SKU duplicado).`
-              });
-              errorCount++;
-              continue;
-            }
+            // Validaciones del resto de los campos (se evalúan siempre, para poder
+            // ofrecer un producto ya armado si solo falla el SKU).
+            let fieldErrorMessage: string | null = null;
             if (!name) {
-              localLogs.push({ row: rowNum, sku, status: 'ERROR', message: 'Fila omitida: Nombre de producto faltante.' });
-              errorCount++;
-              continue;
-            }
-            if (isNaN(price) || price <= 0) {
-              localLogs.push({ row: rowNum, sku, status: 'ERROR', message: 'Fila omitida: El precio debe ser un número mayor a 0.' });
-              errorCount++;
-              continue;
-            }
-            if (isNaN(stock) || stock < 0) {
-              localLogs.push({ row: rowNum, sku, status: 'ERROR', message: 'Fila omitida: El stock no puede ser un número negativo.' });
-              errorCount++;
-              continue;
+              fieldErrorMessage = 'Nombre de producto faltante.';
+            } else if (isNaN(price) || price <= 0) {
+              fieldErrorMessage = 'El precio debe ser un número mayor a 0.';
+            } else if (isNaN(stock) || stock < 0) {
+              fieldErrorMessage = 'El stock no puede ser un número negativo.';
             }
 
             // Image matching engine
             let imagePath = '';
             let matchedFile: File | Blob | null = null;
             const imgFilenameClean = String(rawImageFilename).trim();
+            let imageNotFound = false;
 
             if (imgFilenameClean) {
               if (imgFilenameClean.startsWith('http://') || imgFilenameClean.startsWith('https://')) {
@@ -314,19 +459,13 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                 if (matchedBlob) {
                   matchedFile = matchedBlob;
                 } else {
-                  localLogs.push({
-                    row: rowNum,
-                    sku,
-                    status: 'WARNING',
-                    message: `Imagen "${rawImageFilename}" no encontrada en la carpeta. Carga guardada sin foto.`
-                  });
-                  warningCount++;
+                  imageNotFound = true;
                 }
               }
             }
 
-            processedProducts.push({
-              sku: sku.toUpperCase(),
+            const buildProductPayload = () => ({
+              sku: normalizedSku || sku.toUpperCase(),
               oem: String(row.oem || row.OEM || '').trim().toUpperCase(),
               name,
               category: String(rawCategory).trim(),
@@ -339,44 +478,46 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
               stock,
               description: String(rawDescription).trim(),
               image: imagePath,
-              imageFile: matchedFile
+              imageFile: matchedFile,
+              sourceRow: rowNum
             });
-          }
 
-          setProgress(60);
-
-          // 4. Save to central backend API
-          const dbResult: BatchResult = await saveProductsBatch(processedProducts, false, (percent) => {
-            setProgress(60 + Math.round((percent / 100) * 35)); // scale progress 60% to 95%
-          });
-          
-          // Combine logs
-          dbResult.success.forEach((prod) => {
-            // Check if there was already a warning for this SKU
-            const hasWarning = localLogs.some(l => l.sku === prod.sku && l.status === 'WARNING');
-            if (!hasWarning) {
+            if (skuErrorMessage) {
+              errorCount++;
               localLogs.push({
-                row: 0, // database action
-                sku: prod.sku,
-                status: 'SUCCESS',
-                message: `Producto importado exitosamente.`
+                row: rowNum,
+                sku: sku ? normalizedSku : 'VACÍO',
+                name,
+                status: 'ERROR',
+                message: skuErrorMessage,
+                // Solo se deja el producto listo para re-encolar si el resto de los datos es válido.
+                pendingProduct: fieldErrorMessage ? undefined : buildProductPayload()
               });
-              successCount++;
-            } else {
-              // Warned item still counts as a success in DB but with warning status flag
-              successCount++;
+              continue;
             }
-          });
 
-          dbResult.errors.forEach((err) => {
-            localLogs.push({
-              row: err.row,
-              sku: err.sku,
-              status: 'ERROR',
-              message: `Error al guardar en base de datos: ${err.error}`
-            });
-            errorCount++;
-          });
+            if (fieldErrorMessage) {
+              localLogs.push({ row: rowNum, sku, name, status: 'ERROR', message: `Fila omitida: ${fieldErrorMessage}` });
+              errorCount++;
+              continue;
+            }
+
+            if (imageNotFound) {
+              localLogs.push({
+                row: rowNum,
+                sku: normalizedSku,
+                name,
+                status: 'WARNING',
+                message: `Imagen "${rawImageFilename}" no encontrada en la carpeta. Carga guardada sin foto.`
+              });
+              warningCount++;
+            } else {
+              localLogs.push({ row: rowNum, sku: normalizedSku, name, status: 'SUCCESS', message: 'Fila válida. Lista para cargar.' });
+            }
+            successCount++;
+
+            processedProducts.push(buildProductPayload());
+          }
 
           // Sort logs: errors first, then warnings, then successes
           const sortedLogs = localLogs.sort((a, b) => {
@@ -384,17 +525,18 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
             return score[b.status] - score[a.status];
           });
 
-          setLogs(sortedLogs);
+          setLogs(sortedLogs.map((l, idx) => ({ ...l, id: `${Date.now()}-${idx}` })));
           setStats({
             success: successCount,
             warnings: warningCount,
             errors: errorCount,
           });
+          setPreparedProducts(processedProducts);
+          setAnalysisDone(true);
           setProgress(100);
           setProcessing(false);
-          onUploadSuccess(); // Update KPIs and dashboard grid list
         } catch (innerErr: any) {
-          setLogs([{ row: 0, sku: 'N/A', status: 'ERROR', message: `Fallo crítico de lectura: ${innerErr.message}` }]);
+          setLogs([{ id: 'critical-error', row: 0, sku: 'N/A', status: 'ERROR', message: `Fallo crítico de lectura: ${innerErr.message}` }]);
           setStats(s => ({ ...s, errors: 1 }));
           setProgress(100);
           setProcessing(false);
@@ -407,37 +549,214 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         reader.readAsArrayBuffer(dataFile);
       }
     } catch (err: any) {
-      setLogs([{ row: 0, sku: 'N/A', status: 'ERROR', message: `Error en proceso: ${err.message}` }]);
+      setLogs([{ id: 'process-error', row: 0, sku: 'N/A', status: 'ERROR', message: `Error en proceso: ${err.message}` }]);
       setStats(s => ({ ...s, errors: 1 }));
       setProgress(100);
       setProcessing(false);
     }
   };
 
-  // 3. Download Error/Warning Logs Report
-  const downloadErrorReport = () => {
-    const errorWarnings = logs.filter(l => l.status !== 'SUCCESS');
-    if (errorWarnings.length === 0) return;
+  // Guarda en el backend los productos que ya pasaron el análisis
+  const handleStartUpload = async (productsOverride?: PreparedProduct[]) => {
+    const productsToSave = productsOverride ?? preparedProducts;
+    if (productsToSave.length === 0 || stats.errors > 0) return;
 
-    const headers = ['Fila', 'SKU', 'Severidad', 'Detalle del Error / Advertencia'];
-    const csvContent = Papa.unparse({
-      fields: headers,
-      data: errorWarnings.map(l => [l.row === 0 ? 'DB' : l.row, l.sku, l.status, l.message])
+    setImagesModalOpen(false);
+    setProcessing(true);
+    setProgress(60);
+
+    try {
+      const dbResult: BatchResult = await saveProductsBatch(productsToSave, false, (percent) => {
+        setProgress(60 + Math.round((percent / 100) * 35));
+      });
+
+      setLogs((prev) => {
+        let updated = [...prev];
+
+        dbResult.success.forEach((prod) => {
+          updated = updated.map((l) => (
+            l.sku === prod.sku && l.status === 'SUCCESS'
+              ? { ...l, message: 'Producto importado exitosamente.' }
+              : l
+          ));
+        });
+
+        dbResult.errors.forEach((err) => {
+          const idx = updated.findIndex((l) => l.sku === err.sku && l.status !== 'ERROR');
+          if (idx >= 0) {
+            updated[idx] = { ...updated[idx], status: 'ERROR', message: `Error al guardar en base de datos: ${err.error}` };
+          } else {
+            updated.push({ id: `${Date.now()}-${err.sku}`, row: err.row, sku: err.sku, status: 'ERROR', message: `Error al guardar en base de datos: ${err.error}` });
+          }
+        });
+
+        return updated;
+      });
+
+      setStats((prev) => ({
+        success: dbResult.success.length,
+        warnings: prev.warnings,
+        errors: prev.errors + dbResult.errors.length,
+      }));
+
+      const historyItem: BulkUploadHistoryItem = {
+        id: `CM-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`,
+        createdAt: new Date().toISOString(),
+        total: productsToSave.length,
+        success: dbResult.success.length,
+        warnings: stats.warnings,
+        errors: stats.errors + dbResult.errors.length,
+        status: dbResult.errors.length > 0 || stats.errors > 0 ? 'CON_ERRORES' : 'COMPLETADA'
+      };
+      setUploadHistory((prev) => {
+        const next = [historyItem, ...prev].slice(0, 50);
+        localStorage.setItem(BULK_UPLOAD_HISTORY_KEY, JSON.stringify(next));
+        return next;
+      });
+
+      setUploadDone(true);
+      setUploadSuccessCount(dbResult.success.length);
+      setProgress(100);
+      onUploadSuccess();
+    } catch (err: any) {
+      setLogs((prev) => [...prev, { id: `${Date.now()}-upload-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `Error al iniciar la carga: ${err.message}` }]);
+      setStats((prev) => ({ ...prev, errors: prev.errors + 1 }));
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Abre el popup de asignación de imágenes antes de guardar los productos analizados
+  const handleOpenImagesModal = () => {
+    if (preparedProducts.length === 0 || stats.errors > 0 || processing || uploadDone) return;
+    setGalleryOpenForSku(null);
+    setMissingImageRows([]);
+    setImagesModalOpen(true);
+  };
+
+  const toggleImageSelection = (sku: string, filename: string) => {
+    setImageAssignments((prev) => {
+      const current = prev[sku] || [];
+      if (current.includes(filename)) {
+        return { ...prev, [sku]: current.filter((f) => f !== filename) };
+      }
+      if (current.length >= MAX_IMAGES_PER_PRODUCT) return prev;
+      return { ...prev, [sku]: [...current, filename] };
     });
+  };
 
-    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'Reporte_Errores_Importacion_RepuesTop.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleProceedUpload = (continueWithGenericImage = false) => {
+    if (currentMissingImageRows.length > 0 && !continueWithGenericImage) {
+      setMissingImageRows(currentMissingImageRows);
+      return;
+    }
+
+    setMissingImageRows([]);
+
+    const finalProducts = continueWithGenericImage
+      ? productsWithAssignedImages.map((product) => (
+        productHasImage(product)
+          ? product
+          : { ...product, imageFile: createGenericProductImage(product) }
+      ))
+      : productsWithAssignedImages;
+
+    handleStartUpload(finalProducts);
+  };
+
+  // Row-level actions: delete a log entry, or review/fix a duplicate SKU
+  const handleDeleteLog = (id: string) => {
+    const target = logs.find(l => l.id === id);
+    if (!target) return;
+    setLogs(prev => prev.filter(l => l.id !== id));
+    setStats(prev => ({
+      ...prev,
+      success: prev.success - (target.status === 'SUCCESS' ? 1 : 0),
+      warnings: prev.warnings - (target.status === 'WARNING' ? 1 : 0),
+      errors: prev.errors - (target.status === 'ERROR' ? 1 : 0),
+    }));
+    if (target.status !== 'ERROR') {
+      // Las filas listas para cargar (éxito o con alerta) también viven en preparedProducts.
+      setPreparedProducts(prev => prev.filter(p => p.sku !== target.sku));
+    }
+    if (reviewingLogId === id) {
+      setReviewingLogId(null);
+    }
+  };
+
+  const openReviewSku = (id: string) => {
+    setReviewingLogId(id);
+    setReviewSkuInput('');
+    setReviewValidation({ status: 'idle', message: '' });
+  };
+
+  const closeReviewSku = () => {
+    setReviewingLogId(null);
+    setReviewSkuInput('');
+    setReviewValidation({ status: 'idle', message: '' });
+  };
+
+  const handleValidateReviewSku = async () => {
+    const trimmed = reviewSkuInput.trim();
+    if (!trimmed) return;
+
+    setReviewValidation({ status: 'checking', message: 'Verificando...' });
+    const normalized = trimmed.toUpperCase();
+    const existingProducts = await getAllProducts();
+    const exists = existingProducts.some(p => p.sku.trim().toUpperCase() === normalized);
+
+    if (exists) {
+      setReviewValidation({ status: 'invalid', message: `El SKU "${trimmed}" ya existe en tu inventario.` });
+      return;
+    }
+
+    const currentLog = logs.find(l => l.id === reviewingLogId);
+
+    if (currentLog?.pendingProduct) {
+      setReviewValidation({ status: 'valid', message: `El SKU "${trimmed}" es válido y está disponible.` });
+      setPreparedProducts(prev => [...prev, { ...currentLog.pendingProduct!, sku: normalized }]);
+      setLogs(prev => prev.map(l => l.id === reviewingLogId
+        ? { ...l, sku: normalized, status: 'SUCCESS', message: 'SKU corregido y validado correctamente. Lista para cargar.', pendingProduct: undefined }
+        : l
+      ));
+      setStats(prev => ({ ...prev, errors: Math.max(0, prev.errors - 1), success: prev.success + 1 }));
+    } else {
+      // El SKU ya es válido, pero a la fila le faltan otros datos obligatorios
+      // (nombre, precio o stock), así que no puede re-encolarse automáticamente.
+      setReviewValidation({
+        status: 'valid',
+        message: `El SKU "${trimmed}" es válido, pero esta fila tiene otros datos incompletos y no se cargará automáticamente.`
+      });
+      if (reviewingLogId) {
+        setLogs(prev => prev.map(l => l.id === reviewingLogId ? { ...l, sku: normalized } : l));
+      }
+    }
+  };
+
+  const reviewingLog = logs.find(l => l.id === reviewingLogId) || null;
+
+  const confirmPendingImages = () => {
+    if (pendingImageFiles) setImageFolderFiles(pendingImageFiles);
+    setPendingImageFiles(null);
+    setPendingImageCount(0);
+  };
+
+  const cancelPendingImages = () => {
+    setImageFolderFiles(null);
+    if (folderInputRef.current) folderInputRef.current.value = '';
+    setPendingImageFiles(null);
+    setPendingImageCount(0);
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content" style={{ maxWidth: '1240px', width: '95%', maxHeight: '92vh' }}>
+    <div className={embedded ? "bulk-upload-page" : "modal-overlay"}>
+      <div
+        className={embedded ? "bulk-upload-page-content" : "modal-content"}
+        style={embedded
+          ? { width: '100%', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 118px)' }
+          : { maxWidth: '1240px', width: '95%', maxHeight: '92vh' }
+        }
+      >
         <div className="modal-header">
           <div>
             <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -448,12 +767,358 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
               Vincula un archivo Excel/CSV y empareja imágenes locales en paralelo
             </p>
           </div>
-          <button className="btn-icon" onClick={onClose} disabled={processing}>
-            <XCircle size={20} />
+          {!embedded && (
+            <button className="btn-icon" onClick={onClose} disabled={processing}>
+              <XCircle size={20} />
+            </button>
+          )}
+        </div>
+
+        <div className="bulk-upload-tabs">
+          <button
+            type="button"
+            onClick={() => setActiveTab('upload')}
+            style={{
+              border: 'none',
+              borderBottom: activeTab === 'upload' ? '3px solid hsl(var(--primary))' : '3px solid transparent',
+              background: 'transparent',
+              color: activeTab === 'upload' ? 'hsl(var(--primary))' : 'var(--text-secondary)',
+              fontWeight: 800,
+              fontSize: '0.82rem',
+              padding: '0.65rem 0.85rem',
+              cursor: 'pointer'
+            }}
+          >
+            Nueva carga
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('history')}
+            style={{
+              border: 'none',
+              borderBottom: activeTab === 'history' ? '3px solid hsl(var(--primary))' : '3px solid transparent',
+              background: 'transparent',
+              color: activeTab === 'history' ? 'hsl(var(--primary))' : 'var(--text-secondary)',
+              fontWeight: 800,
+              fontSize: '0.82rem',
+              padding: '0.65rem 0.85rem',
+              cursor: 'pointer'
+            }}
+          >
+            Historial de cargas
           </button>
         </div>
 
         <div className="modal-body">
+          {activeTab === 'history' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '520px', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', margin: 0 }}>Historial de cargas</h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                    Registro local de las últimas cargas masivas realizadas en este navegador.
+                  </p>
+                </div>
+              </div>
+
+              {uploadHistory.length === 0 ? (
+                <div style={{ border: '1px dashed var(--border-color)', borderRadius: '14px', minHeight: '320px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+                  <div>
+                    <FileText size={34} style={{ marginBottom: '0.65rem', opacity: 0.6 }} />
+                    <p style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Aún no hay cargas registradas</p>
+                    <p style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Cuando completes una carga masiva, aparecerá aquí.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="log-table-container" style={{ marginTop: 0, flex: 1 }}>
+                  <table className="log-table">
+                    <thead>
+                      <tr>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>ID carga</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fecha</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Registros</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Éxito</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Alertas</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fallidos</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {uploadHistory.map((item) => (
+                        <tr key={item.id}>
+                          <td style={{ padding: '0.65rem 0.75rem' }}>
+                            <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 700 }}>{item.id}</code>
+                          </td>
+                          <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                            {new Date(item.createdAt).toLocaleString('es-CL')}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', fontWeight: 700 }}>{item.total}</td>
+                          <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--success))', fontWeight: 800 }}>{item.success}</td>
+                          <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--warning))', fontWeight: 800 }}>{item.warnings}</td>
+                          <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--danger))', fontWeight: 800 }}>{item.errors}</td>
+                          <td style={{ padding: '0.65rem 0.75rem' }}>
+                            <span
+                              className="log-status-badge"
+                              style={{
+                                backgroundColor: item.status === 'COMPLETADA' ? 'var(--success-bg)' : 'var(--danger-bg)',
+                                color: item.status === 'COMPLETADA' ? 'hsl(var(--success))' : 'hsl(var(--danger))',
+                                padding: '0.2rem 0.45rem',
+                                fontSize: '0.66rem'
+                              }}
+                            >
+                              {item.status === 'COMPLETADA' ? 'COMPLETADA' : 'CON ERRORES'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : imagesModalOpen ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '560px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                  <Images size={18} style={{ color: 'hsl(var(--primary))' }} />
+                  Asignar Imágenes a Productos
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                  Puedes seleccionar hasta <strong>{MAX_IMAGES_PER_PRODUCT} imágenes por producto</strong> desde tu carpeta cargada.
+                </p>
+              </div>
+
+              {Object.keys(availableImages).length === 0 && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '1rem 0' }}>
+                  No hay imágenes cargadas en la carpeta. Puedes iniciar la carga sin fotos.
+                </p>
+              )}
+
+              {missingImageRows.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.75rem',
+                    background: '#fff8db',
+                    border: '1px solid #facc15',
+                    borderLeft: '4px solid #f59e0b',
+                    borderRadius: '10px',
+                    padding: '0.85rem 1rem'
+                  }}
+                >
+                  <AlertTriangle size={18} style={{ color: '#b45309', flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <p style={{ fontSize: '0.82rem', color: '#92400e', fontWeight: 800, margin: '0 0 0.35rem' }}>
+                      Hay registros sin imagen cargada
+                    </p>
+                    <p style={{ fontSize: '0.76rem', color: '#92400e', margin: '0 0 0.5rem' }}>
+                      Puedes asignar una imagen a las filas marcadas o continuar usando una imagen genérica del producto.
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                      {missingImageRows.map((item) => (
+                        <span
+                          key={`${item.tableRow}-${item.sku}`}
+                          style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '0.2rem 0.45rem', borderRadius: '999px', fontWeight: 800 }}
+                          title={item.name}
+                        >
+                          Fila {item.tableRow} sin asignar imagen · {item.sku}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ overflowX: 'auto', flex: 1 }}>
+                <table className="log-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '72px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Fila</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>SKU</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>OEM</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Nombre</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Categoría</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Marca Repuesto</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Marca Vehículo</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Modelo Vehículo</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Año Vehículo</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Versión Vehículo</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Precio</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Stock</th>
+                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Descripción</th>
+                      <th style={{ width: '140px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
+                      <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preparedProducts.map((product, index) => {
+                      const selected = imageAssignments[product.sku] || [];
+                      const isGalleryOpen = galleryOpenForSku === product.sku;
+                      const isMissingImageHighlighted = highlightedMissingImageSkus.has(product.sku);
+                      return (
+                        <React.Fragment key={product.sku}>
+                          <tr
+                            style={{
+                              background: isMissingImageHighlighted ? '#fff8db' : undefined,
+                              boxShadow: isMissingImageHighlighted ? 'inset 4px 0 0 #f59e0b' : undefined
+                            }}
+                          >
+                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  color: isMissingImageHighlighted ? '#92400e' : 'var(--text-secondary)',
+                                  background: isMissingImageHighlighted ? '#fef3c7' : 'var(--bg-app)',
+                                  padding: '0.15rem 0.4rem',
+                                  borderRadius: '999px',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {index + 1}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                              <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 600 }}>{product.sku}</code>
+                            </td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.oem || '—'}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem' }}>{product.name}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.category || '—'}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.partBrand || '—'}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleBrand || '—'}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleModel || '—'}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleYear || '—'}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleVersion || '—'}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>${product.price?.toLocaleString('es-CL')}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.stock}</td>
+                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.description}>
+                              {product.description || '—'}
+                            </td>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                              <span
+                                style={{
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  padding: '0.15rem 0.5rem',
+                                  borderRadius: '999px',
+                                  whiteSpace: 'nowrap',
+                                  background: isMissingImageHighlighted ? '#fef3c7' : selected.length > 0 ? 'var(--success-bg)' : 'var(--bg-app)',
+                                  color: isMissingImageHighlighted ? '#92400e' : selected.length > 0 ? 'hsl(var(--success))' : 'var(--text-muted)'
+                                }}
+                              >
+                                {isMissingImageHighlighted ? 'Falta imagen' : `${selected.length} / ${MAX_IMAGES_PER_PRODUCT} seleccionadas`}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                <button
+                                  type="button"
+                                  title="Subir imagen"
+                                  onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
+                                  style={{
+                                    border: 'none',
+                                    background: isGalleryOpen ? 'hsl(var(--primary))' : 'rgba(37, 99, 235, 0.08)',
+                                    color: isGalleryOpen ? '#fff' : 'hsl(var(--primary))',
+                                    borderRadius: '6px',
+                                    width: '30px',
+                                    height: '30px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  <ImageUp size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {isGalleryOpen && (
+                            <tr>
+                              <td colSpan={15} style={{ padding: '0.75rem 1rem 1.25rem', background: 'var(--bg-app)' }}>
+                                {Object.keys(availableImages).length === 0 ? (
+                                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No hay imágenes disponibles en la carpeta cargada.</p>
+                                ) : (
+                                  <>
+                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                      Selecciona hasta {MAX_IMAGES_PER_PRODUCT} imágenes para <strong>{product.sku}</strong>. Haz clic para marcar o desmarcar.
+                                    </p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '0.6rem' }}>
+                                      {Object.keys(availableImages).map((filename) => {
+                                        const isSelected = selected.includes(filename);
+                                        const limitReached = !isSelected && selected.length >= MAX_IMAGES_PER_PRODUCT;
+                                        return (
+                                          <div
+                                            key={filename}
+                                            onClick={() => !limitReached && toggleImageSelection(product.sku, filename)}
+                                            title={limitReached ? `Máximo ${MAX_IMAGES_PER_PRODUCT} imágenes por producto` : filename}
+                                            style={{
+                                              position: 'relative',
+                                              border: isSelected ? '2px solid hsl(var(--primary))' : '1px solid var(--border-color)',
+                                              borderRadius: '10px',
+                                              overflow: 'hidden',
+                                              cursor: limitReached ? 'not-allowed' : 'pointer',
+                                              opacity: limitReached ? 0.4 : 1,
+                                              background: 'var(--bg-card)',
+                                              transition: 'all 0.15s ease'
+                                            }}
+                                          >
+                                            <img
+                                              src={imageObjectUrls[filename]}
+                                              alt={filename}
+                                              style={{ width: '100%', height: '72px', objectFit: 'cover', display: 'block' }}
+                                            />
+                                            {isSelected && (
+                                              <div
+                                                style={{
+                                                  position: 'absolute',
+                                                  top: 4,
+                                                  right: 4,
+                                                  background: 'hsl(var(--primary))',
+                                                  color: '#fff',
+                                                  borderRadius: '50%',
+                                                  width: 20,
+                                                  height: 20,
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  justifyContent: 'center',
+                                                  boxShadow: '0 1px 4px rgba(0,0,0,0.25)'
+                                                }}
+                                              >
+                                                <CheckCircle2 size={14} />
+                                              </div>
+                                            )}
+                                            <span
+                                              style={{
+                                                fontSize: '0.6rem',
+                                                display: 'block',
+                                                padding: '0.2rem 0.3rem',
+                                                whiteSpace: 'nowrap',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                color: 'var(--text-secondary)'
+                                              }}
+                                            >
+                                              {filename}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
           <div className="bulk-upload-split-layout">
             
             {/* Left Panel: Uploading and template downloads */}
@@ -539,13 +1204,37 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                   </div>
 
                   {imageSource === 'FOLDER' ? (
-                    <label className={`dropzone compact ${imageFolderFiles ? 'active' : ''}`}>
+                    <div
+                      className={`dropzone compact ${imageFolderFiles ? 'active' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={handlePickFolder}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handlePickFolder();
+                        }
+                      }}
+                      style={{ cursor: processing ? 'not-allowed' : 'pointer' }}
+                    >
                       <input
                         type="file"
                         ref={folderInputRef}
                         multiple
                         style={{ display: 'none' }}
-                        onChange={(e) => setImageFolderFiles(e.target.files)}
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files && files.length > 0) {
+                            const imageCount = Array.from(files).filter((f) => {
+                              const ext = f.name.split('.').pop()?.toLowerCase();
+                              return ext && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+                            }).length;
+                            setPendingImageFiles(files);
+                            setPendingImageCount(imageCount);
+                          } else {
+                            setImageFolderFiles(null);
+                          }
+                        }}
                         disabled={processing}
                         {...({
                           webkitdirectory: '',
@@ -563,7 +1252,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                           </span>
                         </div>
                       )}
-                    </label>
+                    </div>
                   ) : (
                     <label className={`dropzone compact ${imageZipFile ? 'active' : ''}`}>
                       <input
@@ -597,7 +1286,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                   className="btn btn-primary"
                   style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem' }}
                   disabled={!dataFile || processing || (imageSource === 'FOLDER' && !imageFolderFiles) || (imageSource === 'ZIP' && !imageZipFile)}
-                  onClick={handleProcessImport}
+                  onClick={handleAnalyze}
                 >
                   {processing ? (
                     <>
@@ -607,7 +1296,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                   ) : (
                     <>
                       <Play size={16} />
-                      Iniciar Carga Masiva
+                      Analizar Carga
                     </>
                   )}
                 </button>
@@ -634,7 +1323,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                   <UploadCloud size={40} style={{ strokeWidth: 1.2, color: 'var(--text-muted)', opacity: 0.5, marginBottom: '0.75rem' }} />
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Análisis Post Carga</h4>
                   <p style={{ fontSize: '0.72rem', maxWidth: '280px', lineHeight: 1.4, color: 'var(--text-muted)' }}>
-                    Completa la carga de archivos a la izquierda y ejecuta "Iniciar Carga Masiva" para desplegar el análisis de registros y errores aquí.
+                    Completa la carga de archivos a la izquierda y ejecuta "Analizar Carga" para desplegar el análisis de registros y errores aquí.
                   </p>
                 </div>
               )}
@@ -651,19 +1340,27 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
               {logs.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  {uploadDone && uploadSuccessCount !== null && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        background: 'var(--success-bg)',
+                        color: 'hsl(var(--success))',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '10px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        marginBottom: '0.85rem'
+                      }}
+                    >
+                      <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+                      ¡Carga completada! {uploadSuccessCount} {uploadSuccessCount === 1 ? 'producto se cargó' : 'productos se cargaron'} exitosamente al inventario.
+                    </div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                     <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>Resumen del Procesamiento</h4>
-                    {stats.errors + stats.warnings > 0 && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ padding: '0.3rem 0.6rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                        onClick={downloadErrorReport}
-                      >
-                        <Download size={12} />
-                        Exportar Log (CSV)
-                      </button>
-                    )}
                   </div>
 
                   <div className="report-summary-cards" style={{ margin: '0 0 1rem 0', gap: '0.75rem' }}>
@@ -701,10 +1398,11 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                           <th style={{ width: '120px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>SKU</th>
                           <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Estado</th>
                           <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Detalle / Error</th>
+                          <th style={{ width: '80px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center' }}>Acción</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {logs.map((log, index) => {
+                        {logs.map((log) => {
                           let bgRow = '';
                           let borderLeft = '';
                           let iconColor = '';
@@ -728,7 +1426,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                           }
 
                           return (
-                            <tr key={index} style={{ backgroundColor: bgRow, borderLeft: borderLeft }}>
+                            <tr key={log.id} style={{ backgroundColor: bgRow, borderLeft: borderLeft }}>
                               <td style={{ padding: '0.5rem 0.75rem' }}>
                                 <span style={{ fontSize: '0.68rem', background: 'var(--bg-app)', padding: '0.15rem 0.35rem', borderRadius: '4px', fontWeight: 700, color: 'var(--text-secondary)' }}>
                                   {log.row === 0 ? 'DB' : `Fila ${log.row}`}
@@ -762,6 +1460,28 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                                   <span style={{ fontSize: '0.74rem', whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}>{log.message}</span>
                                 </div>
                               </td>
+                              <td style={{ padding: '0.5rem 0.75rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+                                  {isSkuIssueLog(log) && (
+                                    <button
+                                      type="button"
+                                      title="Revisar SKU"
+                                      onClick={() => openReviewSku(log.id)}
+                                      style={{ border: 'none', background: 'rgba(37, 99, 235, 0.08)', color: 'hsl(var(--primary))', borderRadius: '6px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                    >
+                                      <SearchCheck size={14} />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    title="Eliminar registro"
+                                    onClick={() => handleDeleteLog(log.id)}
+                                    style={{ border: 'none', background: 'rgba(239, 68, 68, 0.08)', color: 'hsl(var(--danger))', borderRadius: '6px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}
@@ -773,30 +1493,485 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
             </div>
 
           </div>
+          )}
         </div>
 
         <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '1.25rem 2rem' }}>
-          {(dataFile || imageFolderFiles || imageZipFile || logs.length > 0) && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ marginRight: 'auto', background: 'rgba(239, 68, 68, 0.05)', color: 'hsl(var(--danger))', borderColor: 'rgba(239, 68, 68, 0.1)' }}
-              onClick={handleReset}
-              disabled={processing}
-            >
-              Limpiar Vista
-            </button>
+          {activeTab === 'history' ? (
+            <>
+              <button type="button" className="btn btn-primary" onClick={() => setActiveTab('upload')}>
+                Nueva carga
+              </button>
+            </>
+          ) : imagesModalOpen ? (
+            missingImageRows.length > 0 ? (
+              <>
+                <button type="button" className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => setMissingImageRows([])}>
+                  Volver a asignar
+                </button>
+                <button type="button" className="btn btn-primary" onClick={() => handleProceedUpload(true)}>
+                  Continuar con imagen genérica
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => { setImagesModalOpen(false); setMissingImageRows([]); }}>
+                  Volver
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => handleProceedUpload()}
+                  style={currentMissingImageRows.length > 0 ? {
+                    background: 'hsl(var(--danger))',
+                    borderColor: 'hsl(var(--danger))',
+                    color: '#fff',
+                    boxShadow: '0 0 0 3px rgba(239, 68, 68, 0.15)'
+                  } : undefined}
+                  title={currentMissingImageRows.length > 0 ? 'Hay filas sin imagen. Presiona para revisar la alerta antes de cargar.' : undefined}
+                >
+                  Confirmar y Cargar
+                </button>
+              </>
+            )
+          ) : (
+            <>
+              {(dataFile || imageFolderFiles || imageZipFile || logs.length > 0) && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ marginRight: 'auto', background: 'rgba(239, 68, 68, 0.05)', color: 'hsl(var(--danger))', borderColor: 'rgba(239, 68, 68, 0.1)' }}
+                  onClick={handleReset}
+                  disabled={processing}
+                >
+                  Limpiar Vista
+                </button>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+                {(!analysisDone || stats.errors > 0) && !uploadDone && (
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    {!analysisDone
+                      ? 'Primero analiza la carga.'
+                      : 'Corrige los errores del análisis para poder iniciar la carga.'}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleOpenImagesModal}
+                  disabled={processing || !analysisDone || stats.errors > 0 || preparedProducts.length === 0 || uploadDone}
+                  title={
+                    !analysisDone
+                      ? 'Primero debes analizar la carga.'
+                      : stats.errors > 0
+                        ? 'Corrige los errores del análisis antes de continuar.'
+                        : undefined
+                  }
+                >
+                  {uploadDone ? 'Carga Completada' : 'Iniciar Carga'}
+                </button>
+              </div>
+            </>
           )}
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onClose}
-            disabled={processing}
-          >
-            Cerrar Ventana
-          </button>
         </div>
       </div>
+
+      {pendingImageFiles && (
+        <div className="modal-overlay" style={{ zIndex: 60 }}>
+          <div className="modal-content" style={{ maxWidth: '360px', width: '90%', padding: '1.5rem' }}>
+            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
+              <FolderOpen size={16} style={{ color: 'hsl(var(--accent))' }} />
+              Confirmar Imágenes
+            </h4>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+              Se seleccionaron <strong>{pendingImageCount}</strong> {pendingImageCount === 1 ? 'imagen' : 'imágenes'}. ¿Deseas continuar con la carga?
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary" onClick={cancelPendingImages}>
+                Cancelar
+              </button>
+              <button type="button" className="btn btn-primary" onClick={confirmPendingImages}>
+                Continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {false && imagesModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 60 }}>
+          <div className="modal-content" style={{ maxWidth: '1400px', width: '97%', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header">
+              <div>
+                <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Images size={18} style={{ color: 'hsl(var(--primary))' }} />
+                  Asignar Imágenes a Productos
+                </h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                  Puedes seleccionar hasta <strong>{MAX_IMAGES_PER_PRODUCT} imágenes por producto</strong> desde tu carpeta cargada. Es opcional: puedes iniciar la carga sin asignar imágenes.
+                </p>
+              </div>
+              <button className="btn-icon" onClick={() => setImagesModalOpen(false)}>
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+              {Object.keys(availableImages).length === 0 && (
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '1rem 0' }}>
+                  No hay imágenes cargadas en la carpeta. Puedes iniciar la carga sin fotos.
+                </p>
+              )}
+
+              {missingImageRows.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.75rem',
+                    background: '#fff8db',
+                    border: '1px solid #facc15',
+                    borderLeft: '4px solid #f59e0b',
+                    borderRadius: '10px',
+                    padding: '0.85rem 1rem',
+                    marginBottom: '0.85rem'
+                  }}
+                >
+                  <AlertTriangle size={18} style={{ color: '#b45309', flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <p style={{ fontSize: '0.82rem', color: '#92400e', fontWeight: 800, margin: '0 0 0.35rem' }}>
+                      Hay registros sin imagen cargada
+                    </p>
+                    <p style={{ fontSize: '0.76rem', color: '#92400e', margin: '0 0 0.5rem' }}>
+                      Puedes asignar una imagen a las filas marcadas o continuar usando una imagen genérica del producto.
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                      {missingImageRows.map((item) => (
+                        <span
+                          key={`${item.tableRow}-${item.sku}`}
+                          style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '0.2rem 0.45rem', borderRadius: '999px', fontWeight: 800 }}
+                          title={item.name}
+                        >
+                          Fila {item.tableRow} sin asignar imagen · {item.sku}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ overflowX: 'auto' }}>
+              <table className="log-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '72px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Fila</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>SKU</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>OEM</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Nombre</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Categoría</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Marca Repuesto</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Marca Vehículo</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Modelo Vehículo</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Año Vehículo</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Versión Vehículo</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Precio</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Stock</th>
+                    <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Descripción</th>
+                    <th style={{ width: '140px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
+                    <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preparedProducts.map((product, index) => {
+                    const selected = imageAssignments[product.sku] || [];
+                    const isGalleryOpen = galleryOpenForSku === product.sku;
+                    const isMissingImageHighlighted = highlightedMissingImageSkus.has(product.sku);
+                    return (
+                      <React.Fragment key={product.sku}>
+                        <tr
+                          style={{
+                            background: isMissingImageHighlighted ? '#fff8db' : undefined,
+                            boxShadow: isMissingImageHighlighted ? 'inset 4px 0 0 #f59e0b' : undefined
+                          }}
+                        >
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <span
+                              style={{
+                                fontSize: '0.68rem',
+                                fontWeight: 800,
+                                color: isMissingImageHighlighted ? '#92400e' : 'var(--text-secondary)',
+                                background: isMissingImageHighlighted ? '#fef3c7' : 'var(--bg-app)',
+                                padding: '0.15rem 0.4rem',
+                                borderRadius: '999px',
+                                whiteSpace: 'nowrap'
+                              }}
+                              title={`Fila ${product.sourceRow || 'N/A'} del Excel`}
+                            >
+                              {index + 1}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 600 }}>{product.sku}</code>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.oem || '—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem' }}>{product.name}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.category || '—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.partBrand || '—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleBrand || '—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleModel || '—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleYear || '—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleVersion || '—'}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>${product.price?.toLocaleString('es-CL')}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.stock}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.description}>
+                            {product.description || '—'}
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <span
+                              style={{
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                padding: '0.15rem 0.5rem',
+                                borderRadius: '999px',
+                                whiteSpace: 'nowrap',
+                                background: isMissingImageHighlighted ? '#fef3c7' : selected.length > 0 ? 'var(--success-bg)' : 'var(--bg-app)',
+                                color: isMissingImageHighlighted ? '#92400e' : selected.length > 0 ? 'hsl(var(--success))' : 'var(--text-muted)'
+                              }}
+                            >
+                              {isMissingImageHighlighted ? 'Falta imagen' : `${selected.length} / ${MAX_IMAGES_PER_PRODUCT} seleccionadas`}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                title="Subir imagen"
+                                onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
+                                style={{
+                                  border: 'none',
+                                  background: isGalleryOpen ? 'hsl(var(--primary))' : 'rgba(37, 99, 235, 0.08)',
+                                  color: isGalleryOpen ? '#fff' : 'hsl(var(--primary))',
+                                  borderRadius: '6px',
+                                  width: '30px',
+                                  height: '30px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <ImageUp size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isGalleryOpen && (
+                          <tr>
+                            <td colSpan={15} style={{ padding: '0.75rem 1rem 1.25rem', background: 'var(--bg-app)' }}>
+                              {Object.keys(availableImages).length === 0 ? (
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No hay imágenes disponibles en la carpeta cargada.</p>
+                              ) : (
+                                <>
+                                  <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                    Selecciona hasta {MAX_IMAGES_PER_PRODUCT} imágenes para <strong>{product.sku}</strong>. Haz clic para marcar o desmarcar.
+                                  </p>
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '0.6rem' }}>
+                                    {Object.keys(availableImages).map((filename) => {
+                                      const isSelected = selected.includes(filename);
+                                      const limitReached = !isSelected && selected.length >= MAX_IMAGES_PER_PRODUCT;
+                                      return (
+                                        <div
+                                          key={filename}
+                                          onClick={() => !limitReached && toggleImageSelection(product.sku, filename)}
+                                          title={limitReached ? `Máximo ${MAX_IMAGES_PER_PRODUCT} imágenes por producto` : filename}
+                                          style={{
+                                            position: 'relative',
+                                            border: isSelected ? '2px solid hsl(var(--primary))' : '1px solid var(--border-color)',
+                                            borderRadius: '10px',
+                                            overflow: 'hidden',
+                                            cursor: limitReached ? 'not-allowed' : 'pointer',
+                                            opacity: limitReached ? 0.4 : 1,
+                                            background: 'var(--bg-card)',
+                                            transition: 'all 0.15s ease'
+                                          }}
+                                        >
+                                          <img
+                                            src={imageObjectUrls[filename]}
+                                            alt={filename}
+                                            style={{ width: '100%', height: '72px', objectFit: 'cover', display: 'block' }}
+                                          />
+                                          {isSelected && (
+                                            <div
+                                              style={{
+                                                position: 'absolute',
+                                                top: 4,
+                                                right: 4,
+                                                background: 'hsl(var(--primary))',
+                                                color: '#fff',
+                                                borderRadius: '50%',
+                                                width: 20,
+                                                height: 20,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                boxShadow: '0 1px 4px rgba(0,0,0,0.25)'
+                                              }}
+                                            >
+                                              <CheckCircle2 size={14} />
+                                            </div>
+                                          )}
+                                          <span
+                                            style={{
+                                              fontSize: '0.6rem',
+                                              display: 'block',
+                                              padding: '0.2rem 0.3rem',
+                                              whiteSpace: 'nowrap',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                              color: 'var(--text-secondary)'
+                                            }}
+                                          >
+                                            {filename}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '1.25rem 2rem' }}>
+              {missingImageRows.length > 0 ? (
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={() => setMissingImageRows([])}>
+                    Volver a asignar
+                  </button>
+                  <button type="button" className="btn btn-primary" onClick={() => handleProceedUpload(true)}>
+                    Continuar con imagen genérica
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={() => setImagesModalOpen(false)}>
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => handleProceedUpload()}
+                    style={currentMissingImageRows.length > 0 ? {
+                      background: 'hsl(var(--danger))',
+                      borderColor: 'hsl(var(--danger))',
+                      color: '#fff',
+                      boxShadow: '0 0 0 3px rgba(239, 68, 68, 0.15)'
+                    } : undefined}
+                    title={currentMissingImageRows.length > 0 ? 'Hay filas sin imagen. Presiona para revisar la alerta antes de cargar.' : undefined}
+                  >
+                    Confirmar y Cargar
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewingLog && (
+        <div className="modal-overlay" style={{ zIndex: 60 }}>
+          <div className="modal-content" style={{ maxWidth: '380px', width: '90%', padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+              <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <SearchCheck size={16} style={{ color: 'hsl(var(--primary))' }} />
+                Revisar SKU
+              </h4>
+              <button className="btn-icon" onClick={closeReviewSku} style={{ padding: 0 }}>
+                <XCircle size={18} />
+              </button>
+            </div>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+              SKU actual: <code style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{reviewingLog.sku === 'VACÍO' ? '(sin SKU)' : reviewingLog.sku}</code>
+            </p>
+            {reviewingLog.name && (
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                Repuesto: <strong>{reviewingLog.name}</strong>
+              </p>
+            )}
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+              Fila del Excel: <strong>{reviewingLog.row === 0 ? 'N/A' : reviewingLog.row}</strong>
+            </p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+              Ingresa un nuevo SKU y valida su disponibilidad en tu inventario.
+            </p>
+
+            <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'block' }}>Nuevo SKU</label>
+            <input
+              type="text"
+              className="form-control"
+              value={reviewSkuInput}
+              onChange={(e) => {
+                setReviewSkuInput(e.target.value);
+                setReviewValidation({ status: 'idle', message: '' });
+              }}
+              placeholder="Ej: BOS-SPK-FR7DC-2"
+              style={{ marginBottom: '0.75rem' }}
+              autoFocus
+            />
+
+            {reviewValidation.status !== 'idle' && (
+              <div
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  padding: '0.5rem 0.65rem',
+                  borderRadius: '8px',
+                  marginBottom: '0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  background: reviewValidation.status === 'valid'
+                    ? 'var(--success-bg)'
+                    : reviewValidation.status === 'invalid'
+                      ? 'var(--danger-bg)'
+                      : 'var(--bg-app)',
+                  color: reviewValidation.status === 'valid'
+                    ? 'hsl(var(--success))'
+                    : reviewValidation.status === 'invalid'
+                      ? 'hsl(var(--danger))'
+                      : 'var(--text-secondary)'
+                }}
+              >
+                {reviewValidation.status === 'valid' && <CheckCircle2 size={14} />}
+                {reviewValidation.status === 'invalid' && <XCircle size={14} />}
+                {reviewValidation.message}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary" onClick={closeReviewSku}>
+                {reviewValidation.status === 'valid' ? 'Cerrar' : 'Cancelar'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={reviewValidation.status === 'valid' ? closeReviewSku : handleValidateReviewSku}
+                disabled={!reviewSkuInput.trim() || reviewValidation.status === 'checking'}
+              >
+                {reviewValidation.status === 'valid' ? 'Aceptar' : 'Validar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
