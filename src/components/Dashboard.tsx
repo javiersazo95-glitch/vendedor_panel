@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, PlusCircle, UploadCloud, Sun, Moon, Database } from 'lucide-react';
+import { LogOut, PlusCircle, UploadCloud, Database } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
 import { getAllProducts, deleteProduct, addProduct, updateProduct, seedDBIfEmpty, pauseProduct, resumeProduct } from '../db';
@@ -32,11 +32,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
   const [vehicleBrandFilter, setVehicleBrandFilter] = useState('');
   const [yearFilter, setYearFilter] = useState('');
 
-  // Theme state (dark/light)
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
-  });
-
   // 1. Initialise and load products
   const fetchProducts = async () => {
     setError(null);
@@ -61,20 +56,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
   };
 
   useEffect(() => {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.removeItem('theme');
     fetchProducts();
   }, []);
-
-  // 2. Apply theme changes
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
-  };
-
-
 
   // 4. Product actions
   const handleDeleteProduct = async (id: string) => {
@@ -101,14 +86,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
 
   const handleSaveProduct = async (
     productData: Omit<Product, 'id' | 'lastUpdated'> & { id?: string },
-    imageFile?: File | null
+    imageFiles?: File[] | null
   ) => {
     if (productData.id) {
       // Edit mode
-      await updateProduct(productData as Product, imageFile);
+      await updateProduct(productData as Product, imageFiles);
     } else {
       // Create mode
-      await addProduct(productData, imageFile);
+      await addProduct(productData, imageFiles);
     }
     await fetchProducts();
   };
@@ -196,15 +181,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
           </div>
 
           <div className="header-actions">
-            {/* Dark/Light mode theme switch button */}
-            <button 
-              className="theme-toggle" 
-              onClick={toggleTheme}
-              title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-            >
-              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
-
             {/* Profile Avatar Widget */}
             <div className="user-profile">
               <div className="avatar">

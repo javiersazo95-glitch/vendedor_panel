@@ -16,6 +16,12 @@ export interface Product {
   stock: number;
   description: string;
   image: string; // URL string
+  pricingMode?: 'show_price' | 'quote_only';
+  condition?: 'ORIGINAL' | 'ALTERNATIVO';
+  requiresChassis?: boolean;
+  vehicleYearTo?: number;
+  vehiculoCatalogoIds?: number[];
+  compatibilityGroupsJson?: string;
   lastUpdated?: string;
   activo?: boolean;
   pausado?: boolean;
@@ -24,6 +30,13 @@ export interface Product {
 export interface BatchResult {
   success: Product[];
   errors: { row: number; sku: string; error: string }[];
+}
+
+type ProductImageInput = File | Blob | (File | Blob)[] | null;
+
+function imageInputList(imageInput?: ProductImageInput): (File | Blob)[] {
+  if (!imageInput) return [];
+  return Array.isArray(imageInput) ? imageInput : [imageInput];
 }
 
 // Helper to retrieve JWT token and sellerId from the current tab session.
@@ -51,6 +64,12 @@ function mapDtoToProduct(dto: any): Product {
     stock: Number(dto.stock || 0),
     description: dto.descripcion || '',
     image: dto.imageUrls && dto.imageUrls.length > 0 ? dto.imageUrls[0] : '',
+    pricingMode: dto.pricingMode === 'QUOTE_ONLY' ? 'quote_only' : 'show_price',
+    condition: dto.condicion === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL',
+    requiresChassis: dto.requiereChasis === true,
+    vehicleYearTo: dto.anioHasta || dto.anioDesde || new Date().getFullYear(),
+    vehiculoCatalogoIds: dto.vehiculoCatalogoIds || [],
+    compatibilityGroupsJson: dto.compatibilityGroupsJson || '',
     lastUpdated: dto.updatedAt || dto.createdAt || new Date().toISOString(),
     activo: dto.activo !== false,
     pausado: dto.pausado === true,
@@ -83,7 +102,7 @@ export async function getAllProducts(): Promise<Product[]> {
 
 export async function addProduct(
   product: Omit<Product, 'id' | 'lastUpdated'>,
-  imageFile?: File | Blob | null
+  imageFile?: ProductImageInput
 ): Promise<Product> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa de vendedor.');
@@ -94,7 +113,9 @@ export async function addProduct(
 
   let response: Response;
 
-  if (imageFile) {
+  const imageFiles = imageInputList(imageFile).slice(0, 4);
+
+  if (imageFiles.length > 0) {
     // Use the multipart endpoint
     const formData = new FormData();
     formData.append('skuProveedor', product.sku);
@@ -105,14 +126,20 @@ export async function addProduct(
     formData.append('compatibilidadMarca', product.vehicleBrand);
     formData.append('compatibilidadModelo', product.vehicleModel);
     formData.append('anioDesde', String(product.vehicleYear));
-    formData.append('anioHasta', String(product.vehicleYear));
+    formData.append('anioHasta', String(product.vehicleYearTo ?? product.vehicleYear));
     formData.append('motor', product.vehicleVersion);
+    formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
     formData.append('precio', String(product.price));
     formData.append('stock', String(product.stock));
     formData.append('descripcion', product.description || '');
-    formData.append('condicion', 'NUEVO');
+    formData.append('condicion', product.condition || 'ORIGINAL');
+    formData.append('requiereChasis', String(product.requiresChassis === true));
+    formData.append('compatibilityGroupsJson', product.compatibilityGroupsJson || '');
+    (product.vehiculoCatalogoIds || []).forEach((id) => {
+      formData.append('vehiculoCatalogoIds', String(id));
+    });
     formData.append('activo', 'true');
-    formData.append('imagenes', imageFile);
+    imageFiles.forEach((file) => formData.append('imagenes', file));
 
     response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
       method: 'POST',
@@ -131,12 +158,16 @@ export async function addProduct(
       compatibilidadMarca: product.vehicleBrand,
       compatibilidadModelo: product.vehicleModel,
       anioDesde: product.vehicleYear,
-      anioHasta: product.vehicleYear,
+      anioHasta: product.vehicleYearTo ?? product.vehicleYear,
       motor: product.vehicleVersion,
+      pricingMode: product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE',
       precio: product.price,
       stock: product.stock,
       descripcion: product.description || '',
-      condicion: 'NUEVO',
+      condicion: product.condition || 'ORIGINAL',
+      requiereChasis: product.requiresChassis === true,
+      vehiculoCatalogoIds: product.vehiculoCatalogoIds || [],
+      compatibilityGroupsJson: product.compatibilityGroupsJson || '',
       activo: true
     };
 
@@ -166,7 +197,7 @@ export async function addProduct(
 
 export async function updateProduct(
   product: Product,
-  imageFile?: File | Blob | null
+  imageFile?: ProductImageInput
 ): Promise<Product> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
@@ -177,7 +208,9 @@ export async function updateProduct(
 
   let response: Response;
 
-  if (imageFile) {
+  const imageFiles = imageInputList(imageFile).slice(0, 4);
+
+  if (imageFiles.length > 0) {
     // Use multipart editing endpoint
     const formData = new FormData();
     formData.append('skuProveedor', product.sku);
@@ -188,14 +221,20 @@ export async function updateProduct(
     formData.append('compatibilidadMarca', product.vehicleBrand);
     formData.append('compatibilidadModelo', product.vehicleModel);
     formData.append('anioDesde', String(product.vehicleYear));
-    formData.append('anioHasta', String(product.vehicleYear));
+    formData.append('anioHasta', String(product.vehicleYearTo ?? product.vehicleYear));
     formData.append('motor', product.vehicleVersion);
+    formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
     formData.append('precio', String(product.price));
     formData.append('stock', String(product.stock));
     formData.append('descripcion', product.description || '');
-    formData.append('condicion', 'NUEVO');
+    formData.append('condicion', product.condition || 'ORIGINAL');
+    formData.append('requiereChasis', String(product.requiresChassis === true));
+    formData.append('compatibilityGroupsJson', product.compatibilityGroupsJson || '');
+    (product.vehiculoCatalogoIds || []).forEach((id) => {
+      formData.append('vehiculoCatalogoIds', String(id));
+    });
     formData.append('activo', 'true');
-    formData.append('imagenes', imageFile);
+    imageFiles.forEach((file) => formData.append('imagenes', file));
 
     response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}/editar`, {
       method: 'POST',
@@ -214,12 +253,16 @@ export async function updateProduct(
       compatibilidadMarca: product.vehicleBrand,
       compatibilidadModelo: product.vehicleModel,
       anioDesde: product.vehicleYear,
-      anioHasta: product.vehicleYear,
+      anioHasta: product.vehicleYearTo ?? product.vehicleYear,
       motor: product.vehicleVersion,
+      pricingMode: product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE',
       precio: product.price,
       stock: product.stock,
       descripcion: product.description || '',
-      condicion: 'NUEVO',
+      condicion: product.condition || 'ORIGINAL',
+      requiereChasis: product.requiresChassis === true,
+      vehiculoCatalogoIds: product.vehiculoCatalogoIds || [],
+      compatibilityGroupsJson: product.compatibilityGroupsJson || '',
       activo: true
     };
 
