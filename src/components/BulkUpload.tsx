@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye } from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -26,6 +27,7 @@ interface BulkUploadHistoryItem {
   warnings: number;
   errors: number;
   status: 'COMPLETADA' | 'CON_ERRORES';
+  records?: Product[];
 }
 
 const loadBulkUploadHistory = (): BulkUploadHistoryItem[] => {
@@ -183,6 +185,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   const [missingImageRows, setMissingImageRows] = useState<{ row: number; tableRow: number; sku: string; name: string }[]>([]);
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
   const [uploadHistory, setUploadHistory] = useState<BulkUploadHistoryItem[]>(() => loadBulkUploadHistory());
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<BulkUploadHistoryItem | null>(null);
 
   const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
@@ -676,7 +679,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         success: dbResult.success.length,
         warnings: stats.warnings,
         errors: stats.errors + dbResult.errors.length,
-        status: dbResult.errors.length > 0 || stats.errors > 0 ? 'CON_ERRORES' : 'COMPLETADA'
+        status: dbResult.errors.length > 0 || stats.errors > 0 ? 'CON_ERRORES' : 'COMPLETADA',
+        records: dbResult.success
       };
       setUploadHistory((prev) => {
         const next = [historyItem, ...prev].slice(0, 50);
@@ -913,9 +917,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fecha</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Registros</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Éxito</th>
-                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Alertas</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fallidos</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Estado</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Acción</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -929,7 +933,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                           </td>
                           <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', fontWeight: 700 }}>{item.total}</td>
                           <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--success))', fontWeight: 800 }}>{item.success}</td>
-                          <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--warning))', fontWeight: 800 }}>{item.warnings}</td>
                           <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--danger))', fontWeight: 800 }}>{item.errors}</td>
                           <td style={{ padding: '0.65rem 0.75rem' }}>
                             <span
@@ -943,6 +946,18 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                             >
                               {item.status === 'COMPLETADA' ? 'COMPLETADA' : 'CON ERRORES'}
                             </span>
+                          </td>
+                          <td style={{ padding: '0.65rem 0.75rem' }}>
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              title="Ver registros cargados"
+                              aria-label={`Ver registros de la carga ${item.id}`}
+                              onClick={() => setSelectedHistoryItem(item)}
+                              style={{ color: 'hsl(var(--primary))' }}
+                            >
+                              <Eye size={17} />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1959,6 +1974,46 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
             </div>
           </div>
         </div>
+      )}
+
+      {selectedHistoryItem && createPortal(
+        <div className="modal-overlay" style={{ zIndex: 200 }} onMouseDown={() => setSelectedHistoryItem(null)}>
+          <div className="modal-content" style={{ maxWidth: '1050px', width: '94%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }} onMouseDown={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h4 style={{ fontSize: '1rem', margin: 0 }}>Registros cargados</h4>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>{selectedHistoryItem.id} · {selectedHistoryItem.records?.length ?? 0} registros disponibles</p>
+              </div>
+              <button className="btn-icon" onClick={() => setSelectedHistoryItem(null)} aria-label="Cerrar detalle de carga"><XCircle size={19} /></button>
+            </div>
+            <div className="modal-body" style={{ overflow: 'auto' }}>
+              {!selectedHistoryItem.records ? (
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>Esta carga fue realizada antes de habilitar el detalle de registros.</p>
+              ) : selectedHistoryItem.records.length === 0 ? (
+                <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>No se cargaron registros exitosamente en esta carga.</p>
+              ) : (
+                <div className="log-table-container" style={{ marginTop: 0 }}>
+                  <table className="log-table">
+                    <thead><tr><th>SKU</th><th>Repuesto</th><th>Marca</th><th>Vehículo</th><th>Año</th><th>Stock</th><th>Precio</th></tr></thead>
+                    <tbody>{selectedHistoryItem.records.map((product, index) => (
+                      <tr key={`${product.id}-${index}`}>
+                        <td><code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>{product.sku}</code></td>
+                        <td>{product.name}</td>
+                        <td>{product.partBrand || '—'}</td>
+                        <td>{[product.vehicleBrand, product.vehicleModel].filter(Boolean).join(' ') || '—'}</td>
+                        <td>{product.vehicleYear}</td>
+                        <td>{product.stock}</td>
+                        <td>{product.pricingMode === 'quote_only' ? 'A cotizar' : `$${product.price.toLocaleString('es-CL')}`}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer" style={{ padding: '1rem 1.5rem' }}><button type="button" className="btn btn-secondary" onClick={() => setSelectedHistoryItem(null)}>Cerrar</button></div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {reviewingLog && (
