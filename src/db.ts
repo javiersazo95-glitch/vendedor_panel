@@ -155,7 +155,7 @@ export async function addProduct(
       if (errData && errData.message) {
         errMsg = errData.message;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     throw new Error(errMsg);
@@ -250,7 +250,7 @@ export async function updateProduct(
       if (errData && errData.message) {
         errMsg = errData.message;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     throw new Error(errMsg);
@@ -319,7 +319,7 @@ export async function saveProductsBatch(
   let allProds: Product[] = [];
   try {
     allProds = await getAllProducts();
-  } catch (e) {
+  } catch {
     // ignore
   }
 

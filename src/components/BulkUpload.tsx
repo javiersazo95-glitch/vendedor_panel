@@ -282,6 +282,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         hasImage: productHasImage(product)
       }))
       .filter((item) => !item.hasImage)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit hasImage from the result
       .map(({ hasImage, ...item }) => item)
   ), [productsWithAssignedImages]);
 
