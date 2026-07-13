@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, PlusCircle, UploadCloud, Database } from 'lucide-react';
+import { LogOut, PlusCircle, UploadCloud, Database, Menu, X } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
 import { getAllProducts, deleteProduct, addProduct, updateProduct, seedDBIfEmpty, pauseProduct, resumeProduct } from '../db';
@@ -20,7 +20,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'inventory' | 'bulk'>('inventory');
-  
+  // Sidebar is a fixed 280px column with no responsive behavior before this
+  // fix: on tablet/mobile viewports it covered most of the screen and left no
+  // usable space for the inventory table (UX-SRC-001). Below 992px it now
+  // renders as an off-canvas drawer toggled by this state.
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   // Modals visibility state
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -127,35 +132,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
     return matchesSearch && matchesCategory && matchesPartBrand && matchesVehicleBrand && matchesYear;
   });
 
+  const closeSidebarOnMobile = () => setIsSidebarOpen(false);
+
   return (
     <div className="app-container">
+      {isSidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebarOnMobile} />}
+
       {/* Sidebar Navigation */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="logo-container" style={{ margin: '0.5rem 0 2.5rem 0', justifyContent: 'center' }}>
-          <img 
-            src={logoImg} 
-            alt="RepuesTop" 
-            style={{ 
-              height: '75px', 
-              width: 'auto', 
+          <img
+            src={logoImg}
+            alt="RepuesTop"
+            style={{
+              height: '75px',
+              width: 'auto',
               objectFit: 'contain'
-            }} 
+            }}
             className="logo-sidebar-img"
           />
         </div>
 
         <nav className="nav-links">
-          <button className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`} onClick={() => setActiveView('inventory')}>
+          <button className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`} onClick={() => { setActiveView('inventory'); closeSidebarOnMobile(); }}>
             <Database size={18} />
             Inventario General
           </button>
-          
-          <button className="nav-item" onClick={() => { setEditingProduct(null); setIsManualOpen(true); }}>
+
+          <button className="nav-item" onClick={() => { setEditingProduct(null); setIsManualOpen(true); closeSidebarOnMobile(); }}>
             <PlusCircle size={18} />
             Carga Manual 1:1
           </button>
-          
-          <button className={`nav-item ${activeView === 'bulk' ? 'active' : ''}`} onClick={() => setActiveView('bulk')}>
+
+          <button className={`nav-item ${activeView === 'bulk' ? 'active' : ''}`} onClick={() => { setActiveView('bulk'); closeSidebarOnMobile(); }}>
             <UploadCloud size={18} />
             Carga Masiva
           </button>
@@ -175,9 +184,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
       <main className={`main-content ${activeView === 'bulk' ? 'main-content-bulk' : ''}`}>
         {/* Top Header Navigation */}
         <header className="top-header">
-          <div className="header-title-section">
-            <h1>{activeView === 'bulk' ? 'Carga Masiva' : 'Inventario Automotriz'}</h1>
-            <p>{activeView === 'bulk' ? 'Carga y validación masiva de stock de repuestos' : 'Monitoreo y carga masiva de stock de repuestos'}</p>
+          <div className="header-title-section" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <button
+              type="button"
+              className="mobile-menu-toggle"
+              onClick={() => setIsSidebarOpen((open) => !open)}
+              aria-label={isSidebarOpen ? 'Cerrar menú de navegación' : 'Abrir menú de navegación'}
+              aria-expanded={isSidebarOpen}
+            >
+              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+            <div>
+              <h1>{activeView === 'bulk' ? 'Carga Masiva' : 'Inventario Automotriz'}</h1>
+              <p>{activeView === 'bulk' ? 'Carga y validación masiva de stock de repuestos' : 'Monitoreo y carga masiva de stock de repuestos'}</p>
+            </div>
           </div>
 
           <div className="header-actions">

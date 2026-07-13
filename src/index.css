@@ -270,6 +270,66 @@ h1, h2, h3, h4, h5, h6 {
   z-index: 1;
 }
 
+/* Hamburger toggle: only rendered/usable below the tablet breakpoint, hidden
+   on desktop where the sidebar is always visible (UX-SRC-001). */
+.mobile-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 991px) {
+  .sidebar {
+    left: calc(-1 * var(--sidebar-width));
+    box-shadow: none;
+  }
+
+  .sidebar.sidebar-open {
+    left: 0;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 1.25rem 1.25rem 2rem;
+  }
+
+  .mobile-menu-toggle {
+    display: inline-flex;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 15;
+  }
+}
+
+@media (max-width: 640px) {
+  .top-header {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .user-info {
+    display: none;
+  }
+}
+
 .main-content-bulk {
   padding: 1.25rem 1.25rem 1.5rem;
   gap: 1rem;
