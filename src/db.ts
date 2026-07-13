@@ -47,8 +47,40 @@ function getSession(): { token: string; sellerId: string } | null {
   return { token: user.token, sellerId: user.sellerId };
 }
 
+// Shape of ProveedorProductoResponseDTO as returned by the Spring Boot backend.
+// Fields are optional/loosely typed because the backend response is not
+// validated at the boundary; mapDtoToProduct() still guards every field with
+// a fallback below.
+interface ProductDto {
+  id: string | number;
+  skuProveedor?: string;
+  referenciaOem?: string;
+  nombrePublicado?: string;
+  repuestoNombre?: string;
+  categoria?: string;
+  marcaRepuesto?: string;
+  compatibilidadMarca?: string;
+  compatibilidadModelo?: string;
+  anioDesde?: number;
+  anioHasta?: number;
+  motor?: string;
+  precio?: number;
+  stock?: number;
+  descripcion?: string;
+  imageUrls?: string[];
+  pricingMode?: string;
+  condicion?: string;
+  requiereChasis?: boolean;
+  vehiculoCatalogoIds?: number[];
+  compatibilityGroupsJson?: string;
+  updatedAt?: string;
+  createdAt?: string;
+  activo?: boolean;
+  pausado?: boolean;
+}
+
 // Helper to map Spring Boot DTO (ProveedorProductoResponseDTO) to frontend Product interface
-function mapDtoToProduct(dto: any): Product {
+function mapDtoToProduct(dto: ProductDto): Product {
   return {
     id: String(dto.id),
     sku: dto.skuProveedor || '',
@@ -360,11 +392,11 @@ export async function saveProductsBatch(
             savedProd = await addProduct(prodData, prodData.imageFile);
             result.success.push(savedProd);
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           result.errors.push({
             row: rowNumber,
             sku: prodData.sku,
-            error: err.message || 'Error desconocido al procesar la fila.'
+            error: err instanceof Error ? err.message : 'Error desconocido al procesar la fila.'
           });
         } finally {
           completedCount++;

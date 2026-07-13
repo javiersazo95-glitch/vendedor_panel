@@ -750,8 +750,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
       await onSave(productPayload, imageFiles.length > 0 ? imageFiles : null);
       onClose();
-    } catch (err: any) {
-      setError(err.message || 'Error al guardar el producto.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al guardar el producto.');
     } finally {
       setSaving(false);
     }

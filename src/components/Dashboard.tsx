@@ -48,9 +48,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
       } else {
         setLastUpdated(null);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching inventory products:', err);
-      setError(err.message || 'Error al obtener el inventario desde el servidor.');
+      setError(err instanceof Error ? err.message : 'Error al obtener el inventario desde el servidor.');
     }
   };
 
@@ -65,8 +65,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
     try {
       await deleteProduct(id);
       await fetchProducts();
-    } catch (err: any) {
-      alert(err.message || 'Error al eliminar producto.');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Error al eliminar producto.');
     }
   };
 
@@ -78,8 +78,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
         await pauseProduct(product.id);
       }
       await fetchProducts();
-    } catch (err: any) {
-      alert(err.message || 'Error al actualizar la publicación.');
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Error al actualizar la publicación.');
     }
   };
 

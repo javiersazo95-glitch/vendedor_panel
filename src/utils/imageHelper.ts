@@ -1,7 +1,19 @@
-const rawApiBaseUrl = import.meta.env.VITE_API_URL || 
-  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? 'http://localhost:8080'
-    : 'https://api.repuestop.cl');
+const isLocalHost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+// Un entorno local sin VITE_API_URL asume el backend Spring Boot por defecto en
+// localhost:8080. Cualquier otro entorno (staging, preview, produccion) DEBE
+// declarar VITE_API_URL explicitamente: adivinar produccion en silencio arriesga
+// leer/escribir contra datos reales de vendedores desde un entorno de pruebas
+// mal configurado (ver ENG-SRC-008).
+if (!import.meta.env.VITE_API_URL && !isLocalHost) {
+  throw new Error(
+    'VITE_API_URL no esta definido. Configura esta variable de entorno antes de desplegar fuera de localhost.'
+  );
+}
+
+const rawApiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export const API_BASE_URL = rawApiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
 
