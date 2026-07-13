@@ -306,7 +306,7 @@ export function resumeProduct(id: string): Promise<Product> {
 
 // Batch save for bulk upload
 export async function saveProductsBatch(
-  productsData: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | (File | Blob)[] | null })[],
+  productsData: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | (File | Blob)[] | null; sourceRow?: number })[],
   overwriteExisting: boolean = true,
   onProgress?: (percent: number) => void
 ): Promise<BatchResult> {
@@ -330,7 +330,10 @@ export async function saveProductsBatch(
     const chunk = productsData.slice(i, i + batchSize);
     await Promise.all(
       chunk.map(async (prodData, offset) => {
-        const rowNumber = i + offset + 2; // Row 1 is header
+        // Prefer the row number from the original file (sourceRow): productsData
+        // may already have had invalid rows filtered out during analysis, so the
+        // array index no longer matches the real row in the uploaded Excel/CSV.
+        const rowNumber = prodData.sourceRow ?? i + offset + 2; // Row 1 is header
         try {
           const existing = allProds.find(p => p.sku.trim().toUpperCase() === prodData.sku.trim().toUpperCase());
           let savedProd: Product;
