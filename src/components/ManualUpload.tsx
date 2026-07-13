@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
 import { API_BASE_URL, resolveImageUri } from '../utils/imageHelper';
+import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface ManualUploadProps {
   isOpen: boolean;
@@ -590,6 +591,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     };
   }, [isOpen, vehicleBrandCatalog, compatibilityCatalogKey]);
 
+  const dialogRef = useFocusTrap(isOpen);
+
   if (!isOpen) return null;
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -771,13 +774,13 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content manual-upload-modal">
+      <div className="modal-content manual-upload-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-label={editProduct ? 'Editar producto' : 'Crear producto'}>
         <div className="modal-header manual-upload-header">
           <h3>
             <span className="manual-upload-title-dot"></span>
             {editProduct ? 'Editar producto' : 'Crear producto'}
           </h3>
-          <button className="btn-icon" onClick={onClose}>
+          <button className="btn-icon" onClick={onClose} aria-label="Cerrar formulario de producto">
             <X size={20} />
           </button>
         </div>

@@ -242,6 +242,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                   <input
                     id="email"
                     type="email"
+                    autoComplete="username"
                     className="form-control"
                     placeholder="correo@empresa.cl"
                     value={email}
@@ -269,6 +270,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                   <input
                     id="password"
                     type="password"
+                    autoComplete="current-password"
                     className="form-control"
                     placeholder="•••••"
                     value={password}

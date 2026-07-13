@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye } from 'lucide-react';
 import type { Product, BatchResult } from '../db';
 import { saveProductsBatch, getAllProducts } from '../db';
+import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface BulkUploadProps {
   isOpen: boolean;
@@ -25,6 +26,10 @@ interface BulkUploadHistoryItem {
   errors: number;
   status: 'COMPLETADA' | 'CON_ERRORES';
   records?: Product[];
+  // SKUs saved with a generic placeholder photo instead of a real one, so the
+  // vendor can find and fix them later — the history previously had no way to
+  // tell these apart from products with a real photo (UX-SRC-007).
+  genericImageSkus?: string[];
 }
 
 const loadBulkUploadHistory = (): BulkUploadHistoryItem[] => {
@@ -287,6 +292,11 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   ), [productsWithAssignedImages]);
 
   const highlightedMissingImageSkus = new Set(missingImageRows.map((item) => item.sku));
+
+  const mainDialogRef = useFocusTrap(isOpen && !embedded);
+  const folderConfirmDialogRef = useFocusTrap(pendingImageFiles !== null);
+  const reviewSkuDialogRef = useFocusTrap(reviewingLogId !== null);
+  const historyDetailDialogRef = useFocusTrap(selectedHistoryItem !== null);
 
   if (!isOpen) return null;
 
@@ -633,7 +643,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   };
 
   // Guarda en el backend los productos que ya pasaron el análisis
-  const handleStartUpload = async (productsOverride?: PreparedProduct[]) => {
+  const handleStartUpload = async (productsOverride?: PreparedProduct[], genericImageSkus?: Set<string>) => {
     const productsToSave = productsOverride ?? preparedProducts;
     if (productsToSave.length === 0 || stats.errors > 0) return;
 
@@ -652,7 +662,12 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         dbResult.success.forEach((prod) => {
           updated = updated.map((l) => (
             l.sku === prod.sku && l.status === 'SUCCESS'
-              ? { ...l, message: 'Producto importado exitosamente.' }
+              ? {
+                ...l,
+                message: genericImageSkus?.has(prod.sku)
+                  ? 'Producto importado con imagen genérica; sube una foto real cuando puedas.'
+                  : 'Producto importado exitosamente.'
+              }
               : l
           ));
         });
@@ -683,7 +698,10 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         warnings: stats.warnings,
         errors: stats.errors + dbResult.errors.length,
         status: dbResult.errors.length > 0 || stats.errors > 0 ? 'CON_ERRORES' : 'COMPLETADA',
-        records: dbResult.success
+        records: dbResult.success,
+        genericImageSkus: genericImageSkus && genericImageSkus.size > 0
+          ? dbResult.success.filter((p) => genericImageSkus.has(p.sku)).map((p) => p.sku)
+          : undefined
       };
       setUploadHistory((prev) => {
         const next = [historyItem, ...prev].slice(0, 50);
@@ -738,15 +756,19 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
       setProcessing(true);
       setMissingImageRows([]);
 
+      // Track which SKUs get a generic placeholder instead of a real photo,
+      // so the log/history can tell them apart afterwards (UX-SRC-007) — once
+      // imageFile is set below, there's no other way to distinguish them.
+      const genericImageSkus = new Set<string>();
       const finalProducts = continueWithGenericImage
-        ? await Promise.all(productsWithAssignedImages.map(async (product) => (
-          productHasImage(product)
-            ? product
-            : { ...product, imageFile: await createGenericProductImage(product) }
-        )))
+        ? await Promise.all(productsWithAssignedImages.map(async (product) => {
+          if (productHasImage(product)) return product;
+          genericImageSkus.add(product.sku);
+          return { ...product, imageFile: await createGenericProductImage(product) };
+        }))
         : productsWithAssignedImages;
 
-      await handleStartUpload(finalProducts);
+      await handleStartUpload(finalProducts, genericImageSkus);
     } catch (err: any) {
       setLogs((prev) => [...prev, { id: `${Date.now()}-generic-image-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `No se pudo generar la imagen genérica: ${err?.message || 'error desconocido'}` }]);
       setProcessing(false);
@@ -841,6 +863,10 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     <div className={embedded ? "bulk-upload-page" : "modal-overlay"}>
       <div
         className={embedded ? "bulk-upload-page-content" : "modal-content"}
+        ref={embedded ? undefined : mainDialogRef}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
+        aria-label={embedded ? undefined : 'Cargar inventario masivo'}
         style={embedded
           ? { width: '100%', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 118px)' }
           : { maxWidth: '1240px', width: '95%', maxHeight: '92vh' }
@@ -857,7 +883,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
             </p>
           </div>
           {!embedded && (
-            <button className="btn-icon" onClick={onClose} disabled={processing}>
+            <button className="btn-icon" onClick={onClose} disabled={processing} aria-label="Cerrar carga masiva">
               <XCircle size={20} />
             </button>
           )}
@@ -1679,7 +1705,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
       {pendingImageFiles && (
         <div className="modal-overlay" style={{ zIndex: 60 }}>
-          <div className="modal-content" style={{ maxWidth: '360px', width: '90%', padding: '1.5rem' }}>
+          <div className="modal-content" ref={folderConfirmDialogRef} role="dialog" aria-modal="true" aria-label="Confirmar imágenes de carpeta" style={{ maxWidth: '360px', width: '90%', padding: '1.5rem' }}>
             <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
               <FolderOpen size={16} style={{ color: 'hsl(var(--accent))' }} />
               Confirmar Imágenes
@@ -1701,11 +1727,16 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
       {selectedHistoryItem && createPortal(
         <div className="modal-overlay" style={{ zIndex: 200 }} onMouseDown={() => setSelectedHistoryItem(null)}>
-          <div className="modal-content" style={{ maxWidth: '1050px', width: '94%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }} onMouseDown={(event) => event.stopPropagation()}>
+          <div className="modal-content" ref={historyDetailDialogRef} role="dialog" aria-modal="true" aria-label="Registros cargados" style={{ maxWidth: '1050px', width: '94%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h4 style={{ fontSize: '1rem', margin: 0 }}>Registros cargados</h4>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>{selectedHistoryItem.id} · {selectedHistoryItem.records?.length ?? 0} registros disponibles</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                  {selectedHistoryItem.id} · {selectedHistoryItem.records?.length ?? 0} registros disponibles
+                  {selectedHistoryItem.genericImageSkus && selectedHistoryItem.genericImageSkus.length > 0 && (
+                    <> · <span style={{ color: 'hsl(var(--warning))', fontWeight: 600 }}>{selectedHistoryItem.genericImageSkus.length} con imagen genérica</span></>
+                  )}
+                </p>
               </div>
               <button className="btn-icon" onClick={() => setSelectedHistoryItem(null)} aria-label="Cerrar detalle de carga"><XCircle size={19} /></button>
             </div>
@@ -1717,7 +1748,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
               ) : (
                 <div className="log-table-container" style={{ marginTop: 0 }}>
                   <table className="log-table">
-                    <thead><tr><th>SKU</th><th>Repuesto</th><th>Marca</th><th>Vehículo</th><th>Año</th><th>Stock</th><th>Precio</th></tr></thead>
+                    <thead><tr><th>SKU</th><th>Repuesto</th><th>Marca</th><th>Vehículo</th><th>Año</th><th>Stock</th><th>Precio</th><th>Foto</th></tr></thead>
                     <tbody>{selectedHistoryItem.records.map((product, index) => (
                       <tr key={`${product.id}-${index}`}>
                         <td><code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>{product.sku}</code></td>
@@ -1727,6 +1758,11 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                         <td>{product.vehicleYear}</td>
                         <td>{product.stock}</td>
                         <td>{product.pricingMode === 'quote_only' ? 'A cotizar' : `$${product.price.toLocaleString('es-CL')}`}</td>
+                        <td>
+                          {selectedHistoryItem.genericImageSkus?.includes(product.sku)
+                            ? <span className="badge badge-warning">Genérica</span>
+                            : <span className="badge badge-success">Real</span>}
+                        </td>
                       </tr>
                     ))}</tbody>
                   </table>
@@ -1741,13 +1777,13 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
       {reviewingLog && (
         <div className="modal-overlay" style={{ zIndex: 60 }}>
-          <div className="modal-content" style={{ maxWidth: '380px', width: '90%', padding: '1.5rem' }}>
+          <div className="modal-content" ref={reviewSkuDialogRef} role="dialog" aria-modal="true" aria-label="Revisar SKU" style={{ maxWidth: '380px', width: '90%', padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
               <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <SearchCheck size={16} style={{ color: 'hsl(var(--primary))' }} />
                 Revisar SKU
               </h4>
-              <button className="btn-icon" onClick={closeReviewSku} style={{ padding: 0 }}>
+              <button className="btn-icon" onClick={closeReviewSku} style={{ padding: 0 }} aria-label="Cerrar revisión de SKU">
                 <XCircle size={18} />
               </button>
             </div>

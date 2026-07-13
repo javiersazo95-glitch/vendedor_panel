@@ -12,7 +12,11 @@
   --bg-sidebar: #ffffff;
   --text-primary: #0f172a;
   --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  /* #64748b gives ~4.75:1 on --bg-card/--bg-app, meeting WCAG AA 1.4.3 for
+     normal text. The previous #94a3b8 (~2.56:1) failed AA while being used
+     as real, readable text in ~20 places, not just decorative hints
+     (UX-SRC-004). */
+  --text-muted: #64748b;
   --border-color: rgba(226, 232, 240, 0.8);
   
   --primary: 217 78% 48%;    /* Azul Corporativo RespuesTop (#1b64da) */
@@ -264,6 +268,66 @@ h1, h2, h3, h4, h5, h6 {
   gap: 2.25rem;
   min-width: 0;
   z-index: 1;
+}
+
+/* Hamburger toggle: only rendered/usable below the tablet breakpoint, hidden
+   on desktop where the sidebar is always visible (UX-SRC-001). */
+.mobile-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 991px) {
+  .sidebar {
+    left: calc(-1 * var(--sidebar-width));
+    box-shadow: none;
+  }
+
+  .sidebar.sidebar-open {
+    left: 0;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 1.25rem 1.25rem 2rem;
+  }
+
+  .mobile-menu-toggle {
+    display: inline-flex;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 15;
+  }
+}
+
+@media (max-width: 640px) {
+  .top-header {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .user-info {
+    display: none;
+  }
 }
 
 .main-content-bulk {
@@ -688,6 +752,72 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 4px 15px rgba(239, 68, 68, 0.2);
 }
 
+/* Base style for icon-only action buttons (edit/pause/delete/close across
+   InventoryTable, BulkUpload, ManualUpload). Previously only the narrow
+   ".manual-upload-header .btn-icon" variant had any rule, so most instances
+   fell back to unstyled browser defaults with no consistent size or focus
+   indicator (UX-SRC-009). Meets the 24x24px minimum target size. */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Empty state shown by InventoryTable when a filter/search matches nothing.
+   The classes existed in the markup with zero matching CSS anywhere in the
+   project, so this frequently-seen state rendered with no spacing, color or
+   typography from the rest of the design system (UX-SRC-008). */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 4rem 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.empty-state h3 {
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+  max-width: 32ch;
+}
+
+.empty-state-icon {
+  color: var(--text-muted);
+}
+
 .btn-danger:hover {
   background: hsl(var(--danger) / 0.9);
   box-shadow: 0 8px 20px rgba(239, 68, 68, 0.35);
@@ -793,24 +923,35 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.02em;
 }
 
+/* Badge text uses fixed, darker (light theme) / hsl() (dark theme) colors
+   instead of hsl(var(--success|warning|danger)) directly: the saturated
+   token color on its own *-bg tint measured ~1.9:1 to 3.4:1 in light theme,
+   well under the 4.5:1 minimum for this 0.7rem badge text, which communicates
+   stock/status information vendors rely on (UX-SRC-003). Dark theme already
+   used a bright variant of the token on a dark background and was not
+   flagged, so it keeps the original hsl() color there. */
 .badge-success {
   background: var(--success-bg);
-  color: hsl(var(--success));
+  color: #166534;
   border: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .badge-warning {
   background: var(--warning-bg);
-  color: hsl(var(--warning));
+  color: #92400e;
   border: 1px solid rgba(245, 158, 11, 0.2);
   animation: pulseWarning 2s infinite;
 }
 
 .badge-danger {
   background: var(--danger-bg);
-  color: hsl(var(--danger));
+  color: #b91c1c;
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
+
+[data-theme="dark"] .badge-success { color: hsl(var(--success)); }
+[data-theme="dark"] .badge-warning { color: hsl(var(--warning)); }
+[data-theme="dark"] .badge-danger { color: hsl(var(--danger)); }
 
 /* Modals & Overlays - Glass Blur */
 .modal-overlay {
