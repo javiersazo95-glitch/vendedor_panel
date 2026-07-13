@@ -1,7 +1,19 @@
-const rawApiBaseUrl = import.meta.env.VITE_API_URL || 
-  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? 'http://localhost:8080'
-    : 'https://api.repuestop.cl');
+const isLocalHost =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+// Un entorno local sin VITE_API_URL asume el backend Spring Boot por defecto en
+// localhost:8080. Cualquier otro entorno (staging, preview, produccion) DEBE
+// declarar VITE_API_URL explicitamente: adivinar produccion en silencio arriesga
+// leer/escribir contra datos reales de vendedores desde un entorno de pruebas
+// mal configurado (ver ENG-SRC-008).
+if (!import.meta.env.VITE_API_URL && !isLocalHost) {
+  throw new Error(
+    'VITE_API_URL no esta definido. Configura esta variable de entorno antes de desplegar fuera de localhost.'
+  );
+}
+
+const rawApiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export const API_BASE_URL = rawApiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
 
@@ -58,50 +70,4 @@ export function resolveImageUri(uri: string | undefined): string {
 
   // Return any other valid URLs (e.g. Unsplash, external CDN links) as-is
   return uri;
-}
-
-/**
- * Uploads a product image to the backend Spring Boot storage endpoint.
- * Sends the file as multipart/form-data.
- * Returns the resolved relative proxy URL (e.g. /api/v1/uploads/drive/1CtTHNT...).
- */
-export async function uploadProductImage(file: Blob | File, filename: string): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', file, filename);
-
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/productos/imagenes`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Error de subida: ${response.status} ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  let relativePath = '';
-
-  if (typeof data === 'string') {
-    relativePath = data;
-  } else if (data && typeof data === 'object') {
-    // Check multiple possible key fields returned by backend
-    const possibleKeys = ['documentoUrl', 'imageUrl', 'url', 'path', 'fileId', 'id'];
-    for (const key of possibleKeys) {
-      if (data[key]) {
-        relativePath = data[key];
-        break;
-      }
-    }
-  }
-
-  // Format fileId to standard proxy URL path if only ID was returned
-  if (relativePath && !relativePath.startsWith('/') && !relativePath.startsWith('http')) {
-    relativePath = `/api/v1/uploads/drive/${relativePath}`;
-  }
-
-  if (!relativePath) {
-    throw new Error('La respuesta del servidor no contiene una ruta de imagen válida.');
-  }
-
-  return relativePath;
 }

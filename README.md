@@ -1,73 +1,44 @@
-# React + TypeScript + Vite
+# RepuesTop — Panel de Vendedor
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Panel web para que los vendedores de RepuesTop administren su catálogo de repuestos: alta manual de productos (1:1), carga masiva desde Excel/CSV, gestión de stock y precios, e imágenes de producto. Es un frontend puro (React + TypeScript + Vite); toda la persistencia y autenticación real vive en un backend Spring Boot externo que **no** forma parte de este repositorio.
 
-Currently, two official plugins are available:
+## Requisitos previos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 18+ y npm.
+- El backend Spring Boot de RepuesTop corriendo y accesible (por defecto se asume `http://localhost:8080` en desarrollo local).
+- Un Google OAuth Client ID habilitado para este proyecto, si se va a usar el login con Google.
 
-## React Compiler
+## Configuración
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Copiar `.env.example` a `.env.local` y completar:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+VITE_API_URL=http://localhost:8080      # URL base del backend Spring Boot
+VITE_GOOGLE_CLIENT_ID=<tu-client-id>    # Client ID de Google OAuth
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+En `localhost`/`127.0.0.1`, si `VITE_API_URL` no está definido, la app usa `http://localhost:8080` por defecto. En cualquier otro entorno (staging, preview, producción), `VITE_API_URL` es obligatorio: si falta, la app falla al iniciar en vez de apuntar silenciosamente a producción.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Comandos
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+npm install       # instalar dependencias
+npm run dev       # servidor de desarrollo con HMR
+npm run build     # type-check (tsc -b) + build de producción a dist/
+npm run lint      # ESLint
+npm run test      # pruebas unitarias (Vitest)
+npm run preview   # sirve el build de dist/ localmente
+```
+
+## Flujos principales
+
+- **Login** (`src/components/Auth.tsx`): correo/contraseña o Google OAuth contra el backend.
+- **Carga manual 1:1** (`src/components/ManualUpload.tsx`): alta o edición de un producto individual, con catálogo de vehículos y cálculo de comisión.
+- **Carga masiva** (`src/components/BulkUpload.tsx`): importación desde plantilla Excel/CSV, con asignación de imágenes desde ZIP/carpeta y generación de imagen genérica cuando no hay foto real.
+- **Inventario** (`src/components/InventoryTable.tsx`, `src/components/Dashboard.tsx`): listado, filtros, pausar/reanudar y eliminar productos.
+
+## Estructura
+
+- `src/db.ts` — capa de acceso a la API del backend (productos, batch de carga masiva).
+- `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).
+- `src/utils/imageHelper.ts` — resolución de URLs de imágenes y `API_BASE_URL`.
