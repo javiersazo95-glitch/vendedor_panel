@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LogOut, PlusCircle, UploadCloud, Database } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
-import { getAllProducts, deleteProduct, addProduct, updateProduct, seedDBIfEmpty, pauseProduct, resumeProduct } from '../db';
+import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct } from '../db';
 import { KPIs } from './KPIs';
 import { Filters } from './Filters';
 import { InventoryTable } from './InventoryTable';
@@ -36,7 +36,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
   const fetchProducts = async () => {
     setError(null);
     try {
-      await seedDBIfEmpty();
       const list = await getAllProducts();
       const activeList = list.filter((p) => p.activo !== false);
       setProducts(activeList);

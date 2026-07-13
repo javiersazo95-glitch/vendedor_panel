@@ -5,34 +5,6 @@ import { API_BASE_URL } from '../utils/imageHelper';
 import loginHero from '../assets/login_hero.png';
 import logoImg from '../assets/logo.png';
 
-// Icono del Logotipo Oficial de RespuesTop (Engranaje + Auto Deportivo + Checkmark)
-export const LogoIcon: React.FC<{ size?: number }> = () => (
-  <svg width="42" height="34" viewBox="0 0 46 38" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-    {/* Engranaje de fondo */}
-    <path d="M14 6C14 4.89543 14.8954 4 16 4H18C19.1046 4 20 4.89543 20 6V8C20 9.10457 19.1046 10 18 10H16C14.8954 10 14 9.10457 14 8V6Z" fill="#1b64da" />
-    <path d="M14 22C14 20.8954 14.8954 20 16 20H18C19.1046 20 20 20.8954 20 22V24C20 25.1046 19.1046 26 18 26H16C14.8954 26 14 25.1046 14 24V22Z" fill="#1b64da" />
-    <path d="M6 14C4.89543 14 4 14.8954 4 16V18C4 19.1046 4.89543 20 6 20H8C9.10457 20 10 19.1046 10 18V16C10 14.8954 9.10457 14 8 14H6Z" fill="#1b64da" />
-    <path d="M22 14C20.8954 14 20 14.8954 20 16V18C20 19.1046 20.8954 20 22 20H24C25.1046 20 26 19.1046 26 18V16C26 14.8954 25.1046 14 24 14H22Z" fill="#1b64da" />
-    
-    <path d="M8.5 8.5C7.7268 7.7268 7.7268 6.4732 8.5 5.7L9.9 4.3C10.6732 3.5268 11.9268 3.5268 12.7 4.3L14.1 5.7C14.8732 6.4732 14.8732 7.7268 14.1 8.5L12.7 9.9C11.9268 10.6732 10.6732 10.6732 9.9 9.9L8.5 8.5Z" fill="#1b64da" />
-    <path d="M19.9 19.9C19.1268 19.1268 19.1268 17.8732 19.9 17.1L21.3 15.7C22.0732 14.9268 23.3268 14.9268 24.1 15.7L25.5 17.1C26.2732 17.8732 26.2732 19.1268 25.5 19.9L24.1 21.3C23.3268 22.0732 22.0732 22.0732 21.3 21.3L19.9 19.9Z" fill="#1b64da" />
-    <path d="M8.5 17.1C7.7268 17.8732 7.7268 19.1268 8.5 19.9L9.9 21.3C10.6732 22.0732 11.9268 22.0732 12.7 21.3L14.1 19.9C14.8732 19.1268 14.8732 17.8732 14.1 17.1L12.7 15.7C11.9268 14.9268 10.6732 14.9268 9.9 15.7L8.5 17.1Z" fill="#1b64da" />
-    
-    <circle cx="17" cy="17" r="7" fill="#1b64da" />
-    <circle cx="17" cy="17" r="4.5" fill="#f8fafc" />
-    
-    {/* Silueta del auto deportivo */}
-    <path d="M12 28C10.3431 28 9 29.3431 9 31C9 32.6569 10.3431 34 12 34C13.6569 34 15 32.6569 15 31C15 29.3431 13.6569 28 12 28Z" fill="#0f172a" stroke="#1b64da" strokeWidth="1.5" />
-    <path d="M34 28C32.3431 28 31 29.3431 31 31C31 32.6569 32.3431 34 34 34C35.6569 34 37 32.6569 37 31C37 29.3431 35.6569 28 34 28Z" fill="#0f172a" stroke="#1b64da" strokeWidth="1.5" />
-    
-    <path d="M6 31H9C9.5 27 12 26 15 26H28C31 26 33.5 27 34 31H39C40.5 31 41 30 41 29C41 27 39 25 35 24C34.5 23.5 33 21 31 20H19C15 20 12.5 23 11 25C9.5 25.5 6 26.5 6 28C6 29.5 5.5 31 6 31Z" fill="#1b64da" />
-    <path d="M19.5 21H29.5L31.5 25H17.5L19.5 21Z" fill="#ffffff" />
-    
-    {/* Tick checkmark de validación */}
-    <path d="M14.5 17L16.5 19L20 15" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
 interface AuthProps {
   onLogin: (email: string, role: string, token: string, sellerId: string) => void;
 }

@@ -76,10 +76,6 @@ function mapDtoToProduct(dto: any): Product {
   };
 }
 
-export async function seedDBIfEmpty(): Promise<void> {
-  // No-op for real backend database
-}
-
 export async function getAllProducts(): Promise<Product[]> {
   const session = getSession();
   if (!session) return [];
@@ -315,11 +311,21 @@ export async function saveProductsBatch(
     errors: [],
   };
 
-  let allProds: Product[] = [];
+  let allProds: Product[];
   try {
     allProds = await getAllProducts();
   } catch (e) {
-    // ignore
+    // Abort the whole batch instead of silently treating every row as new:
+    // proceeding with an empty inventory here would misclassify existing
+    // SKUs as new products and create duplicates (see ENG-SRC-004).
+    return {
+      success: [],
+      errors: productsData.map((prodData, index) => ({
+        row: index + 2,
+        sku: prodData.sku,
+        error: 'No se pudo verificar el inventario existente, intenta nuevamente.',
+      })),
+    };
   }
 
   let completedCount = 0;
