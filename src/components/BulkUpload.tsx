@@ -720,12 +720,19 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   };
 
   const handleProceedUpload = async (continueWithGenericImage = false) => {
+    // Guard set synchronously, before any await: handleStartUpload only
+    // flips `processing` after generating generic images (an async step),
+    // so a fast double-click could otherwise start saveProductsBatch twice
+    // for the same batch and create duplicate products (QA-SRC-005).
+    if (processing) return;
+
     try {
       if (currentMissingImageRows.length > 0 && !continueWithGenericImage) {
         setMissingImageRows(currentMissingImageRows);
         return;
       }
 
+      setProcessing(true);
       setMissingImageRows([]);
 
       const finalProducts = continueWithGenericImage
@@ -1599,7 +1606,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                 <button type="button" className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => setMissingImageRows([])}>
                   Volver a asignar
                 </button>
-                <button type="button" className="btn btn-primary" onClick={() => handleProceedUpload(true)}>
+                <button type="button" className="btn btn-primary" onClick={() => handleProceedUpload(true)} disabled={processing}>
                   Continuar con imagen genérica
                 </button>
               </>
@@ -1612,6 +1619,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                   type="button"
                   className="btn btn-primary"
                   onClick={() => handleProceedUpload()}
+                  disabled={processing}
                   style={currentMissingImageRows.length > 0 ? {
                     background: 'hsl(var(--danger))',
                     borderColor: 'hsl(var(--danger))',
