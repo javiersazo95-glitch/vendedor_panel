@@ -847,7 +847,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
             </p>
           </div>
           {!embedded && (
-            <button className="btn-icon" onClick={onClose} disabled={processing}>
+            <button className="btn-icon" onClick={onClose} disabled={processing} aria-label="Cerrar carga masiva">
               <XCircle size={20} />
             </button>
           )}
@@ -2024,7 +2024,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                 <SearchCheck size={16} style={{ color: 'hsl(var(--primary))' }} />
                 Revisar SKU
               </h4>
-              <button className="btn-icon" onClick={closeReviewSku} style={{ padding: 0 }}>
+              <button className="btn-icon" onClick={closeReviewSku} style={{ padding: 0 }} aria-label="Cerrar revisión de SKU">
                 <XCircle size={18} />
               </button>
             </div>

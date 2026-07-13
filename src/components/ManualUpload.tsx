@@ -769,7 +769,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
             <span className="manual-upload-title-dot"></span>
             {editProduct ? 'Editar producto' : 'Crear producto'}
           </h3>
-          <button className="btn-icon" onClick={onClose}>
+          <button className="btn-icon" onClick={onClose} aria-label="Cerrar formulario de producto">
             <X size={20} />
           </button>
         </div>
