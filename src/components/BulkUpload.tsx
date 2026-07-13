@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import type { Product, BatchResult } from '../db';
 import { saveProductsBatch, getAllProducts } from '../db';
+import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface BulkUploadProps {
   isOpen: boolean;
@@ -289,6 +290,11 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   ), [productsWithAssignedImages]);
 
   const highlightedMissingImageSkus = new Set(missingImageRows.map((item) => item.sku));
+
+  const mainDialogRef = useFocusTrap(isOpen && !embedded);
+  const folderConfirmDialogRef = useFocusTrap(pendingImageFiles !== null);
+  const reviewSkuDialogRef = useFocusTrap(reviewingLogId !== null);
+  const historyDetailDialogRef = useFocusTrap(selectedHistoryItem !== null);
 
   if (!isOpen) return null;
 
@@ -831,6 +837,10 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     <div className={embedded ? "bulk-upload-page" : "modal-overlay"}>
       <div
         className={embedded ? "bulk-upload-page-content" : "modal-content"}
+        ref={embedded ? undefined : mainDialogRef}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
+        aria-label={embedded ? undefined : 'Cargar inventario masivo'}
         style={embedded
           ? { width: '100%', display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 118px)' }
           : { maxWidth: '1240px', width: '95%', maxHeight: '92vh' }
@@ -1668,7 +1678,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
       {pendingImageFiles && (
         <div className="modal-overlay" style={{ zIndex: 60 }}>
-          <div className="modal-content" style={{ maxWidth: '360px', width: '90%', padding: '1.5rem' }}>
+          <div className="modal-content" ref={folderConfirmDialogRef} role="dialog" aria-modal="true" aria-label="Confirmar imágenes de carpeta" style={{ maxWidth: '360px', width: '90%', padding: '1.5rem' }}>
             <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
               <FolderOpen size={16} style={{ color: 'hsl(var(--accent))' }} />
               Confirmar Imágenes
@@ -1978,7 +1988,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
       {selectedHistoryItem && createPortal(
         <div className="modal-overlay" style={{ zIndex: 200 }} onMouseDown={() => setSelectedHistoryItem(null)}>
-          <div className="modal-content" style={{ maxWidth: '1050px', width: '94%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }} onMouseDown={(event) => event.stopPropagation()}>
+          <div className="modal-content" ref={historyDetailDialogRef} role="dialog" aria-modal="true" aria-label="Registros cargados" style={{ maxWidth: '1050px', width: '94%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <h4 style={{ fontSize: '1rem', margin: 0 }}>Registros cargados</h4>
@@ -2018,7 +2028,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
       {reviewingLog && (
         <div className="modal-overlay" style={{ zIndex: 60 }}>
-          <div className="modal-content" style={{ maxWidth: '380px', width: '90%', padding: '1.5rem' }}>
+          <div className="modal-content" ref={reviewSkuDialogRef} role="dialog" aria-modal="true" aria-label="Revisar SKU" style={{ maxWidth: '380px', width: '90%', padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
               <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <SearchCheck size={16} style={{ color: 'hsl(var(--primary))' }} />
