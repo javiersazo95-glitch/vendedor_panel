@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
 import { clearSession, getStoredSession, saveSession, type UserSession } from './utils/session';
@@ -16,6 +16,15 @@ function App() {
     setSession(null);
     clearSession();
   };
+
+  useEffect(() => {
+    // apiFetch() clears the session and fires this event on any 401/403, so a
+    // vendor whose token expires mid-session is bounced back to the login
+    // screen instead of being stuck retrying with a dead token (QA-SRC-004).
+    const onSessionExpired = () => setSession(null);
+    window.addEventListener('repuestop:session-expired', onSessionExpired);
+    return () => window.removeEventListener('repuestop:session-expired', onSessionExpired);
+  }, []);
 
   return (
     <>

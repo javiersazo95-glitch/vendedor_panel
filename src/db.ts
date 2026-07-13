@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './utils/imageHelper';
+import { apiFetch } from './utils/apiFetch';
 import { getStoredSession } from './utils/session';
 
 export interface Product {
@@ -84,7 +85,7 @@ export async function getAllProducts(): Promise<Product[]> {
   const session = getSession();
   if (!session) return [];
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${session.token}`,
@@ -141,7 +142,7 @@ export async function addProduct(
   formData.append('activo', 'true');
   imageFiles.forEach((file) => formData.append('imagenes', file));
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
     method: 'POST',
     headers,
     body: formData
@@ -205,7 +206,7 @@ export async function updateProduct(
     formData.append('activo', 'true');
     imageFiles.forEach((file) => formData.append('imagenes', file));
 
-    response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}/editar`, {
+    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}/editar`, {
       method: 'POST',
       headers,
       body: formData
@@ -235,7 +236,7 @@ export async function updateProduct(
       activo: true
     };
 
-    response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}`, {
+    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(payload)
@@ -263,7 +264,7 @@ export async function deleteProduct(id: string): Promise<void> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${session.token}`
@@ -280,7 +281,7 @@ async function setProductPaused(id: string, paused: boolean): Promise<Product> {
   if (!session) throw new Error('No hay sesión activa.');
 
   const action = paused ? 'pausa' : 'retomar';
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}/${action}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}/${action}`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${session.token}`,
