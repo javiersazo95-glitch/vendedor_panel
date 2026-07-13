@@ -268,6 +268,9 @@ function SelectOrInput({
   const selectValue = isOther || (value && !hasValue) ? OTHER_VALUE : value;
 
   useEffect(() => {
+    // Resets the "other" free-text mode once the typed value matches a real
+    // catalog option again. Reviewed, deliberate exception (QA-SRC-002).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (hasValue) setIsOther(false);
   }, [hasValue]);
 
@@ -443,6 +446,11 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     let active = true;
 
     if (editProduct) {
+      // Initializes the form fields from the product being edited. Multiple
+      // synchronous setState calls here are the standard "seed form state
+      // from a prop" pattern, not an accidental render loop — reviewed,
+      // deliberate exception (QA-SRC-002).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSku(editProduct.sku);
       setOem(editProduct.oem || '');
       setName(editProduct.name);

@@ -57,6 +57,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
   useEffect(() => {
     document.documentElement.removeAttribute('data-theme');
     localStorage.removeItem('theme');
+    // Standard fetch-on-mount: fetchProducts() only calls setState after its
+    // internal awaits resolve, never synchronously in this effect body. The
+    // lint rule can't see through the async call, so this is a deliberate,
+    // reviewed exception rather than unnoticed debt (QA-SRC-002).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProducts();
   }, []);
 

@@ -1,9 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye } from 'lucide-react';
-import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
-import JSZip from 'jszip';
 import type { Product, BatchResult } from '../db';
 import { saveProductsBatch, getAllProducts } from '../db';
 
@@ -285,6 +282,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         hasImage: productHasImage(product)
       }))
       .filter((item) => !item.hasImage)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to omit hasImage from the result
       .map(({ hasImage, ...item }) => item)
   ), [productsWithAssignedImages]);
 
@@ -293,7 +291,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   if (!isOpen) return null;
 
   // 1. Generate & Download CSV/XLSX Templates
-  const downloadTemplate = (format: 'xlsx' | 'csv') => {
+  const downloadTemplate = async (format: 'xlsx' | 'csv') => {
     const headers = [
       'sku',
       'oem',
@@ -341,6 +339,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     ];
 
     if (format === 'csv') {
+      const Papa = (await import('papaparse')).default;
       const csvContent = Papa.unparse({
         fields: headers,
         data: sampleRows.map(row => Object.values(row))
@@ -355,6 +354,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
       document.body.removeChild(link);
     } else {
       // Excel template creation
+      const XLSX = await import('xlsx');
       const worksheet = XLSX.utils.json_to_sheet(sampleRows, { header: headers });
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventario');
@@ -376,6 +376,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   // Extract images from ZIP
   const extractZipImages = async (zipFile: File): Promise<Record<string, Blob>> => {
     const imageFilesMap: Record<string, Blob> = {};
+    const JSZip = (await import('jszip')).default;
     const zip = new JSZip();
     const contents = await zip.loadAsync(zipFile);
     
@@ -439,10 +440,12 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
         try {
           let rows: any[] = [];
           if (dataFile.name.endsWith('.csv')) {
+            const Papa = (await import('papaparse')).default;
             const csvText = e.target?.result as string;
             const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
             rows = parsed.data;
           } else {
+            const XLSX = await import('xlsx');
             const data = new Uint8Array(e.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -720,12 +723,19 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   };
 
   const handleProceedUpload = async (continueWithGenericImage = false) => {
+    // Guard set synchronously, before any await: handleStartUpload only
+    // flips `processing` after generating generic images (an async step),
+    // so a fast double-click could otherwise start saveProductsBatch twice
+    // for the same batch and create duplicate products (QA-SRC-005).
+    if (processing) return;
+
     try {
       if (currentMissingImageRows.length > 0 && !continueWithGenericImage) {
         setMissingImageRows(currentMissingImageRows);
         return;
       }
 
+      setProcessing(true);
       setMissingImageRows([]);
 
       const finalProducts = continueWithGenericImage
@@ -1599,7 +1609,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                 <button type="button" className="btn btn-secondary" style={{ marginRight: 'auto' }} onClick={() => setMissingImageRows([])}>
                   Volver a asignar
                 </button>
-                <button type="button" className="btn btn-primary" onClick={() => handleProceedUpload(true)}>
+                <button type="button" className="btn btn-primary" onClick={() => handleProceedUpload(true)} disabled={processing}>
                   Continuar con imagen genérica
                 </button>
               </>
@@ -1612,6 +1622,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                   type="button"
                   className="btn btn-primary"
                   onClick={() => handleProceedUpload()}
+                  disabled={processing}
                   style={currentMissingImageRows.length > 0 ? {
                     background: 'hsl(var(--danger))',
                     borderColor: 'hsl(var(--danger))',

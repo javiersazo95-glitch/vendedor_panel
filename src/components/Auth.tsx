@@ -2,8 +2,30 @@ import React, { useState } from 'react';
 import { Shield, Key, Mail, Zap, Cloud } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../utils/imageHelper';
+import { RequestTimeoutError } from '../utils/apiFetch';
 import loginHero from '../assets/login_hero.png';
 import logoImg from '../assets/logo.png';
+
+const LOGIN_TIMEOUT_MS = 25000;
+
+// Login happens before any session exists, so it can't reuse apiFetch's
+// 401-triggers-logout behavior (a wrong password is a normal login error,
+// not an expired session). It still needs the same timeout protection so a
+// slow/hung backend doesn't leave the login button stuck forever (QA-SRC-006).
+async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new RequestTimeoutError();
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 interface AuthProps {
   onLogin: (email: string, role: string, token: string, sellerId: string) => void;
@@ -65,7 +87,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -92,7 +114,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setError(null);
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/auth/google`, {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/auth/google`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './utils/imageHelper';
+import { apiFetch } from './utils/apiFetch';
 import { getStoredSession } from './utils/session';
 
 export interface Product {
@@ -112,7 +113,7 @@ export async function getAllProducts(): Promise<Product[]> {
   const session = getSession();
   if (!session) return [];
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${session.token}`,
@@ -169,7 +170,7 @@ export async function addProduct(
   formData.append('activo', 'true');
   imageFiles.forEach((file) => formData.append('imagenes', file));
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
     method: 'POST',
     headers,
     body: formData
@@ -182,7 +183,7 @@ export async function addProduct(
       if (errData && errData.message) {
         errMsg = errData.message;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     throw new Error(errMsg);
@@ -233,7 +234,7 @@ export async function updateProduct(
     formData.append('activo', 'true');
     imageFiles.forEach((file) => formData.append('imagenes', file));
 
-    response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}/editar`, {
+    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}/editar`, {
       method: 'POST',
       headers,
       body: formData
@@ -263,7 +264,7 @@ export async function updateProduct(
       activo: true
     };
 
-    response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}`, {
+    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(payload)
@@ -277,7 +278,7 @@ export async function updateProduct(
       if (errData && errData.message) {
         errMsg = errData.message;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     throw new Error(errMsg);
@@ -291,7 +292,7 @@ export async function deleteProduct(id: string): Promise<void> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
 
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${session.token}`
@@ -308,7 +309,7 @@ async function setProductPaused(id: string, paused: boolean): Promise<Product> {
   if (!session) throw new Error('No hay sesión activa.');
 
   const action = paused ? 'pausa' : 'retomar';
-  const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}/${action}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}/${action}`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${session.token}`,
@@ -334,7 +335,7 @@ export function resumeProduct(id: string): Promise<Product> {
 
 // Batch save for bulk upload
 export async function saveProductsBatch(
-  productsData: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | (File | Blob)[] | null })[],
+  productsData: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | (File | Blob)[] | null; sourceRow?: number })[],
   overwriteExisting: boolean = true,
   onProgress?: (percent: number) => void
 ): Promise<BatchResult> {
@@ -346,7 +347,7 @@ export async function saveProductsBatch(
   let allProds: Product[];
   try {
     allProds = await getAllProducts();
-  } catch (e) {
+  } catch {
     // Abort the whole batch instead of silently treating every row as new:
     // proceeding with an empty inventory here would misclassify existing
     // SKUs as new products and create duplicates (see ENG-SRC-004).
@@ -368,7 +369,10 @@ export async function saveProductsBatch(
     const chunk = productsData.slice(i, i + batchSize);
     await Promise.all(
       chunk.map(async (prodData, offset) => {
-        const rowNumber = i + offset + 2; // Row 1 is header
+        // Prefer the row number from the original file (sourceRow): productsData
+        // may already have had invalid rows filtered out during analysis, so the
+        // array index no longer matches the real row in the uploaded Excel/CSV.
+        const rowNumber = prodData.sourceRow ?? i + offset + 2; // Row 1 is header
         try {
           const existing = allProds.find(p => p.sku.trim().toUpperCase() === prodData.sku.trim().toUpperCase());
           let savedProd: Product;

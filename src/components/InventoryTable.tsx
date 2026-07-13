@@ -19,7 +19,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
     const start = (currentPage - 1) * itemsPerPage;
     const end = start + itemsPerPage;
     return products.slice(start, end);
-  }, [products, currentPage]);
+  }, [products, currentPage, itemsPerPage]);
 
   const getStockBadge = (stock: number) => {
     if (stock === 0) {

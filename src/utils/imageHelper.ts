@@ -45,7 +45,7 @@ export function resolveImageUri(uri: string | undefined): string {
           fileId = pathMatch[1];
         }
       }
-    } catch (e) {
+    } catch {
       // Fallback regex if URL parsing fails (e.g. invalid URL strings)
       const idMatch = uri.match(/[?&]id=([a-zA-Z0-9_-]+)/);
       if (idMatch && idMatch[1]) {
