@@ -52,13 +52,27 @@ const productHasImage = (product: PreparedProduct) => {
 const createGenericProductImage = async (product: PreparedProduct) => {
   const filenameSku = (product.sku || 'producto').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
   const canvas = document.createElement('canvas');
-  canvas.width = 1200;
-  canvas.height = 900;
+  // Cuadrada (1:1): así se recorta igual en cualquier miniatura con
+  // object-fit: cover, ya sea en este panel, la app móvil o el
+  // marketplace, sin perder el ícono ni la insignia por los bordes.
+  const SIZE = 1080;
+  canvas.width = SIZE;
+  canvas.height = SIZE;
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
     throw new Error('No se pudo crear la imagen generica.');
   }
+
+  // Espera a que la tipografía de marca esté lista para que el texto no
+  // se dibuje con el fallback del sistema si la fuente aún está cargando.
+  if (document.fonts?.ready) {
+    await document.fonts.ready.catch(() => undefined);
+  }
+
+  const fontHeading = '"Plus Jakarta Sans", Arial, sans-serif';
+  const fontMono = '"JetBrains Mono", monospace';
+  const center = SIZE / 2;
 
   const roundedRect = (x: number, y: number, w: number, h: number, r: number) => {
     ctx.beginPath();
@@ -70,63 +84,164 @@ const createGenericProductImage = async (product: PreparedProduct) => {
     ctx.closePath();
   };
 
-  ctx.fillStyle = '#f8fafc';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const truncateText = (text: string, maxWidth: number) => {
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let truncated = text;
+    while (truncated.length > 1 && ctx.measureText(`${truncated}…`).width > maxWidth) {
+      truncated = truncated.slice(0, -1);
+    }
+    return `${truncated}…`;
+  };
 
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 6;
-  roundedRect(120, 120, 960, 660, 36);
-  ctx.fill();
-  ctx.stroke();
+  // Fondo con leve degrade acorde a la paleta de la app (--bg-app -> blanco)
+  const bgGradient = ctx.createLinearGradient(0, 0, SIZE, SIZE);
+  bgGradient.addColorStop(0, '#eef2f9');
+  bgGradient.addColorStop(1, '#f8fafc');
+  ctx.fillStyle = bgGradient;
+  ctx.fillRect(0, 0, SIZE, SIZE);
 
-  const gradient = ctx.createLinearGradient(260, 220, 920, 680);
-  gradient.addColorStop(0, '#dbeafe');
-  gradient.addColorStop(1, '#bfdbfe');
+  // Resplandor sutil detrás de la tarjeta, mismo tono primario que usa el panel
+  const glow = ctx.createRadialGradient(center, center - 40, 40, center, center - 40, 420);
+  glow.addColorStop(0, 'rgba(27, 100, 218, 0.10)');
+  glow.addColorStop(1, 'rgba(27, 100, 218, 0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, SIZE, SIZE);
 
+  // Tarjeta principal con sombra suave, con margen holgado para que
+  // nada relevante quede pegado al borde que recorta un thumbnail móvil
+  const cardX = 70;
+  const cardY = 70;
+  const cardSize = SIZE - cardX * 2;
   ctx.save();
-  ctx.translate(600, 380);
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(0, 0, 168, 0, Math.PI * 2);
-  ctx.fill();
-
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.12)';
+  ctx.shadowBlur = 46;
+  ctx.shadowOffsetY = 18;
   ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.arc(0, 0, 88, 0, Math.PI * 2);
+  roundedRect(cardX, cardY, cardSize, cardSize, 48);
   ctx.fill();
-
-  ctx.strokeStyle = '#64748b';
-  ctx.lineWidth = 24;
-  ctx.beginPath();
-  ctx.arc(0, 0, 120, Math.PI * 0.15, Math.PI * 1.15);
-  ctx.stroke();
-
-  ctx.lineWidth = 18;
-  for (let i = 0; i < 8; i++) {
-    const angle = (Math.PI * 2 * i) / 8;
-    const x = Math.cos(angle) * 172;
-    const y = Math.sin(angle) * 172;
-    ctx.beginPath();
-    ctx.arc(x, y, 12, 0, Math.PI * 2);
-    ctx.fillStyle = '#93c5fd';
-    ctx.fill();
-  }
   ctx.restore();
 
-  ctx.fillStyle = '#1d4ed8';
+  ctx.strokeStyle = 'rgba(226, 232, 240, 0.9)';
+  ctx.lineWidth = 2;
+  roundedRect(cardX, cardY, cardSize, cardSize, 48);
+  ctx.stroke();
+
+  // Distintivo "SIN FOTO": mismo tono de advertencia usado en el historial de cargas.
+  // Es, junto con el ícono, el elemento que debe leerse incluso en una
+  // miniatura pequeña, así que se ubica arriba, grande y con alto contraste.
+  ctx.textAlign = 'center';
+  ctx.font = '700 30px ' + fontHeading;
+  const badgeText = 'SIN FOTO';
+  const badgeWidth = ctx.measureText(badgeText).width + 72;
+  const badgeHeight = 58;
+  const badgeX = center - badgeWidth / 2;
+  const badgeY = 130;
+  ctx.fillStyle = 'rgba(254, 243, 199, 0.95)';
+  roundedRect(badgeX, badgeY, badgeWidth, badgeHeight, badgeHeight / 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(217, 119, 6, 0.35)';
+  ctx.lineWidth = 2;
+  roundedRect(badgeX, badgeY, badgeWidth, badgeHeight, badgeHeight / 2);
+  ctx.stroke();
+  ctx.fillStyle = '#92400e';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(badgeText, center, badgeY + badgeHeight / 2 + 2);
+  ctx.textBaseline = 'alphabetic';
+
+  // Icono "imagen no disponible": marco de foto con paisaje, tachado.
+  // Son formas rellenas (no líneas finas) para que sigan siendo
+  // reconocibles incluso reducidas a un ícono pequeño.
+  ctx.save();
+  ctx.translate(center, 470);
+
+  const iconGlow = ctx.createRadialGradient(0, 0, 20, 0, 0, 210);
+  iconGlow.addColorStop(0, '#dbeafe');
+  iconGlow.addColorStop(1, 'rgba(219, 234, 254, 0)');
+  ctx.fillStyle = iconGlow;
   ctx.beginPath();
-  ctx.roundRect(394, 560, 412, 74, 24);
+  ctx.arc(0, 0, 210, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = '#0f172a';
-  ctx.font = '700 44px Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('Repuesto genérico', 600, 665);
+  ctx.fillStyle = '#ffffff';
+  roundedRect(-150, -108, 300, 216, 24);
+  ctx.fill();
 
-  ctx.fillStyle = '#64748b';
-  ctx.font = '400 28px Arial, sans-serif';
-  ctx.fillText(product.name || product.sku || 'Producto', 600, 725);
+  ctx.save();
+  roundedRect(-150, -108, 300, 216, 24);
+  ctx.clip();
+  ctx.fillStyle = '#93c5fd';
+  ctx.beginPath();
+  ctx.arc(-80, -50, 24, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#bfdbfe';
+  ctx.beginPath();
+  ctx.moveTo(-150, 108);
+  ctx.lineTo(-34, -12);
+  ctx.lineTo(46, 66);
+  ctx.lineTo(102, 12);
+  ctx.lineTo(150, 108);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = '#1b64da';
+  ctx.lineWidth = 14;
+  roundedRect(-150, -108, 300, 216, 24);
+  ctx.stroke();
+
+  // Trazo diagonal (con halo blanco para separarlo del marco) que indica "sin imagen"
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 26;
+  ctx.beginPath();
+  ctx.moveTo(-178, -136);
+  ctx.lineTo(178, 136);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 15;
+  ctx.beginPath();
+  ctx.moveTo(-178, -136);
+  ctx.lineTo(178, 136);
+  ctx.stroke();
+
+  ctx.restore();
+
+  // Nombre del producto
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '700 40px ' + fontHeading;
+  ctx.textAlign = 'center';
+  const nameText = truncateText(product.name || product.sku || 'Producto sin nombre', cardSize - 140);
+  ctx.fillText(nameText, center, 700);
+
+  // SKU en una etiqueta con tipografía monoespaciada
+  const rawSku = (product.sku || '').trim();
+  if (rawSku) {
+    ctx.font = '600 25px ' + fontMono;
+    const skuText = truncateText(`SKU ${rawSku}`, cardSize - 180);
+    const pillWidth = ctx.measureText(skuText).width + 48;
+    const pillHeight = 50;
+    const pillX = center - pillWidth / 2;
+    const pillY = 742;
+    ctx.fillStyle = '#f1f5f9';
+    roundedRect(pillX, pillY, pillWidth, pillHeight, pillHeight / 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(203, 213, 225, 0.9)';
+    ctx.lineWidth = 1.5;
+    roundedRect(pillX, pillY, pillWidth, pillHeight, pillHeight / 2);
+    ctx.stroke();
+    ctx.fillStyle = '#475569';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(skuText, center, pillY + pillHeight / 2 + 1);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  // Marca de agua discreta para identificar que la imagen fue generada automáticamente
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(27, 100, 218, 0.35)';
+  ctx.font = '700 22px ' + fontHeading;
+  ctx.fillText('RepuesTop', cardX + cardSize - 32, cardY + cardSize - 30);
+  ctx.textAlign = 'center';
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((result) => {
