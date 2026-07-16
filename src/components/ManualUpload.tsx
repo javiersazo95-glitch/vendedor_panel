@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
 import { API_BASE_URL, resolveImageUri } from '../utils/imageHelper';
+import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface ManualUploadProps {
@@ -9,6 +10,7 @@ interface ManualUploadProps {
   onClose: () => void;
   onSave: (product: Omit<Product, 'id' | 'lastUpdated'> & { id?: string }, imageFiles?: File[] | null) => Promise<void>;
   editProduct?: Product | null;
+  founder?: boolean;
 }
 
 type CatalogOption = {
@@ -112,9 +114,6 @@ const MODELS_FALLBACK: Record<string, string[]> = {
   BMW: ['Serie 3', 'X1', 'X3', 'Serie 5'],
 };
 
-const FLOW_RATE_BASE = 0.0289;
-const FLOW_IVA = 0.19;
-const FLOW_RATE_WITH_IVA = FLOW_RATE_BASE * (1 + FLOW_IVA);
 const MAX_PHOTOS = 4;
 
 async function loadCatalog(path: string): Promise<CatalogOption[]> {
@@ -222,28 +221,6 @@ function createCompatibilityCardFromDetails(details: VehicleCatalogDetail[], pro
 
 function formatCLP(value: number) {
   return new Intl.NumberFormat('es-CL').format(value);
-}
-
-function serviceFeeAmount(basePrice: number) {
-  if (basePrice <= 0) return 0;
-  let appRate = 0.10;
-  if (basePrice > 100000 && basePrice <= 250000) appRate = 0.07;
-  if (basePrice > 250000) appRate = 0.05;
-  return Math.round(basePrice * appRate * 1.19 + basePrice * FLOW_RATE_WITH_IVA);
-}
-
-function calculateSellerEarnings(basePrice: number) {
-  if (basePrice <= 0) return 0;
-  return Math.max(0, Math.round(basePrice - serviceFeeAmount(basePrice)));
-}
-
-function calculateSuggestedPrice(desiredAmount: number) {
-  if (desiredAmount <= 0) return 0;
-  if (desiredAmount <= 84660) return Math.ceil(desiredAmount / 0.846609);
-  if (desiredAmount < 88231) return 100001;
-  if (desiredAmount <= 220577) return Math.ceil(desiredAmount / 0.882309);
-  if (desiredAmount < 226528) return 250001;
-  return Math.ceil(desiredAmount / 0.906109);
 }
 
 function SelectOrInput({
@@ -413,6 +390,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   onClose,
   onSave,
   editProduct,
+  founder = false,
 }) => {
   const [sku, setSku] = useState('');
   const [oem, setOem] = useState('');
@@ -768,9 +746,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     }
   };
 
-  const priceFee = serviceFeeAmount(price);
-  const sellerEarnings = calculateSellerEarnings(price);
-  const suggestedPrice = calculateSuggestedPrice(price);
+  const priceFee = serviceFeeAmount(price, founder);
+  const priceBreakdown = pricingFeeBreakdown(price, founder);
+  const sellerEarnings = calculateSellerEarnings(price, founder);
+  const suggestedPrice = calculateSuggestedPrice(price, founder);
 
   return (
     <div className="modal-overlay">
@@ -905,8 +884,21 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
               {pricingMode !== 'quote_only' && price > 0 && (
                 <div className="manual-pricing-helper">
+                  {founder && <div className="manual-pricing-row"><strong>Beneficio Fundador: tarifa RepuesTop fija de 5%</strong></div>}
                   <div className="manual-pricing-row">
-                    <span>Tarifa por servicio Repuestop (incluye IVA):</span>
+                    <span>Tarifa RepuesTop ({Math.round(priceBreakdown.rate * 100)}%):</span>
+                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopNet)}</strong>
+                  </div>
+                  <div className="manual-pricing-row">
+                    <span>IVA tarifa RepuesTop:</span>
+                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopIva)}</strong>
+                  </div>
+                  <div className="manual-pricing-row">
+                    <span>Procesamiento Flow (IVA incluido):</span>
+                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.flowWithIva)}</strong>
+                  </div>
+                  <div className="manual-pricing-row">
+                    <span>Descuentos totales:</span>
                     <strong className="manual-pricing-fee">-${formatCLP(priceFee)}</strong>
                   </div>
                   <div className="manual-pricing-row">

@@ -3,6 +3,7 @@ export interface UserSession {
   role: string;
   token: string;
   sellerId: string;
+  founder?: boolean;
 }
 
 const SESSION_KEY = 'repuestop_session';
@@ -20,6 +21,7 @@ function isValidUserSession(value: unknown): value is UserSession {
     typeof value.role === 'string' &&
     typeof value.token === 'string' &&
     typeof value.sellerId === 'string' &&
+    (value.founder === undefined || typeof value.founder === 'boolean') &&
     value.email.length > 0 &&
     value.token.length > 0 &&
     value.sellerId.length > 0

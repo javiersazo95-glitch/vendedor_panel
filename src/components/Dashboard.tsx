@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, PlusCircle, UploadCloud, Database, Menu, X } from 'lucide-react';
+import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
 import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct } from '../db';
@@ -12,10 +12,11 @@ import { BulkUpload } from './BulkUpload';
 interface DashboardProps {
   userEmail: string;
   userRole: string;
+  founder: boolean;
   onLogout: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLogout }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, founder, onLogout }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +214,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
               <div className="user-info">
                 <span className="user-name">{userEmail}</span>
                 <span className="user-role">{userRole}</span>
+                {founder ? <span className="founder-badge-web"><Crown size={13} className="founder-crown-icon" /> Fundador <button type="button" className="founder-info" aria-label="Información sobre Vendedor Fundador"><Info size={13} /><span className="founder-tooltip">Confiaste en RepuesTop antes del lanzamiento. Tu comisión RepuesTop es fija en 5%; el IVA y Flow se mantienen.</span></button></span> : null}
               </div>
             </div>
           </div>
@@ -291,6 +293,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, onLog
         onClose={() => { setIsManualOpen(false); setEditingProduct(null); }}
         onSave={handleSaveProduct}
         editProduct={editingProduct}
+        founder={founder}
       />
     </div>
   );

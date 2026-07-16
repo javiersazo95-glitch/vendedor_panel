@@ -6,8 +6,8 @@ import { clearSession, getStoredSession, saveSession, type UserSession } from '.
 function App() {
   const [session, setSession] = useState<UserSession | null>(() => getStoredSession());
 
-  const handleLogin = (email: string, role: string, token: string, sellerId: string) => {
-    const user: UserSession = { email, role, token, sellerId };
+  const handleLogin = (email: string, role: string, token: string, sellerId: string, founder: boolean) => {
+    const user: UserSession = { email, role, token, sellerId, founder };
     setSession(user);
     saveSession(user);
   };
@@ -29,7 +29,7 @@ function App() {
   return (
     <>
       {session ? (
-        <Dashboard userEmail={session.email} userRole={session.role} onLogout={handleLogout} />
+        <Dashboard userEmail={session.email} userRole={session.role} founder={session.founder === true} onLogout={handleLogout} />
       ) : (
         <Auth onLogin={handleLogin} />
       )}

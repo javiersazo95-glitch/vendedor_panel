@@ -28,7 +28,7 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
 }
 
 interface AuthProps {
-  onLogin: (email: string, role: string, token: string, sellerId: string) => void;
+  onLogin: (email: string, role: string, token: string, sellerId: string, founder: boolean) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,7 +66,7 @@ async function procesarRespuestaLogin(response: Response, onLogin: AuthProps['on
     throw new Error('Respuesta inválida del servidor.');
   }
 
-  onLogin(data.usuario.email, 'Vendedor', data.token, String(data.sellerId));
+  onLogin(data.usuario.email, 'Vendedor', data.token, String(data.sellerId), data.founder === true);
 }
 
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {

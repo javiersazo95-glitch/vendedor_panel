@@ -460,6 +460,11 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+.founder-badge-web { display: inline-flex; align-items: center; gap: 4px; width: fit-content; margin-top: 3px; padding: 2px 7px; border: 1px solid #e4c56f; border-radius: 999px; background: #fff8dc; color: #8a6112; font-size: .66rem; font-weight: 800; }
+.founder-crown-icon { color: #D9A514; }
+.founder-info { position: relative; display: inline-grid; place-items: center; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.founder-tooltip { position: absolute; z-index: 20; top: calc(100% + 8px); right: 0; display: none; width: 260px; padding: 10px 12px; border-radius: 10px; background: #172741; color: white; font-size: .72rem; font-weight: 500; line-height: 1.4; text-transform: none; letter-spacing: 0; box-shadow: var(--shadow); }
+.founder-info:hover .founder-tooltip, .founder-info:focus .founder-tooltip { display: block; }
 
 /* KPIs Dashboard Panel Grid */
 .kpis-grid {
