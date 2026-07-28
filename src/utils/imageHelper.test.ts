@@ -33,4 +33,18 @@ describe('API_BASE_URL fallback (ENG-SRC-008)', () => {
 
     Object.defineProperty(window, 'location', { value: originalLocation, configurable: true });
   });
+
+  it('limpia sufijos /api/v1 o /api al final de VITE_API_URL para evitar duplicacion de rutas', async () => {
+    vi.stubEnv('VITE_API_URL', 'https://dev-api.repuestop.cl/api/v1');
+    const originalLocation = window.location;
+    Object.defineProperty(window, 'location', {
+      value: { ...originalLocation, hostname: 'dev-inventario.repuestop.cl' },
+      configurable: true,
+    });
+
+    const mod = await import('./imageHelper');
+    expect(mod.API_BASE_URL).toBe('https://dev-api.repuestop.cl');
+
+    Object.defineProperty(window, 'location', { value: originalLocation, configurable: true });
+  });
 });
