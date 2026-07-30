@@ -361,11 +361,30 @@ export async function saveProductsBatch(
     };
   }
 
+  if (onProgress) {
+    onProgress(0);
+  }
+
+
+  // O(1) Map lookup index by normalized SKU to handle 10,000+ items instantly
+
+  const existingSkuMap = new Map<string, Product>();
+  allProds.forEach((p) => {
+    if (p.sku) {
+      existingSkuMap.set(p.sku.trim().toUpperCase(), p);
+    }
+  });
+
   let completedCount = 0;
   const totalCount = productsData.length;
 
-  const batchSize = 3;
+  const batchSize = 5;
   for (let i = 0; i < productsData.length; i += batchSize) {
+    // Yield UI thread every 50 items to keep browser rendering smooth during 10,000+ item loads
+    if (i > 0 && i % 50 === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
     const chunk = productsData.slice(i, i + batchSize);
     await Promise.all(
       chunk.map(async (prodData, offset) => {
@@ -373,9 +392,10 @@ export async function saveProductsBatch(
         // may already have had invalid rows filtered out during analysis, so the
         // array index no longer matches the real row in the uploaded Excel/CSV.
         const rowNumber = prodData.sourceRow ?? i + offset + 2; // Row 1 is header
-        try {
-          const existing = allProds.find(p => p.sku.trim().toUpperCase() === prodData.sku.trim().toUpperCase());
-          let savedProd: Product;
+        const normalizedSku = prodData.sku.trim().toUpperCase();
+
+        const saveItemWithRetry = async (): Promise<Product> => {
+          const existing = existingSkuMap.get(normalizedSku);
           if (existing) {
             if (overwriteExisting) {
               const updatedPayload: Product = {
@@ -383,17 +403,28 @@ export async function saveProductsBatch(
                 ...prodData,
                 id: existing.id
               };
-              savedProd = await updateProduct(updatedPayload, prodData.imageFile);
-              result.success.push(savedProd);
+              return await updateProduct(updatedPayload, prodData.imageFile);
             } else {
-              result.errors.push({
-                row: rowNumber,
-                sku: prodData.sku,
-                error: `El SKU ya existe en el catálogo (registro omitido por SKU duplicado).`
-              });
+              throw new Error(`El SKU ya existe en el catálogo (registro omitido por SKU duplicado).`);
             }
           } else {
-            savedProd = await addProduct(prodData, prodData.imageFile);
+            return await addProduct(prodData, prodData.imageFile);
+          }
+        };
+
+        try {
+          try {
+            const savedProd = await saveItemWithRetry();
+            existingSkuMap.set(normalizedSku, savedProd);
+            result.success.push(savedProd);
+          } catch (firstErr: unknown) {
+            const errMsg = firstErr instanceof Error ? firstErr.message : '';
+            if (errMsg.includes('SKU ya existe')) {
+              throw firstErr;
+            }
+            await new Promise((r) => setTimeout(r, 200));
+            const savedProd = await saveItemWithRetry();
+            existingSkuMap.set(normalizedSku, savedProd);
             result.success.push(savedProd);
           }
         } catch (err: unknown) {
@@ -414,3 +445,5 @@ export async function saveProductsBatch(
 
   return result;
 }
+
+

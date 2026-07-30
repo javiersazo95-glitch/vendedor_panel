@@ -9,6 +9,7 @@ interface BulkUploadProps {
   isOpen: boolean;
   onClose: () => void;
   onUploadSuccess: () => void;
+  onAssignImagesStateChange?: (isAssigning: boolean) => void;
   embedded?: boolean;
 }
 
@@ -267,7 +268,13 @@ interface ImportLog {
 const isSkuIssueLog = (log: ImportLog) =>
   log.status === 'ERROR' && /repetido|duplicad|SKU faltante/i.test(log.message);
 
-export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploadSuccess, embedded = false }) => {
+export const BulkUpload: React.FC<BulkUploadProps> = ({
+  isOpen,
+  onClose,
+  onUploadSuccess,
+  onAssignImagesStateChange,
+  embedded = false
+}) => {
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [imageFolderFiles, setImageFolderFiles] = useState<FileList | null>(null);
   const [imageZipFile, setImageZipFile] = useState<File | null>(null);
@@ -304,9 +311,50 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
   const [uploadHistory, setUploadHistory] = useState<BulkUploadHistoryItem[]>(() => loadBulkUploadHistory());
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<BulkUploadHistoryItem | null>(null);
 
+  // Paginación para la vista de asignación de imágenes
+  const [imagesPageSize, setImagesPageSize] = useState<number>(15);
+  const [imagesCurrentPage, setImagesCurrentPage] = useState<number>(1);
+  const [isRetryingFailed, setIsRetryingFailed] = useState<boolean>(false);
+
+
+  useEffect(() => {
+    setImagesCurrentPage(1);
+  }, [imagesPageSize, preparedProducts.length]);
+
+  useEffect(() => {
+    if (onAssignImagesStateChange) {
+      onAssignImagesStateChange(imagesModalOpen);
+    }
+  }, [imagesModalOpen, onAssignImagesStateChange]);
+
   const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sincronización de scrollbar horizontal (superior e inferior) para la tabla de asignación de imágenes
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState<number>(0);
+
+  useEffect(() => {
+    if (tableRef.current) {
+      setTableScrollWidth(tableRef.current.scrollWidth);
+    }
+  }, [preparedProducts, imagesPageSize, imagesCurrentPage, imagesModalOpen]);
+
+  const handleTableScroll = () => {
+    if (tableContainerRef.current && topScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft;
+    }
+  };
+
+  const handleTopScroll = () => {
+    if (tableContainerRef.current && topScrollRef.current) {
+      tableContainerRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+  };
+
 
   const handleReset = () => {
     setDataFile(null);
@@ -762,14 +810,14 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     const productsToSave = productsOverride ?? preparedProducts;
     if (productsToSave.length === 0 || stats.errors > 0) return;
 
-    setImagesModalOpen(false);
     setProcessing(true);
-    setProgress(60);
+    setProgress(0);
 
     try {
       const dbResult: BatchResult = await saveProductsBatch(productsToSave, false, (percent) => {
-        setProgress(60 + Math.round((percent / 100) * 35));
+        setProgress(percent);
       });
+
 
       setLogs((prev) => {
         let updated = [...prev];
@@ -826,6 +874,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
 
       setUploadDone(true);
       setUploadSuccessCount(dbResult.success.length);
+      setImagesModalOpen(false);
+      setActiveTab('upload');
       setProgress(100);
       onUploadSuccess();
     } catch (err: any) {
@@ -869,7 +919,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
       }
 
       setProcessing(true);
+      setProgress(0);
       setMissingImageRows([]);
+
 
       // Track which SKUs get a generic placeholder instead of a real photo,
       // so the log/history can tell them apart afterwards (UX-SRC-007) — once
@@ -890,7 +942,84 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
     }
   };
 
+  // Reintenta la carga ÚNICAMENTE de los registros que resultaron con estado ERROR
+  const handleRetryFailedRecords = async () => {
+    if (processing || !uploadDone || stats.errors === 0) return;
+
+    // Identificar los SKUs fallidos en la lista actual de logs
+    const errorLogs = logs.filter((l) => l.status === 'ERROR');
+    const failedSkus = new Set(errorLogs.map((l) => l.sku));
+
+    // Filtrar los productos preparados que fallaron
+    const failedProducts = preparedProducts.filter((p) => failedSkus.has(p.sku));
+    if (failedProducts.length === 0) return;
+
+    setIsRetryingFailed(true);
+    setProcessing(true);
+    setProgress(0);
+
+    try {
+      const dbResult: BatchResult = await saveProductsBatch(failedProducts, false, (percent) => {
+        setProgress(percent);
+      });
+
+      const newlySucceededSkus = new Set(dbResult.success.map((p) => p.sku));
+      const newlyFailedSkus = new Set(dbResult.errors.map((e) => e.sku));
+
+      // Actualizar logs: cambiar logs reintentados de ERROR a SUCCESS
+      setLogs((prev) =>
+        prev.map((l) => {
+          if (newlySucceededSkus.has(l.sku)) {
+            return {
+              ...l,
+              status: 'SUCCESS',
+              message: 'Producto importado exitosamente tras reintento.'
+            };
+          }
+          if (newlyFailedSkus.has(l.sku)) {
+            const errObj = dbResult.errors.find((e) => e.sku === l.sku);
+            return {
+              ...l,
+              status: 'ERROR',
+              message: `Error al guardar en base de datos: ${errObj?.error || 'Error recurrente'}`
+            };
+          }
+          return l;
+        })
+      );
+
+      // Actualizar estadísticas: restar aciertos del conteo de errores y sumar a éxitos
+      setStats((prev) => {
+        const remainingErrors = dbResult.errors.length;
+        return {
+          ...prev,
+          success: prev.success + dbResult.success.length,
+          errors: remainingErrors
+        };
+      });
+
+      setUploadSuccessCount((prev) => (prev || 0) + dbResult.success.length);
+      setProgress(100);
+      onUploadSuccess();
+    } catch (err: any) {
+      setLogs((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-retry-error`,
+          row: 0,
+          sku: 'N/A',
+          status: 'ERROR',
+          message: `Error al reintentar la carga: ${err.message}`
+        }
+      ]);
+    } finally {
+      setProcessing(false);
+      setIsRetryingFailed(false);
+    }
+  };
+
   // Row-level actions: delete a log entry, or review/fix a duplicate SKU
+
   const handleDeleteLog = (id: string) => {
     const target = logs.find(l => l.id === id);
     if (!target) return;
@@ -1117,17 +1246,139 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                 </div>
               )}
             </div>
-          ) : imagesModalOpen ? (
+          ) : imagesModalOpen ? (() => {
+            const totalImagesPages = Math.ceil(preparedProducts.length / imagesPageSize) || 1;
+            const safeImagesPage = Math.min(Math.max(1, imagesCurrentPage), totalImagesPages);
+            const startIndex = (safeImagesPage - 1) * imagesPageSize;
+            const endIndex = Math.min(startIndex + imagesPageSize, preparedProducts.length);
+            const paginatedPreparedProducts = preparedProducts.slice(startIndex, endIndex);
+
+            return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '560px' }}>
-              <div>
-                <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                  <Images size={18} style={{ color: 'hsl(var(--primary))' }} />
-                  Asignar Imágenes a Productos
-                </h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                  Puedes seleccionar hasta <strong>{MAX_IMAGES_PER_PRODUCT} imágenes por producto</strong> desde tu carpeta cargada.
-                </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                    <Images size={18} style={{ color: 'hsl(var(--primary))' }} />
+                    Asignar Imágenes a Productos
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                    Puedes seleccionar hasta <strong>{MAX_IMAGES_PER_PRODUCT} imágenes por producto</strong> desde tu carpeta cargada.
+                  </p>
+                </div>
+
+                {preparedProducts.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+                    {/* Leyenda sutil de color amarillo */}
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem',
+                        background: '#fff8db',
+                        border: '1px solid #facc15',
+                        borderRadius: '8px',
+                        padding: '0.3rem 0.65rem',
+                        fontSize: '0.74rem',
+                        color: '#92400e',
+                        fontWeight: 700
+                      }}
+                      title="Los productos resaltados en amarillo corresponden a aquellos que no tienen una foto real asignada"
+                    >
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                      <span>Filas en amarillo = Sin foto asignada</span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Mostrar:</span>
+                      <select
+                        value={imagesPageSize}
+                        onChange={(e) => setImagesPageSize(Number(e.target.value))}
+                        style={{
+                          padding: '0.35rem 0.65rem',
+                          borderRadius: '8px',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--bg-card)',
+                          color: 'var(--text-primary)',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <option value={15}>15 registros</option>
+                        <option value={50}>50 registros</option>
+                        <option value={100}>100 registros</option>
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        Mostrando <strong>{preparedProducts.length > 0 ? startIndex + 1 : 0}-{endIndex}</strong> de <strong>{preparedProducts.length}</strong>
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', height: 'auto' }}
+                          disabled={safeImagesPage <= 1 || processing}
+                          onClick={() => setImagesCurrentPage((p) => Math.max(1, p - 1))}
+                        >
+                          Anterior
+                        </button>
+                        <span style={{ fontSize: '0.78rem', padding: '0 0.4rem', fontWeight: 700, color: 'hsl(var(--primary))' }}>
+                          Pág. {safeImagesPage} / {totalImagesPages}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem', height: 'auto' }}
+                          disabled={safeImagesPage >= totalImagesPages || processing}
+                          onClick={() => setImagesCurrentPage((p) => Math.min(totalImagesPages, p + 1))}
+                        >
+                          Siguiente
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Banner de ayuda visual para el vendedor */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  background: 'rgba(27, 100, 218, 0.06)',
+                  border: '1px solid rgba(27, 100, 218, 0.2)',
+                  borderRadius: '12px',
+                  padding: '0.75rem 1rem'
+                }}
+              >
+                <div
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    background: 'hsl(var(--primary))',
+                    color: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}
+                >
+                  <ImageUp size={18} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
+                    💡 ¿Cómo asignar fotos a cada producto?
+                  </span>
+                  <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                    Haz clic en el botón azul <strong>"+ Asignar foto"</strong> en la columna <strong>Imágenes</strong> de cada producto para abrir la galería de fotos cargadas. <em>(Nota: Las filas destacadas en 🟡 amarillo indican repuestos sin foto asignada)</em>.
+                  </span>
+                </div>
+              </div>
+
 
               {Object.keys(availableImages).length === 0 && (
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '1rem 0' }}>
@@ -1135,45 +1386,39 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                 </p>
               )}
 
-              {missingImageRows.length > 0 && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '0.75rem',
-                    background: '#fff8db',
-                    border: '1px solid #facc15',
-                    borderLeft: '4px solid #f59e0b',
-                    borderRadius: '10px',
-                    padding: '0.85rem 1rem'
-                  }}
-                >
-                  <AlertTriangle size={18} style={{ color: '#b45309', flexShrink: 0, marginTop: 1 }} />
-                  <div>
-                    <p style={{ fontSize: '0.82rem', color: '#92400e', fontWeight: 800, margin: '0 0 0.35rem' }}>
-                      Hay registros sin imagen cargada
-                    </p>
-                    <p style={{ fontSize: '0.76rem', color: '#92400e', margin: '0 0 0.5rem' }}>
-                      Puedes asignar una imagen a las filas marcadas o continuar usando una imagen genérica del producto.
-                    </p>
-                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-                      {missingImageRows.map((item) => (
-                        <span
-                          key={`${item.tableRow}-${item.sku}`}
-                          style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '0.2rem 0.45rem', borderRadius: '999px', fontWeight: 800 }}
-                          title={item.name}
-                        >
-                          Fila {item.tableRow} sin asignar imagen · {item.sku}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
 
-              <div style={{ overflowX: 'auto', flex: 1 }}>
-                <table className="log-table" style={{ width: '100%' }}>
-                  <thead>
+
+
+
+              {/* Barra de desplazamiento horizontal superior sincronizada */}
+              <div
+                ref={topScrollRef}
+                onScroll={handleTopScroll}
+                style={{
+                  overflowX: 'auto',
+                  overflowY: 'hidden',
+                  width: '100%',
+                  height: '14px',
+                  marginBottom: '0.15rem'
+                }}
+              >
+                <div style={{ width: `${tableScrollWidth}px`, height: '1px' }} />
+              </div>
+
+              <div
+                ref={tableContainerRef}
+                onScroll={handleTableScroll}
+                style={{
+                  overflow: 'auto',
+                  maxHeight: 'calc(100vh - 310px)',
+                  minHeight: '380px',
+                  borderRadius: '12px',
+                  border: '1px solid var(--border-color)',
+                  flex: 1
+                }}
+              >
+                <table ref={tableRef} className="log-table" style={{ width: '100%' }}>
+                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
                     <tr>
                       <th style={{ width: '72px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Fila</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>SKU</th>
@@ -1188,12 +1433,14 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Precio</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Stock</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Descripción</th>
-                      <th style={{ width: '140px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
+                      <th style={{ width: '160px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
                       <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>Acción</th>
                     </tr>
                   </thead>
+
                   <tbody>
-                    {preparedProducts.map((product, index) => {
+                    {paginatedPreparedProducts.map((product, pIndex) => {
+                      const actualRowNumber = startIndex + pIndex + 1;
                       const selected = imageAssignments[product.sku] || [];
                       const isGalleryOpen = galleryOpenForSku === product.sku;
                       const isMissingImageHighlighted = highlightedMissingImageSkus.has(product.sku);
@@ -1217,7 +1464,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                                   whiteSpace: 'nowrap'
                                 }}
                               >
-                                {index + 1}
+                                {actualRowNumber}
                               </span>
                             </td>
                             <td style={{ padding: '0.5rem 0.75rem' }}>
@@ -1237,20 +1484,56 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                               {product.description || '—'}
                             </td>
                             <td style={{ padding: '0.5rem 0.75rem' }}>
-                              <span
+                              <button
+                                type="button"
+                                onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
                                 style={{
-                                  fontSize: '0.7rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  padding: '0.3rem 0.6rem',
+                                  borderRadius: '8px',
+                                  fontSize: '0.72rem',
                                   fontWeight: 700,
-                                  padding: '0.15rem 0.5rem',
-                                  borderRadius: '999px',
+                                  cursor: 'pointer',
                                   whiteSpace: 'nowrap',
-                                  background: isMissingImageHighlighted ? '#fef3c7' : selected.length > 0 ? 'var(--success-bg)' : 'var(--bg-app)',
-                                  color: isMissingImageHighlighted ? '#92400e' : selected.length > 0 ? 'hsl(var(--success))' : 'var(--text-muted)'
+                                  border: isGalleryOpen
+                                    ? '1px solid hsl(var(--primary))'
+                                    : isMissingImageHighlighted
+                                    ? '1px solid #facc15'
+                                    : selected.length > 0
+                                    ? '1px solid rgba(16, 185, 129, 0.4)'
+                                    : '1px solid hsl(var(--primary) / 0.4)',
+                                  background: isGalleryOpen
+                                    ? 'hsl(var(--primary))'
+                                    : isMissingImageHighlighted
+                                    ? '#fef3c7'
+                                    : selected.length > 0
+                                    ? 'var(--success-bg)'
+                                    : 'rgba(27, 100, 218, 0.08)',
+                                  color: isGalleryOpen
+                                    ? '#ffffff'
+                                    : isMissingImageHighlighted
+                                    ? '#92400e'
+                                    : selected.length > 0
+                                    ? 'hsl(var(--success))'
+                                    : 'hsl(var(--primary))',
+                                  boxShadow: isGalleryOpen ? '0 2px 6px rgba(27, 100, 218, 0.25)' : 'none',
+                                  transition: 'all 0.15s ease'
                                 }}
+                                title="Haz clic para abrir la galería de fotos y seleccionar imágenes para este producto"
                               >
-                                {isMissingImageHighlighted ? 'Falta imagen' : `${selected.length} / ${MAX_IMAGES_PER_PRODUCT} seleccionadas`}
-                              </span>
+                                <ImageUp size={14} />
+                                <span>
+                                  {isMissingImageHighlighted
+                                    ? 'Asignar foto'
+                                    : selected.length > 0
+                                    ? `${selected.length}/${MAX_IMAGES_PER_PRODUCT} fotos`
+                                    : '+ Asignar foto'}
+                                </span>
+                              </button>
                             </td>
+
                             <td style={{ padding: '0.5rem 0.75rem' }}>
                               <div style={{ display: 'flex', justifyContent: 'center' }}>
                                 <button
@@ -1358,8 +1641,41 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                   </tbody>
                 </table>
               </div>
+
+              {preparedProducts.length > imagesPageSize && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Mostrando <strong>{startIndex + 1}-{endIndex}</strong> de <strong>{preparedProducts.length}</strong> productos
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', height: 'auto' }}
+                      disabled={safeImagesPage <= 1 || processing}
+                      onClick={() => setImagesCurrentPage((p) => Math.max(1, p - 1))}
+                    >
+                      Anterior
+                    </button>
+                    <span style={{ fontSize: '0.75rem', padding: '0 0.5rem', fontWeight: 700, color: 'hsl(var(--primary))' }}>
+                      Página {safeImagesPage} de {totalImagesPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', height: 'auto' }}
+                      disabled={safeImagesPage >= totalImagesPages || processing}
+                      onClick={() => setImagesCurrentPage((p) => Math.min(totalImagesPages, p + 1))}
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-          ) : (
+            );
+          })() : (
+
           <div className="bulk-upload-split-layout">
             
             {/* Left Panel: Uploading and template downloads */}
@@ -1619,6 +1935,58 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                     </div>
                   </div>
 
+                  {uploadDone && stats.errors > 0 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '1rem',
+                        background: '#fff8db',
+                        border: '1px solid #facc15',
+                        borderLeft: '4px solid #f59e0b',
+                        borderRadius: '10px',
+                        padding: '0.85rem 1rem',
+                        marginBottom: '1rem',
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <AlertTriangle size={20} style={{ color: '#b45309', flexShrink: 0 }} />
+                        <div>
+                          <span style={{ fontSize: '0.82rem', color: '#92400e', fontWeight: 800, display: 'block' }}>
+                            {stats.errors} {stats.errors === 1 ? 'registro no se pudo guardar' : 'registros no se pudieron guardar'} en la base de datos
+                          </span>
+                          <span style={{ fontSize: '0.74rem', color: '#92400e' }}>
+                            Puedes hacer clic en el botón para reintentar cargar únicamente las filas con fallos.
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={handleRetryFailedRecords}
+                        disabled={processing}
+                        style={{
+                          background: '#d97706',
+                          borderColor: '#d97706',
+                          color: '#ffffff',
+                          fontSize: '0.78rem',
+                          padding: '0.45rem 0.85rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          boxShadow: '0 2px 6px rgba(217, 119, 6, 0.25)',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        <RefreshCw size={15} className={processing ? 'spin' : ''} />
+                        Reintentar Carga de {stats.errors} Fallidos
+                      </button>
+                    </div>
+                  )}
+
+
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                     <h5 style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Detalle de Transacciones (Log)
@@ -1797,21 +2165,42 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
                       : 'Corrige los errores del análisis para poder iniciar la carga.'}
                   </span>
                 )}
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={handleOpenImagesModal}
-                  disabled={processing || !analysisDone || stats.errors > 0 || preparedProducts.length === 0 || uploadDone}
-                  title={
-                    !analysisDone
-                      ? 'Primero debes analizar la carga.'
-                      : stats.errors > 0
-                        ? 'Corrige los errores del análisis antes de continuar.'
-                        : undefined
-                  }
-                >
-                  {uploadDone ? 'Carga Completada' : 'Iniciar Carga'}
-                </button>
+                {uploadDone && stats.errors > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleRetryFailedRecords}
+                    disabled={processing}
+                    style={{
+                      background: '#d97706',
+                      borderColor: '#d97706',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      boxShadow: '0 2px 6px rgba(217, 119, 6, 0.25)'
+                    }}
+                  >
+                    <RefreshCw size={16} className={processing ? 'spin' : ''} />
+                    Reintentar Carga ({stats.errors} fallidos)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleOpenImagesModal}
+                    disabled={processing || !analysisDone || stats.errors > 0 || preparedProducts.length === 0 || uploadDone}
+                    title={
+                      !analysisDone
+                        ? 'Primero debes analizar la carga.'
+                        : stats.errors > 0
+                          ? 'Corrige los errores del análisis antes de continuar.'
+                          : undefined
+                    }
+                  >
+                    {uploadDone ? 'Carga Completada' : 'Iniciar Carga'}
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -1976,6 +2365,84 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({ isOpen, onClose, onUploa
           </div>
         </div>
       )}
+      {processing && (imagesModalOpen || isRetryingFailed) && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem'
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '20px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+              padding: '2.5rem 2rem',
+              maxWidth: '480px',
+              width: '100%',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '1.25rem'
+            }}
+          >
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(27, 100, 218, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'hsl(var(--primary))'
+              }}
+            >
+              <RefreshCw className="spin" size={32} />
+            </div>
+
+            <div>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: '0.35rem' }}>
+                {isRetryingFailed
+                  ? 'Reintentando carga de registros fallidos...'
+                  : 'Guardando inventario en la base de datos...'}
+              </h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>
+                {isRetryingFailed
+                  ? `Por favor espera mientras se reintenta guardar únicamente los ${stats.errors} registros que presentaron fallos.`
+                  : 'Por favor espera mientras se procesan y guardan los registros en la base de datos.'}
+              </p>
+            </div>
+
+            <div style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 700, color: 'hsl(var(--primary))', marginBottom: '0.4rem' }}>
+                <span>Progreso de carga</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="import-progress-bar" style={{ height: '10px', borderRadius: '6px', overflow: 'hidden', margin: 0 }}>
+                <div className="import-progress-fill" style={{ width: `${progress}%`, transition: 'width 0.3s ease' }} />
+              </div>
+            </div>
+
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              No cierres ni cambies de pantalla hasta finalizar el proceso
+            </span>
+          </div>
+        </div>,
+        document.body
+      )}
+
     </div>
   );
 };
+
