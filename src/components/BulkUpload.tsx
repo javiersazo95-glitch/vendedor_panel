@@ -1884,8 +1884,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       <span>Progreso</span>
                       <span>{progress}%</span>
                     </div>
-                    <div className="import-progress-bar" style={{ margin: '0.35rem 0 0 0', height: '6px' }}>
-                      <div className="import-progress-fill" style={{ width: `${progress}%` }}></div>
+                    <div className="import-progress-bar" style={{ margin: '0.35rem 0 0 0', height: '6px', borderRadius: '99px', overflow: 'hidden', backgroundColor: 'rgba(0, 0, 0, 0.08)' }}>
+                      <div className="import-progress-fill" style={{ width: `${progress}%`, height: '100%', backgroundColor: 'hsl(var(--primary))', borderRadius: '99px', transition: 'width 0.3s ease' }}></div>
                     </div>
                   </div>
                 )}
@@ -2448,8 +2448,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 <span>Progreso de carga</span>
                 <span>{progress}%</span>
               </div>
-              <div className="import-progress-bar" style={{ height: '10px', borderRadius: '6px', overflow: 'hidden', margin: 0 }}>
-                <div className="import-progress-fill" style={{ width: `${progress}%`, transition: 'width 0.3s ease' }} />
+              <div className="import-progress-bar" style={{ height: '10px', borderRadius: '99px', overflow: 'hidden', margin: 0, backgroundColor: 'rgba(0, 0, 0, 0.08)' }}>
+                <div className="import-progress-fill" style={{ width: `${progress}%`, height: '100%', backgroundColor: 'hsl(var(--primary))', borderRadius: '99px', transition: 'width 0.3s ease' }} />
               </div>
             </div>
 

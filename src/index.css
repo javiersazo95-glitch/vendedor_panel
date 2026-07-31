@@ -1691,10 +1691,17 @@ h1, h2, h3, h4, h5, h6 {
 .import-progress-bar {
   width: 100%;
   height: 10px;
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: rgba(0, 0, 0, 0.08);
   border-radius: 99px;
   overflow: hidden;
   margin: 1.5rem 0;
+}
+
+.import-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, hsl(var(--primary)), hsl(265, 95%, 68%));
+  border-radius: 99px;
+  transition: width 0.3s ease;
 }
 
 /* Keyframes Animations */
