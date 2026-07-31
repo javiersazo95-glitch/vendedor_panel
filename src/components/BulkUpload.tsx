@@ -805,17 +805,18 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     }
   };
 
-  // Guarda en el backend los productos que ya pasaron el análisis
   const handleStartUpload = async (productsOverride?: PreparedProduct[], genericImageSkus?: Set<string>) => {
     const productsToSave = productsOverride ?? preparedProducts;
     if (productsToSave.length === 0 || stats.errors > 0) return;
 
     setProcessing(true);
-    setProgress(0);
+    const startProgress = genericImageSkus && genericImageSkus.size > 0 ? 15 : 0;
+    setProgress(startProgress);
 
     try {
       const dbResult: BatchResult = await saveProductsBatch(productsToSave, false, (percent) => {
-        setProgress(percent);
+        const mappedPercent = Math.round(startProgress + (percent * ((100 - startProgress) / 100)));
+        setProgress(mappedPercent);
       });
 
 
@@ -919,21 +920,39 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       }
 
       setProcessing(true);
-      setProgress(0);
+      setProgress(2);
       setMissingImageRows([]);
 
+      // Force UI render tick so spinner/progress appears instantly
+      await new Promise((r) => setTimeout(r, 50));
 
       // Track which SKUs get a generic placeholder instead of a real photo,
       // so the log/history can tell them apart afterwards (UX-SRC-007) — once
       // imageFile is set below, there's no other way to distinguish them.
       const genericImageSkus = new Set<string>();
-      const finalProducts = continueWithGenericImage
-        ? await Promise.all(productsWithAssignedImages.map(async (product) => {
-          if (productHasImage(product)) return product;
-          genericImageSkus.add(product.sku);
-          return { ...product, imageFile: await createGenericProductImage(product) };
-        }))
-        : productsWithAssignedImages;
+      let finalProducts: PreparedProduct[] = [];
+
+      if (continueWithGenericImage) {
+        const total = productsWithAssignedImages.length;
+        finalProducts = [];
+        for (let i = 0; i < total; i++) {
+          const product = productsWithAssignedImages[i];
+          if (productHasImage(product)) {
+            finalProducts.push(product);
+          } else {
+            genericImageSkus.add(product.sku);
+            const imageFile = await createGenericProductImage(product);
+            finalProducts.push({ ...product, imageFile });
+          }
+          // Yield UI thread every 20 items and update progress from 0% to 15%
+          if (i % 20 === 0 || i === total - 1) {
+            setProgress(Math.round(((i + 1) / total) * 15));
+            await new Promise((r) => setTimeout(r, 0));
+          }
+        }
+      } else {
+        finalProducts = productsWithAssignedImages;
+      }
 
       await handleStartUpload(finalProducts, genericImageSkus);
     } catch (err: any) {
