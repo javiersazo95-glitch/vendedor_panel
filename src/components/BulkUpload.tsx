@@ -44,6 +44,17 @@ const loadBulkUploadHistory = (): BulkUploadHistoryItem[] => {
   }
 };
 
+const getIsoTimestampString = (date = new Date()): string => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  const seconds = pad(date.getSeconds());
+  return `${year}${month}${day}_${hours}${minutes}${seconds}`;
+};
+
 const productHasImage = (product: PreparedProduct) => {
   if (product.image && product.image.trim()) return true;
   if (!product.imageFile) return false;
@@ -372,7 +383,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Reporte_Errores_Carga_Masiva_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    link.setAttribute('download', `Reporte_Errores_Carga_Masiva_${getIsoTimestampString()}.xlsx`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -587,7 +598,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', 'Plantilla_Carga_Masiva_RepuesTop.csv');
+      link.setAttribute('download', `Plantilla_Carga_Masiva_RepuesTop_${getIsoTimestampString()}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -602,7 +613,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', 'Plantilla_Carga_Masiva_RepuesTop.xlsx');
+      link.setAttribute('download', `Plantilla_Carga_Masiva_RepuesTop_${getIsoTimestampString()}.xlsx`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
