@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './utils/imageHelper';
+import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from './utils/imageHelper';
 import { apiFetch } from './utils/apiFetch';
 import { getStoredSession } from './utils/session';
 
@@ -96,7 +96,7 @@ function mapDtoToProduct(dto: ProductDto): Product {
     price: Number(dto.precio || 0),
     stock: Number(dto.stock || 0),
     description: dto.descripcion || '',
-    image: dto.imageUrls && dto.imageUrls.length > 0 ? dto.imageUrls[0] : '',
+    image: dto.imageUrls && dto.imageUrls.length > 0 ? dto.imageUrls[0] : DEFAULT_PRODUCT_IMAGE_URL,
     pricingMode: dto.pricingMode === 'QUOTE_ONLY' ? 'quote_only' : 'show_price',
     condition: dto.condicion === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL',
     requiresChassis: dto.requiereChasis === true,

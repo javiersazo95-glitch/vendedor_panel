@@ -32,7 +32,7 @@ export const DEFAULT_PRODUCT_IMAGE_URL =
  * - For base64, blob, and external URLs, returns them as-is.
  */
 export function resolveImageUri(uri: string | undefined): string {
-  if (!uri) return '';
+  if (!uri || !uri.trim()) return DEFAULT_PRODUCT_IMAGE_URL;
   
   // Return base64 data URIs or local object URLs as-is
   if (uri.startsWith('data:') || uri.startsWith('blob:')) {
