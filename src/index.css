@@ -1785,11 +1785,27 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Card theme variations with subtle colored left borders and shadows */
+.summary-card {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.summary-card.active {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 0 0 2px var(--card-active-color, hsl(var(--primary))), var(--shadow-md);
+}
+
 .summary-card-success {
   border-left: 4px solid hsl(var(--success));
 }
-.summary-card-success:hover {
+.summary-card-success:hover, .summary-card-success.active {
   border-color: rgba(16, 185, 129, 0.3) rgba(16, 185, 129, 0.3) rgba(16, 185, 129, 0.3) hsl(var(--success));
+}
+.summary-card-success.active {
+  --card-active-color: hsl(var(--success));
+  background: rgba(16, 185, 129, 0.06);
 }
 .summary-card-success .summary-num {
   color: hsl(var(--success));
@@ -1799,8 +1815,12 @@ h1, h2, h3, h4, h5, h6 {
 .summary-card-warning {
   border-left: 4px solid hsl(var(--warning));
 }
-.summary-card-warning:hover {
+.summary-card-warning:hover, .summary-card-warning.active {
   border-color: rgba(245, 158, 11, 0.3) rgba(245, 158, 11, 0.3) rgba(245, 158, 11, 0.3) hsl(var(--warning));
+}
+.summary-card-warning.active {
+  --card-active-color: hsl(var(--warning));
+  background: rgba(245, 158, 11, 0.06);
 }
 .summary-card-warning .summary-num {
   color: hsl(var(--warning));
@@ -1810,8 +1830,12 @@ h1, h2, h3, h4, h5, h6 {
 .summary-card-danger {
   border-left: 4px solid hsl(var(--danger));
 }
-.summary-card-danger:hover {
+.summary-card-danger:hover, .summary-card-danger.active {
   border-color: rgba(239, 68, 68, 0.3) rgba(239, 68, 68, 0.3) rgba(239, 68, 68, 0.3) hsl(var(--danger));
+}
+.summary-card-danger.active {
+  --card-active-color: hsl(var(--danger));
+  background: rgba(239, 68, 68, 0.06);
 }
 .summary-card-danger .summary-num {
   color: hsl(var(--danger));

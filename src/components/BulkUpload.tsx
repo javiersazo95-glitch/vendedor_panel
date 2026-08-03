@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye } from 'lucide-react';
+import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye, Search, Download, Pencil } from 'lucide-react';
 import type { Product, BatchResult } from '../db';
 import { saveProductsBatch, getAllProducts } from '../db';
 import { useFocusTrap } from '../utils/useFocusTrap';
@@ -49,6 +49,22 @@ const productHasImage = (product: PreparedProduct) => {
   if (!product.imageFile) return false;
   return Array.isArray(product.imageFile) ? product.imageFile.length > 0 : true;
 };
+
+interface ImportLog {
+  id: string;
+  row: number;
+  sku: string;
+  name?: string;
+  status: 'SUCCESS' | 'WARNING' | 'ERROR';
+  message: string;
+  pendingProduct?: PreparedProduct;
+}
+
+const isSkuIssueLog = (log: ImportLog) =>
+  ['ERROR', 'WARNING'].includes(log.status) && (
+    /repetido|duplicad|SKU|ya existe|invalido|formato/i.test(log.message) ||
+    !!log.pendingProduct
+  );
 
 const createGenericProductImage = async (product: PreparedProduct) => {
   const filenameSku = (product.sku || 'producto').replace(/[^a-z0-9_-]/gi, '-').toLowerCase();
@@ -254,20 +270,6 @@ const createGenericProductImage = async (product: PreparedProduct) => {
   return new File([blob], `${filenameSku}-imagen-generica.png`, { type: 'image/png' });
 };
 
-interface ImportLog {
-  id: string;
-  row: number;
-  sku: string;
-  name?: string;
-  status: 'SUCCESS' | 'WARNING' | 'ERROR';
-  message: string;
-  // Producto ya armado y listo para re-encolar si el vendedor corrige el SKU.
-  pendingProduct?: PreparedProduct;
-}
-
-const isSkuIssueLog = (log: ImportLog) =>
-  log.status === 'ERROR' && /repetido|duplicad|SKU faltante/i.test(log.message);
-
 export const BulkUpload: React.FC<BulkUploadProps> = ({
   isOpen,
   onClose,
@@ -311,10 +313,70 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const [uploadHistory, setUploadHistory] = useState<BulkUploadHistoryItem[]>(() => loadBulkUploadHistory());
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<BulkUploadHistoryItem | null>(null);
 
+  // Filtros, búsqueda y paginación para la tabla de logs de transacciones
+  const [logFilter, setLogFilter] = useState<'ALL' | 'SUCCESS' | 'WARNING' | 'ERROR'>('ALL');
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
+  const [logPage, setLogPage] = useState<number>(1);
+  const [logPageSize] = useState<number>(50);
+  const [savedSkusSet, setSavedSkusSet] = useState<Set<string>>(new Set());
+
   // Paginación para la vista de asignación de imágenes
   const [imagesPageSize, setImagesPageSize] = useState<number>(15);
   const [imagesCurrentPage, setImagesCurrentPage] = useState<number>(1);
   const [isRetryingFailed, setIsRetryingFailed] = useState<boolean>(false);
+
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      const matchesStatus = logFilter === 'ALL' || log.status === logFilter;
+      if (!matchesStatus) return false;
+      if (!logSearchQuery.trim()) return true;
+      const q = logSearchQuery.toLowerCase().trim();
+      return (
+        log.sku.toLowerCase().includes(q) ||
+        (log.name && log.name.toLowerCase().includes(q)) ||
+        log.message.toLowerCase().includes(q) ||
+        `fila ${log.row}`.includes(q)
+      );
+    });
+  }, [logs, logFilter, logSearchQuery]);
+
+  useEffect(() => {
+    setLogPage(1);
+  }, [logFilter, logSearchQuery]);
+
+  const paginatedLogs = useMemo(() => {
+    const start = (logPage - 1) * logPageSize;
+    return filteredLogs.slice(start, start + logPageSize);
+  }, [filteredLogs, logPage, logPageSize]);
+
+  const totalLogPages = Math.ceil(filteredLogs.length / logPageSize) || 1;
+
+  const handleExportErrors = async () => {
+    const errorLogs = logs.filter(l => l.status === 'ERROR');
+    if (errorLogs.length === 0) return;
+
+    const exportData = errorLogs.map(l => ({
+      'Fila Original': l.row === 0 ? 'N/A' : l.row,
+      'SKU': l.sku,
+      'Nombre del Repuesto': l.name || '—',
+      'Estado': 'FALLIDO',
+      'Motivo del Error': l.message
+    }));
+
+    const XLSX = await import('xlsx');
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Errores_Carga');
+    const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Reporte_Errores_Carga_Masiva_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
 
   useEffect(() => {
@@ -373,6 +435,10 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     setGalleryOpenForSku(null);
     setUploadSuccessCount(null);
     setMissingImageRows([]);
+    setLogFilter('ALL');
+    setLogSearchQuery('');
+    setLogPage(1);
+    setSavedSkusSet(new Set());
 
     if (dataFileInputRef.current) dataFileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
@@ -819,6 +885,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
         setProgress(mappedPercent);
       });
 
+      setSavedSkusSet(new Set(dbResult.success.map((p) => p.sku)));
+
 
       setLogs((prev) => {
         let updated = [...prev];
@@ -961,16 +1029,16 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     }
   };
 
-  // Reintenta la carga ÚNICAMENTE de los registros que resultaron con estado ERROR
+  // Reintenta la carga ÚNICAMENTE de los registros que resultaron con estado ERROR o fueron corregidos
   const handleRetryFailedRecords = async () => {
-    if (processing || !uploadDone || stats.errors === 0) return;
+    if (processing || !uploadDone || (stats.errors === 0 && preparedProducts.every((p) => savedSkusSet.has(p.sku)))) return;
 
-    // Identificar los SKUs fallidos en la lista actual de logs
+    // Identificar los SKUs fallidos en la lista actual de logs y aquellos no guardados aún
     const errorLogs = logs.filter((l) => l.status === 'ERROR');
     const failedSkus = new Set(errorLogs.map((l) => l.sku));
 
-    // Filtrar los productos preparados que fallaron
-    const failedProducts = preparedProducts.filter((p) => failedSkus.has(p.sku));
+    // Filtrar los productos preparados que fallaron o no se han guardado
+    const failedProducts = preparedProducts.filter((p) => failedSkus.has(p.sku) || !savedSkusSet.has(p.sku));
     if (failedProducts.length === 0) return;
 
     setIsRetryingFailed(true);
@@ -984,6 +1052,12 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
       const newlySucceededSkus = new Set(dbResult.success.map((p) => p.sku));
       const newlyFailedSkus = new Set(dbResult.errors.map((e) => e.sku));
+
+      setSavedSkusSet((prev) => {
+        const next = new Set(prev);
+        dbResult.success.forEach((p) => next.add(p.sku));
+        return next;
+      });
 
       // Actualizar logs: cambiar logs reintentados de ERROR a SUCCESS
       setLogs((prev) =>
@@ -1059,8 +1133,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   };
 
   const openReviewSku = (id: string) => {
+    const targetLog = logs.find(l => l.id === id);
     setReviewingLogId(id);
-    setReviewSkuInput('');
+    setReviewSkuInput(targetLog && targetLog.sku !== 'VACÍO' ? targetLog.sku : '');
     setReviewValidation({ status: 'idle', message: '' });
   };
 
@@ -1074,37 +1149,60 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     const trimmed = reviewSkuInput.trim();
     if (!trimmed) return;
 
-    setReviewValidation({ status: 'checking', message: 'Verificando...' });
+    setReviewValidation({ status: 'checking', message: 'Verificando SKU...' });
     const normalized = trimmed.toUpperCase();
     const existingProducts = await getAllProducts();
-    const exists = existingProducts.some(p => p.sku.trim().toUpperCase() === normalized);
+    const existsInDb = existingProducts.some(p => p.sku.trim().toUpperCase() === normalized);
 
-    if (exists) {
-      setReviewValidation({ status: 'invalid', message: `El SKU "${trimmed}" ya existe en tu inventario.` });
+    if (existsInDb) {
+      setReviewValidation({ status: 'invalid', message: `El SKU "${trimmed}" ya existe en el catálogo.` });
       return;
     }
 
     const currentLog = logs.find(l => l.id === reviewingLogId);
+    if (!currentLog) return;
 
-    if (currentLog?.pendingProduct) {
-      setReviewValidation({ status: 'valid', message: `El SKU "${trimmed}" es válido y está disponible.` });
-      setPreparedProducts(prev => [...prev, { ...currentLog.pendingProduct!, sku: normalized }]);
-      setLogs(prev => prev.map(l => l.id === reviewingLogId
-        ? { ...l, sku: normalized, status: 'SUCCESS', message: 'SKU corregido y validado correctamente. Lista para cargar.', pendingProduct: undefined }
-        : l
-      ));
-      setStats(prev => ({ ...prev, errors: Math.max(0, prev.errors - 1), success: prev.success + 1 }));
-    } else {
-      // El SKU ya es válido, pero a la fila le faltan otros datos obligatorios
-      // (nombre, precio o stock), así que no puede re-encolarse automáticamente.
-      setReviewValidation({
-        status: 'valid',
-        message: `El SKU "${trimmed}" es válido, pero esta fila tiene otros datos incompletos y no se cargará automáticamente.`
-      });
-      if (reviewingLogId) {
-        setLogs(prev => prev.map(l => l.id === reviewingLogId ? { ...l, sku: normalized } : l));
-      }
+    const existsInPrepared = preparedProducts.some(
+      p => p.sku.trim().toUpperCase() === normalized && p.sourceRow !== currentLog.row
+    );
+
+    if (existsInPrepared) {
+      setReviewValidation({ status: 'invalid', message: `El SKU "${trimmed}" ya está en la lista para cargar.` });
+      return;
     }
+
+    if (currentLog.pendingProduct) {
+      setPreparedProducts(prev => [...prev, { ...currentLog.pendingProduct!, sku: normalized }]);
+    } else {
+      setPreparedProducts(prev => {
+        const idx = prev.findIndex(p => p.sku === currentLog.sku || (p.sourceRow && p.sourceRow === currentLog.row));
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], sku: normalized };
+          return copy;
+        }
+        return prev;
+      });
+    }
+
+    setLogs(prev => prev.map(l => l.id === reviewingLogId
+      ? {
+          ...l,
+          sku: normalized,
+          status: 'SUCCESS',
+          message: `SKU corregido a "${normalized}". Listo para cargar.`,
+          pendingProduct: undefined
+        }
+      : l
+    ));
+
+    setStats(prev => ({
+      ...prev,
+      errors: Math.max(0, prev.errors - 1),
+      success: prev.success + 1
+    }));
+
+    setReviewValidation({ status: 'valid', message: `El SKU "${trimmed}" es válido. Registros actualizados.` });
   };
 
   const reviewingLog = logs.find(l => l.id === reviewingLogId) || null;
@@ -1937,20 +2035,53 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                     <h4 style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>Resumen del Procesamiento</h4>
+                    {logFilter !== 'ALL' && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setLogFilter('ALL')}
+                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
+                      >
+                        Ver todos ({logs.length})
+                      </button>
+                    )}
                   </div>
 
                   <div className="report-summary-cards" style={{ margin: '0 0 1rem 0', gap: '0.75rem' }}>
-                    <div className="summary-card summary-card-success" style={{ padding: '0.75rem 0.5rem', borderRadius: '12px' }}>
+                    <div
+                      className={`summary-card summary-card-success ${logFilter === 'SUCCESS' ? 'active' : ''}`}
+                      onClick={() => setLogFilter((prev) => (prev === 'SUCCESS' ? 'ALL' : 'SUCCESS'))}
+                      style={{ padding: '0.75rem 0.5rem', borderRadius: '12px', cursor: 'pointer' }}
+                      title="Haz clic para filtrar por registros exitosos"
+                    >
                       <div className="summary-num" style={{ fontSize: '1.45rem' }}>{stats.success}</div>
-                      <div className="summary-txt" style={{ fontSize: '0.62rem' }}>Éxito</div>
+                      <div className="summary-txt" style={{ fontSize: '0.62rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}>
+                        Éxito {logFilter === 'SUCCESS' && <CheckCircle2 size={11} />}
+                      </div>
                     </div>
-                    <div className="summary-card summary-card-warning" style={{ padding: '0.75rem 0.5rem', borderRadius: '12px' }}>
+
+                    <div
+                      className={`summary-card summary-card-warning ${logFilter === 'WARNING' ? 'active' : ''}`}
+                      onClick={() => setLogFilter((prev) => (prev === 'WARNING' ? 'ALL' : 'WARNING'))}
+                      style={{ padding: '0.75rem 0.5rem', borderRadius: '12px', cursor: 'pointer' }}
+                      title="Haz clic para filtrar por registros con alertas"
+                    >
                       <div className="summary-num" style={{ fontSize: '1.45rem' }}>{stats.warnings}</div>
-                      <div className="summary-txt" style={{ fontSize: '0.62rem' }}>Alertas</div>
+                      <div className="summary-txt" style={{ fontSize: '0.62rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}>
+                        Alertas {logFilter === 'WARNING' && <CheckCircle2 size={11} />}
+                      </div>
                     </div>
-                    <div className="summary-card summary-card-danger" style={{ padding: '0.75rem 0.5rem', borderRadius: '12px' }}>
+
+                    <div
+                      className={`summary-card summary-card-danger ${logFilter === 'ERROR' ? 'active' : ''}`}
+                      onClick={() => setLogFilter((prev) => (prev === 'ERROR' ? 'ALL' : 'ERROR'))}
+                      style={{ padding: '0.75rem 0.5rem', borderRadius: '12px', cursor: 'pointer' }}
+                      title="Haz clic para filtrar únicamente los registros fallidos"
+                    >
                       <div className="summary-num" style={{ fontSize: '1.45rem' }}>{stats.errors}</div>
-                      <div className="summary-txt" style={{ fontSize: '0.62rem' }}>Fallidos</div>
+                      <div className="summary-txt" style={{ fontSize: '0.62rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}>
+                        Fallidos {logFilter === 'ERROR' && <CheckCircle2 size={11} />}
+                      </div>
                     </div>
                   </div>
 
@@ -2005,16 +2136,83 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                     </div>
                   )}
 
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <h5 style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Detalle de Transacciones (Log)
+                      </h5>
+                      {logFilter !== 'ALL' && (
+                        <span
+                          style={{
+                            fontSize: '0.66rem',
+                            fontWeight: 700,
+                            padding: '0.12rem 0.45rem',
+                            borderRadius: '99px',
+                            background: logFilter === 'ERROR' ? 'var(--danger-bg)' : logFilter === 'WARNING' ? 'var(--warning-bg)' : 'var(--success-bg)',
+                            color: logFilter === 'ERROR' ? 'hsl(var(--danger))' : logFilter === 'WARNING' ? 'hsl(var(--warning))' : 'hsl(var(--success))',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem'
+                          }}
+                        >
+                          Filtro: {logFilter === 'ERROR' ? 'Fallidos' : logFilter === 'WARNING' ? 'Alertas' : 'Éxito'}
+                          <button
+                            type="button"
+                            onClick={() => setLogFilter('ALL')}
+                            style={{ border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', padding: 0, fontWeight: 800, fontSize: '0.75rem', lineHeight: 1 }}
+                            title="Quitar filtro"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      {stats.errors > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={handleExportErrors}
+                          style={{ padding: '0.2rem 0.55rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.3rem', height: 'auto' }}
+                          title="Descargar reporte Excel con las filas fallidas y sus motivos de error"
+                        >
+                          <Download size={13} style={{ color: 'hsl(var(--danger))' }} />
+                          Exportar Errores (.xlsx)
+                        </button>
+                      )}
+                      <span 
+                        className="scroll-indicator-pulse"
+                        style={{ fontSize: '0.68rem', color: 'hsl(var(--primary))', fontWeight: 700 }}
+                      >
+                        ↕ Scroll activo
+                      </span>
+                    </div>
+                  </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                    <h5 style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Detalle de Transacciones (Log)
-                    </h5>
-                    <span 
-                      className="scroll-indicator-pulse"
-                      style={{ fontSize: '0.68rem', color: 'hsl(var(--primary))', fontWeight: 700 }}
-                    >
-                      ↕ Scroll activo
+                  {/* Search Bar for logs */}
+                  <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.65rem', alignItems: 'center' }}>
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <Search size={14} style={{ position: 'absolute', left: '0.65rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Buscar por SKU, repuesto o detalle de error..."
+                        value={logSearchQuery}
+                        onChange={(e) => setLogSearchQuery(e.target.value)}
+                        style={{ paddingLeft: '2rem', height: '32px', fontSize: '0.75rem' }}
+                      />
+                      {logSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setLogSearchQuery('')}
+                          style={{ position: 'absolute', right: '0.5rem', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 700 }}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontWeight: 600 }}>
+                      Mostrando {filteredLogs.length} de {logs.length}
                     </span>
                   </div>
 
@@ -2026,11 +2224,11 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                           <th style={{ width: '120px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>SKU</th>
                           <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Estado</th>
                           <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Detalle / Error</th>
-                          <th style={{ width: '80px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center' }}>Acción</th>
+                          <th style={{ width: '110px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center' }}>Acción</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {logs.map((log) => {
+                        {paginatedLogs.map((log) => {
                           let bgRow = '';
                           let borderLeft = '';
                           let iconColor = '';
@@ -2089,22 +2287,49 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                                 </div>
                               </td>
                               <td style={{ padding: '0.5rem 0.75rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
-                                  {isSkuIssueLog(log) && (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
+                                  {(log.status === 'ERROR' || isSkuIssueLog(log)) && (
                                     <button
                                       type="button"
-                                      title="Revisar SKU"
+                                      title="Modificar SKU para reintentar la carga"
                                       onClick={() => openReviewSku(log.id)}
-                                      style={{ border: 'none', background: 'rgba(37, 99, 235, 0.08)', color: 'hsl(var(--primary))', borderRadius: '6px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                      style={{
+                                        border: '1px solid rgba(37, 99, 235, 0.2)',
+                                        background: 'rgba(37, 99, 235, 0.08)',
+                                        color: 'hsl(var(--primary))',
+                                        borderRadius: '6px',
+                                        padding: '0.2rem 0.4rem',
+                                        height: '26px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.25rem',
+                                        cursor: 'pointer',
+                                        fontSize: '0.68rem',
+                                        fontWeight: 700,
+                                        whiteSpace: 'nowrap'
+                                      }}
                                     >
-                                      <SearchCheck size={14} />
+                                      <Pencil size={12} />
+                                      <span>Editar</span>
                                     </button>
                                   )}
                                   <button
                                     type="button"
-                                    title="Eliminar registro"
+                                    title="Eliminar registro del reporte"
                                     onClick={() => handleDeleteLog(log.id)}
-                                    style={{ border: 'none', background: 'rgba(239, 68, 68, 0.08)', color: 'hsl(var(--danger))', borderRadius: '6px', width: '26px', height: '26px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                                    style={{
+                                      border: 'none',
+                                      background: 'rgba(239, 68, 68, 0.08)',
+                                      color: 'hsl(var(--danger))',
+                                      borderRadius: '6px',
+                                      width: '26px',
+                                      height: '26px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      cursor: 'pointer',
+                                      flexShrink: 0
+                                    }}
                                   >
                                     <Trash2 size={14} />
                                   </button>
@@ -2116,6 +2341,37 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       </tbody>
                     </table>
                   </div>
+
+                  {filteredLogs.length > logPageSize && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem', marginTop: '0.25rem', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                        Mostrando <strong>{(logPage - 1) * logPageSize + 1}-{Math.min(logPage * logPageSize, filteredLogs.length)}</strong> de <strong>{filteredLogs.length}</strong> logs
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', height: 'auto' }}
+                          disabled={logPage <= 1}
+                          onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+                        >
+                          Anterior
+                        </button>
+                        <span style={{ fontSize: '0.72rem', padding: '0 0.4rem', fontWeight: 700, color: 'hsl(var(--primary))' }}>
+                          Página {logPage} de {totalLogPages}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.72rem', height: 'auto' }}
+                          disabled={logPage >= totalLogPages}
+                          onClick={() => setLogPage((p) => Math.min(totalLogPages, p + 1))}
+                        >
+                          Siguiente
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
