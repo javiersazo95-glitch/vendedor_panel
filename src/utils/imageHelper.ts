@@ -20,6 +20,11 @@ export const API_BASE_URL = rawApiBaseUrl
   .replace(/\/api\/?$/, '')
   .replace(/\/$/, '');
 
+export const DEFAULT_PRODUCT_IMAGE_URL =
+  typeof window !== 'undefined'
+    ? `${window.location.origin}/imagen-generica.png`
+    : '/imagen-generica.png';
+
 /**
  * Resolves a given image URI.
  * - For Google Drive links, extracts the file ID and rewrites it to use the backend proxy.

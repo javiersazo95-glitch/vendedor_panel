@@ -378,7 +378,7 @@ export async function saveProductsBatch(
   let completedCount = 0;
   const totalCount = productsData.length;
 
-  const batchSize = 5;
+  const batchSize = 12;
   for (let i = 0; i < productsData.length; i += batchSize) {
     // Yield UI thread every 50 items to keep browser rendering smooth during 10,000+ item loads
     if (i > 0 && i % 50 === 0) {
