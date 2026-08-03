@@ -21,9 +21,8 @@ export const API_BASE_URL = rawApiBaseUrl
   .replace(/\/$/, '');
 
 export const DEFAULT_PRODUCT_IMAGE_URL =
-  typeof window !== 'undefined'
-    ? `${window.location.origin}/imagen-generica.png`
-    : '/imagen-generica.png';
+  import.meta.env.VITE_DEFAULT_PRODUCT_IMAGE_URL ||
+  'https://pub-650d4cc5c6be42bc9a81e878e6042ea6.r2.dev/Productos/img_generica/imagen-generica.png';
 
 /**
  * Resolves a given image URI.
