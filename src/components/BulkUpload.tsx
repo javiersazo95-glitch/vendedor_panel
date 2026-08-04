@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye, Search, Download, Pencil } from 'lucide-react';
+import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye, Search, Download, Pencil, Zap, Package } from 'lucide-react';
 import type { Product, BatchResult } from '../db';
 import { saveProductsBatch, getAllProducts } from '../db';
 import { useFocusTrap } from '../utils/useFocusTrap';
@@ -87,6 +87,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   onAssignImagesStateChange,
   embedded = false
 }) => {
+  const [uploadMode, setUploadMode] = useState<'FULL_CREATION' | 'EXPRESS_STOCK_PRICE'>('FULL_CREATION');
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [imageFolderFiles, setImageFolderFiles] = useState<FileList | null>(null);
   const [imageZipFile, setImageZipFile] = useState<File | null>(null);
@@ -341,51 +342,65 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
   // 1. Generate & Download CSV/XLSX Templates
   const downloadTemplate = async (format: 'xlsx' | 'csv') => {
-    const headers = [
-      'sku',
-      'oem',
-      'nombre',
-      'categoria',
-      'marca_repuesto',
-      'marca_vehiculo',
-      'modelo_vehiculo',
-      'ano_vehiculo',
-      'version_vehiculo',
-      'precio',
-      'stock',
-      'descripcion'
-    ];
+    const isExpress = uploadMode === 'EXPRESS_STOCK_PRICE';
+    
+    const headers = isExpress
+      ? ['sku', 'precio', 'stock']
+      : [
+          'sku',
+          'oem',
+          'nombre',
+          'categoria',
+          'marca_repuesto',
+          'marca_vehiculo',
+          'modelo_vehiculo',
+          'ano_vehiculo',
+          'version_vehiculo',
+          'precio',
+          'stock',
+          'descripcion',
+          'url_foto'
+        ];
 
-    const sampleRows = [
-      {
-        sku: 'BOS-SPK-FR7DC',
-        oem: '0242235666',
-        nombre: 'Bujía de Encendido Super Plus',
-        categoria: 'Motor',
-        marca_repuesto: 'Bosch',
-        marca_vehiculo: 'Toyota',
-        modelo_vehiculo: 'Yaris',
-        ano_vehiculo: 2018,
-        version_vehiculo: '1.5 GLI',
-        precio: 4500,
-        stock: 50,
-        descripcion: 'Bujía de encendido de alta durabilidad.'
-      },
-      {
-        sku: 'BRE-BRK-P83085',
-        oem: '04465-0D020',
-        nombre: 'Pastillas de Freno Brembo',
-        categoria: 'Frenos',
-        marca_repuesto: 'Brembo',
-        marca_vehiculo: 'Toyota',
-        modelo_vehiculo: 'Yaris',
-        ano_vehiculo: 2019,
-        version_vehiculo: '1.5 Sport',
-        precio: 32000,
-        stock: 15,
-        descripcion: 'Pastillas de freno cerámicas delanteras.'
-      }
-    ];
+    const sampleRows = isExpress
+      ? [
+          { sku: 'BOS-SPK-FR7DC', precio: 4900, stock: 45 },
+          { sku: 'BRE-BRK-P83085', precio: 34900, stock: 12 }
+        ]
+      : [
+          {
+            sku: 'BOS-SPK-FR7DC',
+            oem: '0242235666',
+            nombre: 'Bujía de Encendido Super Plus',
+            categoria: 'Motor',
+            marca_repuesto: 'Bosch',
+            marca_vehiculo: 'Toyota',
+            modelo_vehiculo: 'Yaris',
+            ano_vehiculo: 2018,
+            version_vehiculo: '1.5 GLI',
+            precio: 4500,
+            stock: 50,
+            descripcion: 'Bujía de encendido de alta durabilidad.',
+            url_foto: ''
+          },
+          {
+            sku: 'BRE-BRK-P83085',
+            oem: '04465-0D020',
+            nombre: 'Pastillas de Freno Brembo',
+            categoria: 'Frenos',
+            marca_repuesto: 'Brembo',
+            marca_vehiculo: 'Toyota',
+            modelo_vehiculo: 'Yaris',
+            ano_vehiculo: 2019,
+            version_vehiculo: '1.5 Sport',
+            precio: 32000,
+            stock: 15,
+            descripcion: 'Pastillas de freno cerámicas delanteras.',
+            url_foto: 'https://pub-650d4cc5c6be42bc9a81e878e6042ea6.r2.dev/Productos/img_generica/imagen-generica.png'
+          }
+        ];
+
+    const filePrefix = isExpress ? 'Plantilla_Stock_Precio_Express' : 'Plantilla_Carga_Masiva_RepuesTop';
 
     if (format === 'csv') {
       const Papa = (await import('papaparse')).default;
@@ -397,7 +412,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `Plantilla_Carga_Masiva_RepuesTop_${getIsoTimestampString()}.csv`);
+      link.setAttribute('download', `${filePrefix}_${getIsoTimestampString()}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -412,7 +427,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `Plantilla_Carga_Masiva_RepuesTop_${getIsoTimestampString()}.xlsx`);
+      link.setAttribute('download', `${filePrefix}_${getIsoTimestampString()}.xlsx`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -513,6 +528,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           // 3. Process rows and reconcile images
           const existingProducts = await getAllProducts();
           const existingSkus = new Set(existingProducts.map(p => p.sku.trim().toUpperCase()));
+          const existingProductMap = new Map(existingProducts.map(p => [p.sku.trim().toUpperCase(), p]));
           const seenSkusInFile = new Set<string>();
 
           const processedProducts: PreparedProduct[] = [];
@@ -521,127 +537,199 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           let warningCount = 0;
           let errorCount = 0;
 
-          for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const rowNum = i + 2; // Row 1 is header
-            
-            // Standardise column mapping
-            const rawSku = row.sku || row.SKU || '';
-            const rawName = row.nombre || row.Nombre || row.name || '';
-            const rawPrice = row.precio || row.Precio || row.price || 0;
-            const rawStock = row.stock || row.Stock || 0;
-            const rawCategory = row.categoria || row.Categoria || row.category || 'Motor';
-            const rawPartBrand = row.marca_repuesto || row.Marca_Repuesto || row.partBrand || '';
-            const rawVehicleBrand = row.marca_vehiculo || row.Marca_Vehiculo || row.vehicleBrand || '';
-            const rawVehicleModel = row.modelo_vehiculo || row.Modelo_Vehiculo || row.vehicleModel || '';
-            const rawVehicleYear = row.ano_vehiculo || row.Ano_Vehiculo || row.vehicleYear || new Date().getFullYear();
-            const rawVehicleVersion = row.version_vehiculo || row.Version_Vehiculo || row.vehicleVersion || '';
-            const rawDescription = row.descripcion || row.Descripcion || row.description || '';
-            const rawImageFilename = row.imagen || row.Imagen || row.image || '';
+          if (uploadMode === 'EXPRESS_STOCK_PRICE') {
+            for (let i = 0; i < rows.length; i++) {
+              const row = rows[i];
+              const rowNum = i + 2; // Row 1 is header
 
-            const sku = String(rawSku).trim();
-            const name = String(rawName).trim();
-            const price = Number(rawPrice);
-            const stock = Number(rawStock);
+              const rawSku = row.sku || row.SKU || '';
+              const rawPrice = row.precio !== undefined ? row.precio : (row.Precio !== undefined ? row.Precio : row.price);
+              const rawStock = row.stock !== undefined ? row.stock : (row.Stock !== undefined ? row.Stock : row.units);
 
-            // Detecta problemas de SKU sin abandonar la fila todavía, para poder
-            // construir el producto y dejarlo listo por si el vendedor corrige el SKU.
-            const normalizedSku = sku ? sku.toUpperCase() : '';
-            let skuErrorMessage: string | null = null;
-            if (!sku) {
-              skuErrorMessage = 'Fila omitida: SKU faltante o inválido.';
-            } else if (seenSkusInFile.has(normalizedSku)) {
-              skuErrorMessage = `Fila omitida: El SKU "${sku}" está repetido dentro de la misma plantilla.`;
-            } else if (existingSkus.has(normalizedSku)) {
-              skuErrorMessage = `Fila omitida: El SKU ya existe en el catálogo (registro omitido por SKU duplicado).`;
-            } else {
-              seenSkusInFile.add(normalizedSku);
-            }
+              const sku = String(rawSku).trim();
+              const normalizedSku = sku ? sku.toUpperCase() : '';
 
-            // Validaciones del resto de los campos (se evalúan siempre, para poder
-            // ofrecer un producto ya armado si solo falla el SKU).
-            let fieldErrorMessage: string | null = null;
-            if (!name) {
-              fieldErrorMessage = 'Nombre de producto faltante.';
-            } else if (isNaN(price) || price <= 0) {
-              fieldErrorMessage = 'El precio debe ser un número mayor a 0.';
-            } else if (isNaN(stock) || stock < 0) {
-              fieldErrorMessage = 'El stock no puede ser un número negativo.';
-            }
-
-            // Image matching engine
-            let imagePath = '';
-            let matchedFile: File | Blob | null = null;
-            const imgFilenameClean = String(rawImageFilename).trim();
-            let imageNotFound = false;
-
-            if (imgFilenameClean) {
-              if (imgFilenameClean.startsWith('http://') || imgFilenameClean.startsWith('https://')) {
-                imagePath = imgFilenameClean;
-              } else {
-                const imgKey = imgFilenameClean.toLowerCase();
-                const matchedBlob = imagesMap[imgKey];
-                if (matchedBlob) {
-                  matchedFile = matchedBlob;
-                } else {
-                  imageNotFound = true;
-                }
+              if (!sku) {
+                errorCount++;
+                localLogs.push({ row: rowNum, sku: 'VACÍO', name: 'N/A', status: 'ERROR', message: 'Fila omitida: SKU faltante o inválido.' });
+                continue;
               }
-            }
 
-            const buildProductPayload = () => ({
-              sku: normalizedSku || sku.toUpperCase(),
-              oem: String(row.oem || row.OEM || '').trim().toUpperCase(),
-              name,
-              category: String(rawCategory).trim(),
-              partBrand: String(rawPartBrand).trim(),
-              vehicleBrand: String(rawVehicleBrand).trim(),
-              vehicleModel: String(rawVehicleModel).trim(),
-              vehicleYear: Number(rawVehicleYear) || new Date().getFullYear(),
-              vehicleVersion: String(rawVehicleVersion).trim(),
-              price,
-              stock,
-              description: String(rawDescription).trim(),
-              image: imagePath,
-              imageFile: matchedFile,
-              sourceRow: rowNum
-            });
+              if (seenSkusInFile.has(normalizedSku)) {
+                errorCount++;
+                localLogs.push({ row: rowNum, sku: normalizedSku, name: 'N/A', status: 'ERROR', message: `Fila omitida: El SKU "${sku}" está repetido dentro de la misma plantilla.` });
+                continue;
+              }
+              seenSkusInFile.add(normalizedSku);
 
-            if (skuErrorMessage) {
-              errorCount++;
-              localLogs.push({
-                row: rowNum,
-                sku: sku ? normalizedSku : 'VACÍO',
-                name,
-                status: 'ERROR',
-                message: skuErrorMessage,
-                // Solo se deja el producto listo para re-encolar si el resto de los datos es válido.
-                pendingProduct: fieldErrorMessage ? undefined : buildProductPayload()
-              });
-              continue;
-            }
+              const existingProduct = existingProductMap.get(normalizedSku);
+              if (!existingProduct) {
+                warningCount++;
+                localLogs.push({
+                  row: rowNum,
+                  sku: normalizedSku,
+                  name: 'No Encontrado',
+                  status: 'WARNING',
+                  message: `El SKU "${sku}" no existe en tu inventario. Se omitirá esta actualización.`
+                });
+                continue;
+              }
 
-            if (fieldErrorMessage) {
-              localLogs.push({ row: rowNum, sku, name, status: 'ERROR', message: `Fila omitida: ${fieldErrorMessage}` });
-              errorCount++;
-              continue;
-            }
+              const price = rawPrice !== undefined && rawPrice !== '' ? Number(rawPrice) : existingProduct.price;
+              const stock = rawStock !== undefined && rawStock !== '' ? Number(rawStock) : existingProduct.stock;
 
-            if (imageNotFound) {
+              if (isNaN(price) || price <= 0) {
+                errorCount++;
+                localLogs.push({ row: rowNum, sku: normalizedSku, name: existingProduct.name, status: 'ERROR', message: 'El precio debe ser un número mayor a 0.' });
+                continue;
+              }
+
+              if (isNaN(stock) || stock < 0) {
+                errorCount++;
+                localLogs.push({ row: rowNum, sku: normalizedSku, name: existingProduct.name, status: 'ERROR', message: 'El stock no puede ser un número negativo.' });
+                continue;
+              }
+
+              const updatedPrepared: PreparedProduct = {
+                ...existingProduct,
+                price,
+                stock,
+                sourceRow: rowNum
+              };
+
+              processedProducts.push(updatedPrepared);
+              successCount++;
               localLogs.push({
                 row: rowNum,
                 sku: normalizedSku,
-                name,
-                status: 'WARNING',
-                message: `Imagen "${rawImageFilename}" no encontrada en la carpeta. Carga guardada sin foto.`
+                name: existingProduct.name,
+                status: 'SUCCESS',
+                message: `Listo para actualizar ⚡: Precio CLP $${price.toLocaleString('es-CL')} | Stock: ${stock} unid.`
               });
-              warningCount++;
-            } else {
-              localLogs.push({ row: rowNum, sku: normalizedSku, name, status: 'SUCCESS', message: 'Fila válida. Lista para cargar.' });
             }
-            successCount++;
+          } else {
+            for (let i = 0; i < rows.length; i++) {
+              const row = rows[i];
+              const rowNum = i + 2; // Row 1 is header
+              
+              // Standardise column mapping
+              const rawSku = row.sku || row.SKU || '';
+              const rawName = row.nombre || row.Nombre || row.name || '';
+              const rawPrice = row.precio || row.Precio || row.price || 0;
+              const rawStock = row.stock || row.Stock || 0;
+              const rawCategory = row.categoria || row.Categoria || row.category || 'Motor';
+              const rawPartBrand = row.marca_repuesto || row.Marca_Repuesto || row.partBrand || '';
+              const rawVehicleBrand = row.marca_vehiculo || row.Marca_Vehiculo || row.vehicleBrand || '';
+              const rawVehicleModel = row.modelo_vehiculo || row.Modelo_Vehiculo || row.vehicleModel || '';
+              const rawVehicleYear = row.ano_vehiculo || row.Ano_Vehiculo || row.vehicleYear || new Date().getFullYear();
+              const rawVehicleVersion = row.version_vehiculo || row.Version_Vehiculo || row.vehicleVersion || '';
+              const rawDescription = row.descripcion || row.Descripcion || row.description || '';
+              const rawImageFilename = row.imagen || row.Imagen || row.image || row.url_foto || row.URL_Foto || row.url_imagen || '';
 
-            processedProducts.push(buildProductPayload());
+              const sku = String(rawSku).trim();
+              const name = String(rawName).trim();
+              const price = Number(rawPrice);
+              const stock = Number(rawStock);
+
+              // Detecta problemas de SKU sin abandonar la fila todavía, para poder
+              // construir el producto y dejarlo listo por si el vendedor corrige el SKU.
+              const normalizedSku = sku ? sku.toUpperCase() : '';
+              let skuErrorMessage: string | null = null;
+              if (!sku) {
+                skuErrorMessage = 'Fila omitida: SKU faltante o inválido.';
+              } else if (seenSkusInFile.has(normalizedSku)) {
+                skuErrorMessage = `Fila omitida: El SKU "${sku}" está repetido dentro de la misma plantilla.`;
+              } else if (existingSkus.has(normalizedSku)) {
+                skuErrorMessage = `Fila omitida: El SKU ya existe en el catálogo (registro omitido por SKU duplicado).`;
+              } else {
+                seenSkusInFile.add(normalizedSku);
+              }
+
+              // Validaciones del resto de los campos (se evalúan siempre, para poder
+              // ofrecer un producto ya armado si solo falla el SKU).
+              let fieldErrorMessage: string | null = null;
+              if (!name) {
+                fieldErrorMessage = 'Nombre de producto faltante.';
+              } else if (isNaN(price) || price <= 0) {
+                fieldErrorMessage = 'El precio debe ser un número mayor a 0.';
+              } else if (isNaN(stock) || stock < 0) {
+                fieldErrorMessage = 'El stock no puede ser un número negativo.';
+              }
+
+              // Image matching engine
+              let imagePath = '';
+              let matchedFile: File | Blob | null = null;
+              const imgFilenameClean = String(rawImageFilename).trim();
+              let imageNotFound = false;
+
+              if (imgFilenameClean) {
+                if (imgFilenameClean.startsWith('http://') || imgFilenameClean.startsWith('https://')) {
+                  imagePath = imgFilenameClean;
+                } else {
+                  const imgKey = imgFilenameClean.toLowerCase();
+                  const matchedBlob = imagesMap[imgKey];
+                  if (matchedBlob) {
+                    matchedFile = matchedBlob;
+                  } else {
+                    imageNotFound = true;
+                  }
+                }
+              }
+
+              const buildProductPayload = () => ({
+                sku: normalizedSku || sku.toUpperCase(),
+                oem: String(row.oem || row.OEM || '').trim().toUpperCase(),
+                name,
+                category: String(rawCategory).trim(),
+                partBrand: String(rawPartBrand).trim(),
+                vehicleBrand: String(rawVehicleBrand).trim(),
+                vehicleModel: String(rawVehicleModel).trim(),
+                vehicleYear: Number(rawVehicleYear) || new Date().getFullYear(),
+                vehicleVersion: String(rawVehicleVersion).trim(),
+                price,
+                stock,
+                description: String(rawDescription).trim(),
+                image: imagePath,
+                imageFile: matchedFile,
+                sourceRow: rowNum
+              });
+
+              if (skuErrorMessage) {
+                errorCount++;
+                localLogs.push({
+                  row: rowNum,
+                  sku: sku ? normalizedSku : 'VACÍO',
+                  name,
+                  status: 'ERROR',
+                  message: skuErrorMessage,
+                  // Solo se deja el producto listo para re-encolar si el resto de los datos es válido.
+                  pendingProduct: fieldErrorMessage ? undefined : buildProductPayload()
+                });
+                continue;
+              }
+
+              if (fieldErrorMessage) {
+                localLogs.push({ row: rowNum, sku, name, status: 'ERROR', message: `Fila omitida: ${fieldErrorMessage}` });
+                errorCount++;
+                continue;
+              }
+
+              if (imageNotFound) {
+                localLogs.push({
+                  row: rowNum,
+                  sku: normalizedSku,
+                  name,
+                  status: 'WARNING',
+                  message: `Imagen "${rawImageFilename}" no encontrada en la carpeta. Carga guardada sin foto.`
+                });
+                warningCount++;
+              } else {
+                localLogs.push({ row: rowNum, sku: normalizedSku, name, status: 'SUCCESS', message: 'Fila válida. Lista para cargar.' });
+              }
+              successCount++;
+
+              processedProducts.push(buildProductPayload());
+            }
           }
 
           // Sort logs: errors first, then warnings, then successes
@@ -1612,12 +1700,65 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           <div className="bulk-upload-split-layout">
             
             {/* Left Panel: Uploading and template downloads */}
-            <div className="bulk-upload-left-panel">
+            <div className={`bulk-upload-left-panel ${uploadMode === 'EXPRESS_STOCK_PRICE' ? 'express-theme' : ''}`}>
+              {/* Mode Switcher Tabs */}
+              <div className="bulk-mode-selector">
+                <button
+                  type="button"
+                  className={`bulk-mode-tab ${uploadMode === 'FULL_CREATION' ? 'active-full' : ''}`}
+                  onClick={() => {
+                    setUploadMode('FULL_CREATION');
+                    setDataFile(null);
+                    setLogs([]);
+                    setPreparedProducts([]);
+                    setAnalysisDone(false);
+                  }}
+                  disabled={processing}
+                >
+                  <Package size={15} />
+                  <span>📦 Publicación Completa</span>
+                </button>
+                <button
+                  type="button"
+                  className={`bulk-mode-tab ${uploadMode === 'EXPRESS_STOCK_PRICE' ? 'active-express' : ''}`}
+                  onClick={() => {
+                    setUploadMode('EXPRESS_STOCK_PRICE');
+                    setDataFile(null);
+                    setLogs([]);
+                    setPreparedProducts([]);
+                    setAnalysisDone(false);
+                  }}
+                  disabled={processing}
+                >
+                  <Zap size={15} />
+                  <span>⚡ Actualización Rápida</span>
+                </button>
+              </div>
+
               {/* Template Download Banner */}
-              <div style={{ background: 'rgba(99, 102, 241, 0.04)', padding: '0.85rem 1rem', borderRadius: '12px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{
+                background: uploadMode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.05)' : 'rgba(99, 102, 241, 0.04)',
+                padding: '0.85rem 1rem',
+                borderRadius: '12px',
+                border: uploadMode === 'EXPRESS_STOCK_PRICE' ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.5rem'
+              }}>
                 <div>
-                  <h4 style={{ fontSize: '0.825rem', fontWeight: 700 }}>Plantilla Oficial</h4>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Completa el stock, OEM y fotos usando este formato.</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                    <h4 style={{ fontSize: '0.825rem', fontWeight: 700, color: uploadMode === 'EXPRESS_STOCK_PRICE' ? '#047857' : 'inherit' }}>
+                      {uploadMode === 'EXPRESS_STOCK_PRICE' ? 'Plantilla Expresa (3 Cols)' : 'Plantilla Oficial (13 Cols)'}
+                    </h4>
+                    {uploadMode === 'EXPRESS_STOCK_PRICE' && (
+                      <span className="express-badge"><Zap size={11} /> ⚡ Expreso</span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                    {uploadMode === 'EXPRESS_STOCK_PRICE'
+                      ? 'Ajuste veloz de stock y precio CLP por SKU (3 columnas).'
+                      : 'Formato completo con OEM, vehículos, fotos y columna URL_Foto.'}
+                  </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button

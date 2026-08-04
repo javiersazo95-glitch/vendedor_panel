@@ -1842,6 +1842,91 @@ h1, h2, h3, h4, h5, h6 {
   text-shadow: 0 0 10px rgba(239, 68, 68, 0.15);
 }
 
+/* Mode Selector Switcher Tabs */
+.bulk-mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(241, 245, 249, 0.8);
+  padding: 0.25rem;
+  border-radius: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  margin-bottom: 1.25rem;
+}
+
+.bulk-mode-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bulk-mode-tab:hover {
+  color: #1e293b;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.bulk-mode-tab.active-full {
+  background: #ffffff;
+  color: #1b64da;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(27, 100, 218, 0.12);
+  border: 1px solid rgba(27, 100, 218, 0.2);
+}
+
+.bulk-mode-tab.active-express {
+  background: #ffffff;
+  color: #059669;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+/* Express Mode Theme Overrides */
+.express-theme .dropzone-box {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.02);
+}
+
+.express-theme .dropzone-box:hover {
+  border-color: #059669;
+  background: rgba(16, 185, 129, 0.05);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.12);
+}
+
+.express-theme .btn-primary-action {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border-color: #047857;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.express-theme .btn-primary-action:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.35);
+}
+
+.express-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 /* Bulk Upload Split Layout */
 .bulk-upload-split-layout {
   display: grid;
