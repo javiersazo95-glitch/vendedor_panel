@@ -1364,44 +1364,46 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               </div>
 
               {/* Banner de ayuda visual para el vendedor */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                  background: 'rgba(27, 100, 218, 0.06)',
-                  border: '1px solid rgba(27, 100, 218, 0.2)',
-                  borderRadius: '12px',
-                  padding: '0.75rem 1rem'
-                }}
-              >
+              {uploadMode === 'FULL_CREATION' && (
                 <div
                   style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '8px',
-                    background: 'hsl(var(--primary))',
-                    color: '#ffffff',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0
+                    gap: '0.75rem',
+                    background: 'rgba(27, 100, 218, 0.06)',
+                    border: '1px solid rgba(27, 100, 218, 0.2)',
+                    borderRadius: '12px',
+                    padding: '0.75rem 1rem'
                   }}
                 >
-                  <ImageUp size={18} />
+                  <div
+                    style={{
+                      width: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: 'hsl(var(--primary))',
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0
+                    }}
+                  >
+                    <ImageUp size={18} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
+                      💡 ¿Cómo asignar fotos a cada producto?
+                    </span>
+                    <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                      Haz clic en el botón azul <strong>"+ Asignar foto"</strong> en la columna <strong>Imágenes</strong> de cada producto para abrir la galería de fotos cargadas. <em>(Nota: Las filas destacadas en 🟡 amarillo indican repuestos sin foto asignada)</em>.
+                    </span>
+                  </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
-                    💡 ¿Cómo asignar fotos a cada producto?
-                  </span>
-                  <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                    Haz clic en el botón azul <strong>"+ Asignar foto"</strong> en la columna <strong>Imágenes</strong> de cada producto para abrir la galería de fotos cargadas. <em>(Nota: Las filas destacadas en 🟡 amarillo indican repuestos sin foto asignada)</em>.
-                  </span>
-                </div>
-              </div>
+              )}
 
 
-              {Object.keys(availableImages).length === 0 && (
+              {uploadMode === 'FULL_CREATION' && Object.keys(availableImages).length === 0 && (
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '1rem 0' }}>
                   No hay imágenes cargadas en la carpeta. Puedes iniciar la carga sin fotos.
                 </p>
@@ -1451,10 +1453,12 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Modelo Vehículo</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Año Vehículo</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Versión Vehículo</th>
-                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Precio</th>
-                      <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Stock</th>
+                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Precio</th>
+                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Stock</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Descripción</th>
-                      <th style={{ width: '160px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
+                      {uploadMode === 'FULL_CREATION' && (
+                        <th style={{ width: '160px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
+                      )}
                       <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>Acción</th>
                     </tr>
                   </thead>
@@ -1501,59 +1505,61 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                             <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleVersion || '—'}</td>
                             <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>${product.price?.toLocaleString('es-CL')}</td>
                             <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.stock}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.description}>
+                             <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.description}>
                               {product.description || '—'}
                             </td>
-                            <td style={{ padding: '0.5rem 0.75rem' }}>
-                              <button
-                                type="button"
-                                onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '0.35rem',
-                                  padding: '0.3rem 0.6rem',
-                                  borderRadius: '8px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  whiteSpace: 'nowrap',
-                                  border: isGalleryOpen
-                                    ? '1px solid hsl(var(--primary))'
-                                    : isMissingImageHighlighted
-                                    ? '1px solid #facc15'
-                                    : selected.length > 0
-                                    ? '1px solid rgba(16, 185, 129, 0.4)'
-                                    : '1px solid hsl(var(--primary) / 0.4)',
-                                  background: isGalleryOpen
-                                    ? 'hsl(var(--primary))'
-                                    : isMissingImageHighlighted
-                                    ? '#fef3c7'
-                                    : selected.length > 0
-                                    ? 'var(--success-bg)'
-                                    : 'rgba(27, 100, 218, 0.08)',
-                                  color: isGalleryOpen
-                                    ? '#ffffff'
-                                    : isMissingImageHighlighted
-                                    ? '#92400e'
-                                    : selected.length > 0
-                                    ? 'hsl(var(--success))'
-                                    : 'hsl(var(--primary))',
-                                  boxShadow: isGalleryOpen ? '0 2px 6px rgba(27, 100, 218, 0.25)' : 'none',
-                                  transition: 'all 0.15s ease'
-                                }}
-                                title="Haz clic para abrir la galería de fotos y seleccionar imágenes para este producto"
-                              >
-                                <ImageUp size={14} />
-                                <span>
-                                  {isMissingImageHighlighted
-                                    ? 'Asignar foto'
-                                    : selected.length > 0
-                                    ? `${selected.length}/${MAX_IMAGES_PER_PRODUCT} fotos`
-                                    : '+ Asignar foto'}
-                                </span>
-                              </button>
-                            </td>
+                            {uploadMode === 'FULL_CREATION' && (
+                              <td style={{ padding: '0.5rem 0.75rem' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    padding: '0.3rem 0.6rem',
+                                    borderRadius: '8px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    border: isGalleryOpen
+                                      ? '1px solid hsl(var(--primary))'
+                                      : isMissingImageHighlighted
+                                      ? '1px solid #facc15'
+                                      : selected.length > 0
+                                      ? '1px solid rgba(16, 185, 129, 0.4)'
+                                      : '1px solid hsl(var(--primary) / 0.4)',
+                                    background: isGalleryOpen
+                                      ? 'hsl(var(--primary))'
+                                      : isMissingImageHighlighted
+                                      ? '#fef3c7'
+                                      : selected.length > 0
+                                      ? 'var(--success-bg)'
+                                      : 'rgba(27, 100, 218, 0.08)',
+                                    color: isGalleryOpen
+                                      ? '#ffffff'
+                                      : isMissingImageHighlighted
+                                      ? '#92400e'
+                                      : selected.length > 0
+                                      ? 'hsl(var(--success))'
+                                      : 'hsl(var(--primary))',
+                                    boxShadow: isGalleryOpen ? '0 2px 6px rgba(27, 100, 218, 0.25)' : 'none',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  title="Haz clic para abrir la galería de fotos y seleccionar imágenes para este producto"
+                                >
+                                  <ImageUp size={14} />
+                                  <span>
+                                    {isMissingImageHighlighted
+                                      ? 'Asignar foto'
+                                      : selected.length > 0
+                                      ? `${selected.length}/${MAX_IMAGES_PER_PRODUCT} fotos`
+                                      : '+ Asignar foto'}
+                                  </span>
+                                </button>
+                              </td>
+                            )}
 
                             <td style={{ padding: '0.5rem 0.75rem' }}>
                               <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -1783,7 +1789,11 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               </div>
 
               {/* Horizontal Dropzones Container */}
-              <div className="dropzones-horizontal-container">
+              <div className="dropzones-horizontal-container" style={{
+                display: 'grid',
+                gridTemplateColumns: uploadMode === 'EXPRESS_STOCK_PRICE' ? '1fr' : '1fr 1fr',
+                gap: '1rem'
+              }}>
                 {/* Input 1: CSV/Excel Data */}
                 <div className="form-group">
                   <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'block' }}>1. Datos (.csv, .xlsx)</label>
@@ -1811,103 +1821,105 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 </div>
 
                 {/* Input 2: Folder or ZIP files */}
-                <div className="form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', height: '15px' }}>
-                    <label className="form-label" style={{ margin: 0, fontSize: '0.72rem' }}>2. Fotos</label>
-                    <div style={{ display: 'flex', gap: '2px', background: 'var(--border-color)', padding: '1px', borderRadius: '4px' }}>
-                      <button
-                        type="button"
-                        style={{ border: 'none', background: imageSource === 'FOLDER' ? 'var(--bg-sidebar)' : 'transparent', fontSize: '0.6rem', padding: '0.1rem 0.25rem', borderRadius: '3px', cursor: 'pointer', fontWeight: 600 }}
-                        onClick={() => { setImageSource('FOLDER'); setImageZipFile(null); }}
-                        disabled={processing}
-                      >
-                        Carpeta
-                      </button>
-                      <button
-                        type="button"
-                        style={{ border: 'none', background: imageSource === 'ZIP' ? 'var(--bg-sidebar)' : 'transparent', fontSize: '0.6rem', padding: '0.1rem 0.25rem', borderRadius: '3px', cursor: 'pointer', fontWeight: 600 }}
-                        onClick={() => { setImageSource('ZIP'); setImageFolderFiles(null); }}
-                        disabled={processing}
-                      >
-                        ZIP
-                      </button>
+                {uploadMode === 'FULL_CREATION' && (
+                  <div className="form-group">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', height: '15px' }}>
+                      <label className="form-label" style={{ margin: 0, fontSize: '0.72rem' }}>2. Fotos</label>
+                      <div style={{ display: 'flex', gap: '2px', background: 'var(--border-color)', padding: '1px', borderRadius: '4px' }}>
+                        <button
+                          type="button"
+                          style={{ border: 'none', background: imageSource === 'FOLDER' ? 'var(--bg-sidebar)' : 'transparent', fontSize: '0.6rem', padding: '0.1rem 0.25rem', borderRadius: '3px', cursor: 'pointer', fontWeight: 600 }}
+                          onClick={() => { setImageSource('FOLDER'); setImageZipFile(null); }}
+                          disabled={processing}
+                        >
+                          Carpeta
+                        </button>
+                        <button
+                          type="button"
+                          style={{ border: 'none', background: imageSource === 'ZIP' ? 'var(--bg-sidebar)' : 'transparent', fontSize: '0.6rem', padding: '0.1rem 0.25rem', borderRadius: '3px', cursor: 'pointer', fontWeight: 600 }}
+                          onClick={() => { setImageSource('ZIP'); setImageFolderFiles(null); }}
+                          disabled={processing}
+                        >
+                          ZIP
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {imageSource === 'FOLDER' ? (
-                    <div
-                      className={`dropzone compact ${imageFolderFiles ? 'active' : ''}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={handlePickFolder}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          handlePickFolder();
-                        }
-                      }}
-                      style={{ cursor: processing ? 'not-allowed' : 'pointer' }}
-                    >
-                      <input
-                        type="file"
-                        ref={folderInputRef}
-                        multiple
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const files = e.target.files;
-                          if (files && files.length > 0) {
-                            const imageCount = Array.from(files).filter((f) => {
-                              const ext = f.name.split('.').pop()?.toLowerCase();
-                              return ext && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
-                            }).length;
-                            setPendingImageFiles(files);
-                            setPendingImageCount(imageCount);
-                          } else {
-                            setImageFolderFiles(null);
+                    {imageSource === 'FOLDER' ? (
+                      <div
+                        className={`dropzone compact ${imageFolderFiles ? 'active' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={handlePickFolder}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handlePickFolder();
                           }
                         }}
-                        disabled={processing}
-                        {...({
-                          webkitdirectory: '',
-                          directory: '',
-                        } as any)}
-                      />
-                      <FolderOpen size={24} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
-                      <span className="dropzone-title">Carpeta Local</span>
-                      <span className="dropzone-desc">Sube carpeta con fotos</span>
-                      {imageFolderFiles && imageFolderFiles.length > 0 && (
-                        <div className="file-selected-badge" style={{ marginTop: '0.25rem', background: 'rgba(6, 182, 212, 0.1)', color: 'hsl(var(--accent))', borderColor: 'rgba(6, 182, 212, 0.2)', maxWidth: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', fontSize: '0.72rem' }}>
-                            {imageFolderFiles.length} imágenes
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <label className={`dropzone compact ${imageZipFile ? 'active' : ''}`}>
-                      <input
-                        type="file"
-                        ref={zipInputRef}
-                        accept=".zip"
-                        style={{ display: 'none' }}
-                        onChange={(e) => setImageZipFile(e.target.files?.[0] || null)}
-                        disabled={processing}
-                      />
-                      <UploadCloud size={24} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
-                      <span className="dropzone-title">Archivo ZIP</span>
-                      <span className="dropzone-desc">Sube archivo ZIP con fotos</span>
-                      {imageZipFile && (
-                        <div className="file-selected-badge" style={{ marginTop: '0.25rem', background: 'rgba(6, 182, 212, 0.1)', color: 'hsl(var(--accent))', borderColor: 'rgba(6, 182, 212, 0.2)', maxWidth: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', fontSize: '0.72rem' }} title={imageZipFile.name}>
-                            {imageZipFile.name}
-                          </span>
-                        </div>
-                      )}
-                    </label>
-                  )}
-                </div>
+                        style={{ cursor: processing ? 'not-allowed' : 'pointer' }}
+                      >
+                        <input
+                          type="file"
+                          ref={folderInputRef}
+                          multiple
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const files = e.target.files;
+                            if (files && files.length > 0) {
+                              const imageCount = Array.from(files).filter((f) => {
+                                const ext = f.name.split('.').pop()?.toLowerCase();
+                                return ext && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+                              }).length;
+                              setPendingImageFiles(files);
+                              setPendingImageCount(imageCount);
+                            } else {
+                              setImageFolderFiles(null);
+                            }
+                          }}
+                          disabled={processing}
+                          {...({
+                            webkitdirectory: '',
+                            directory: '',
+                          } as any)}
+                        />
+                        <FolderOpen size={24} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
+                        <span className="dropzone-title">Carpeta Local</span>
+                        <span className="dropzone-desc">Sube carpeta con fotos</span>
+                        {imageFolderFiles && imageFolderFiles.length > 0 && (
+                          <div className="file-selected-badge" style={{ marginTop: '0.25rem', background: 'rgba(6, 182, 212, 0.1)', color: 'hsl(var(--accent))', borderColor: 'rgba(6, 182, 212, 0.2)', maxWidth: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', fontSize: '0.72rem' }}>
+                              {imageFolderFiles.length} imágenes
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <label className={`dropzone compact ${imageZipFile ? 'active' : ''}`}>
+                        <input
+                          type="file"
+                          ref={zipInputRef}
+                          accept=".zip"
+                          style={{ display: 'none' }}
+                          onChange={(e) => setImageZipFile(e.target.files?.[0] || null)}
+                          disabled={processing}
+                        />
+                        <UploadCloud size={24} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
+                        <span className="dropzone-title">Archivo ZIP</span>
+                        <span className="dropzone-desc">Sube archivo ZIP con fotos</span>
+                        {imageZipFile && (
+                          <div className="file-selected-badge" style={{ marginTop: '0.25rem', background: 'rgba(6, 182, 212, 0.1)', color: 'hsl(var(--accent))', borderColor: 'rgba(6, 182, 212, 0.2)', maxWidth: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', fontSize: '0.72rem' }} title={imageZipFile.name}>
+                              {imageZipFile.name}
+                            </span>
+                          </div>
+                        )}
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Action trigger button */}
