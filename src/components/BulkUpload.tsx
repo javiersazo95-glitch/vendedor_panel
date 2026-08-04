@@ -1036,6 +1036,15 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     }
   };
 
+  const handleDeletePreparedProduct = (sku: string) => {
+    const matchingLog = logs.find(l => l.sku === sku);
+    if (matchingLog) {
+      handleDeleteLog(matchingLog.id);
+    } else {
+      setPreparedProducts(prev => prev.filter(p => p.sku !== sku));
+    }
+  };
+
   const openReviewSku = (id: string) => {
     const targetLog = logs.find(l => l.id === id);
     setReviewingLogId(id);
@@ -1441,7 +1450,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 }}
               >
                 <table ref={tableRef} className="log-table" style={{ width: '100%' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-card)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                  <thead style={{ background: 'var(--bg-card)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
                     <tr>
                       <th style={{ width: '72px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Fila</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>SKU</th>
@@ -1457,9 +1466,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                        <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Stock</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Descripción</th>
                       {uploadMode === 'FULL_CREATION' && (
-                        <th style={{ width: '160px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
+                        <th className="sticky-images" style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
                       )}
-                      <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>Acción</th>
+                      <th className="sticky-action" style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>Acción</th>
                     </tr>
                   </thead>
 
@@ -1472,6 +1481,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       return (
                         <React.Fragment key={product.sku}>
                           <tr
+                            className={isMissingImageHighlighted ? "missing-image-row" : ""}
                             style={{
                               background: isMissingImageHighlighted ? '#fff8db' : undefined,
                               boxShadow: isMissingImageHighlighted ? 'inset 4px 0 0 #f59e0b' : undefined
@@ -1509,7 +1519,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                               {product.description || '—'}
                             </td>
                             {uploadMode === 'FULL_CREATION' && (
-                              <td style={{ padding: '0.5rem 0.75rem' }}>
+                              <td className="sticky-images" style={{ padding: '0.5rem 0.75rem' }}>
                                 <button
                                   type="button"
                                   onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
@@ -1561,33 +1571,34 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                               </td>
                             )}
 
-                            <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <td className="sticky-action" style={{ padding: '0.5rem 0.75rem' }}>
                               <div style={{ display: 'flex', justifyContent: 'center' }}>
                                 <button
                                   type="button"
-                                  title="Subir imagen"
-                                  onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
+                                  title="Quitar registro"
+                                  onClick={() => handleDeletePreparedProduct(product.sku)}
                                   style={{
                                     border: 'none',
-                                    background: isGalleryOpen ? 'hsl(var(--primary))' : 'rgba(37, 99, 235, 0.08)',
-                                    color: isGalleryOpen ? '#fff' : 'hsl(var(--primary))',
+                                    background: 'rgba(239, 68, 68, 0.08)',
+                                    color: 'hsl(var(--danger))',
                                     borderRadius: '6px',
                                     width: '30px',
                                     height: '30px',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    cursor: 'pointer'
+                                    cursor: 'pointer',
+                                    flexShrink: 0
                                   }}
                                 >
-                                  <ImageUp size={16} />
+                                  <Trash2 size={15} />
                                 </button>
                               </div>
                             </td>
                           </tr>
                           {isGalleryOpen && (
                             <tr>
-                              <td colSpan={15} style={{ padding: '0.75rem 1rem 1.25rem', background: 'var(--bg-app)' }}>
+                              <td className="gallery-row-cell" colSpan={15} style={{ paddingTop: '0.75rem', paddingBottom: '1.25rem', paddingLeft: '1rem', background: 'var(--bg-app)' }}>
                                 {Object.keys(availableImages).length === 0 ? (
                                   <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No hay imágenes disponibles en la carpeta cargada.</p>
                                 ) : (

@@ -1013,6 +1013,21 @@ h1, h2, h3, h4, h5, h6 {
   overflow: hidden;
 }
 
+/* La vista de carga masiva vive dentro de contenedores flex anidados. Un item
+   flex tiene `min-width: auto`, o sea que NO puede encogerse por debajo del
+   ancho min-content de su contenido: la tabla de previsualizacion (con muchas
+   columnas `white-space: nowrap`) empuja toda la pagina mas ancha que la
+   ventana. El resultado es que el contenedor con scroll -- y con el su borde
+   derecho, que es justamente donde se anclan las columnas fijas Imagenes y
+   Accion -- queda fuera del viewport y hay que hacer scroll horizontal del
+   navegador para verlas. Con `min-width: 0` la cadena se encoge al ancho real
+   disponible y el scroll horizontal queda contenido dentro de la tabla. */
+.bulk-upload-page-content,
+.bulk-upload-page-content .modal-body,
+.bulk-upload-page-content .modal-body > * {
+  min-width: 0;
+}
+
 .bulk-upload-page-content .modal-header {
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   border-bottom: 1px solid #e2e8f0;
@@ -1188,7 +1203,8 @@ h1, h2, h3, h4, h5, h6 {
 
 .log-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.825rem;
 }
 
@@ -1199,11 +1215,83 @@ h1, h2, h3, h4, h5, h6 {
   border-bottom: 2px solid var(--border-color);
   padding: 0.85rem 1.15rem;
   font-weight: 800;
+  z-index: 3;
 }
 
 .log-table td {
   padding: 0.85rem 1.15rem;
   border-bottom: 1px solid var(--border-color);
+}
+
+/* Sticky Right Columns (tabla de previsualizacion de carga masiva).
+   Los anchos se fijan aqui y NO en el JSX: el desplazamiento `right` de la
+   columna Imagenes debe coincidir exactamente con el ancho real de Accion,
+   de lo contrario queda un hueco o se solapan al hacer scroll horizontal. */
+.log-table {
+  --sticky-action-w: 90px;
+  --sticky-images-w: 160px;
+}
+
+.log-table th.sticky-action,
+.log-table td.sticky-action,
+.log-table th.sticky-images,
+.log-table td.sticky-images {
+  position: sticky;
+  background: var(--bg-card);
+  z-index: 5;
+}
+
+.log-table th.sticky-action,
+.log-table td.sticky-action {
+  right: 0;
+  width: var(--sticky-action-w);
+  min-width: var(--sticky-action-w);
+  max-width: var(--sticky-action-w);
+}
+
+.log-table th.sticky-images,
+.log-table td.sticky-images {
+  right: var(--sticky-action-w);
+  width: var(--sticky-images-w);
+  min-width: var(--sticky-images-w);
+  max-width: var(--sticky-images-w);
+}
+
+/* La sombra va solo en la celda mas a la izquierda del bloque fijo, para no
+   dibujar una linea oscura entre Imagenes y Accion. */
+.log-table th.sticky-images,
+.log-table td.sticky-images,
+.log-table tr:not(:has(.sticky-images)) > th.sticky-action,
+.log-table tr:not(:has(.sticky-images)) > td.sticky-action {
+  box-shadow: -6px 0 10px -4px rgba(0, 0, 0, 0.12);
+}
+
+/* Los th fijos deben quedar por encima de los td fijos al hacer scroll vertical */
+.log-table th.sticky-action,
+.log-table th.sticky-images {
+  background: var(--bg-sidebar);
+  z-index: 6;
+}
+
+/* Preservacion de estados de fila: el fondo del <tr> no se ve por detras de una
+   celda fija, asi que hay que repetirlo aqui. IMPORTANTE: el fondo de estas
+   celdas debe ser SIEMPRE opaco -- si queda translucido (o invalido, que en
+   `background` computa a `transparent`) se ve pasar el contenido de la fila
+   por debajo al hacer scroll horizontal. Las filas de .log-table no tienen
+   estado :hover propio, por eso aqui tampoco hay uno. */
+.log-table tr.missing-image-row > td.sticky-images,
+.log-table tr.missing-image-row > td.sticky-action {
+  background: #fff8db;
+}
+[data-theme="dark"] .log-table tr.missing-image-row > td.sticky-images,
+[data-theme="dark"] .log-table tr.missing-image-row > td.sticky-action {
+  background: #3b2f0b;
+}
+
+/* La fila expandida de la galeria abarca todas las columnas: reservamos el
+   ancho del bloque fijo para que las miniaturas no queden ocultas debajo. */
+.log-table td.gallery-row-cell {
+  padding-right: calc(var(--sticky-action-w) + var(--sticky-images-w) + 1rem);
 }
 
 .log-status-badge {
