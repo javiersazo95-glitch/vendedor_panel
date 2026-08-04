@@ -604,7 +604,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 sku: normalizedSku,
                 name: existingProduct.name,
                 status: 'SUCCESS',
-                message: `Listo para actualizar ⚡: Precio CLP $${price.toLocaleString('es-CL')} | Stock: ${stock} unid.`
+                message: `Listo para actualizar: Precio CLP $${price.toLocaleString('es-CL')} | Stock: ${stock} unid.`
               });
             }
           } else {
@@ -1722,7 +1722,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   disabled={processing}
                 >
                   <Package size={15} />
-                  <span>📦 Publicación Completa</span>
+                  <span>Publicación Completa</span>
                 </button>
                 <button
                   type="button"
@@ -1737,7 +1737,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   disabled={processing}
                 >
                   <Zap size={15} />
-                  <span>⚡ Actualización Rápida</span>
+                  <span>Actualización Rápida</span>
                 </button>
               </div>
 
@@ -1757,7 +1757,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       {uploadMode === 'EXPRESS_STOCK_PRICE' ? 'Plantilla Expresa (3 Cols)' : 'Plantilla Oficial (13 Cols)'}
                     </h4>
                     {uploadMode === 'EXPRESS_STOCK_PRICE' && (
-                      <span className="express-badge"><Zap size={11} /> ⚡ Expreso</span>
+                      <span className="express-badge"><Zap size={11} /> Expreso</span>
                     )}
                   </div>
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
@@ -1928,7 +1928,14 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   type="button"
                   className="btn btn-primary"
                   style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem' }}
-                  disabled={!dataFile || processing || (imageSource === 'FOLDER' && !imageFolderFiles) || (imageSource === 'ZIP' && !imageZipFile)}
+                  disabled={
+                    !dataFile ||
+                    processing ||
+                    (uploadMode === 'FULL_CREATION' && (
+                      (imageSource === 'FOLDER' && !imageFolderFiles) ||
+                      (imageSource === 'ZIP' && !imageZipFile)
+                    ))
+                  }
                   onClick={handleAnalyze}
                 >
                   {processing ? (
