@@ -774,7 +774,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     setProgress(startProgress);
 
     try {
-      const dbResult: BatchResult = await saveProductsBatch(productsToSave, false, (percent) => {
+      const dbResult: BatchResult = await saveProductsBatch(productsToSave, uploadMode === 'EXPRESS_STOCK_PRICE', (percent) => {
         const mappedPercent = Math.round(startProgress + (percent * ((100 - startProgress) / 100)));
         setProgress(mappedPercent);
       });
@@ -946,7 +946,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     setProgress(0);
 
     try {
-      const dbResult: BatchResult = await saveProductsBatch(failedProducts, false, (percent) => {
+      const dbResult: BatchResult = await saveProductsBatch(failedProducts, uploadMode === 'EXPRESS_STOCK_PRICE', (percent) => {
         setProgress(percent);
       });
 
