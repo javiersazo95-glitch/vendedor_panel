@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Edit2, Trash2, EyeOff, ChevronLeft, ChevronRight, PauseCircle, PlayCircle } from 'lucide-react';
+import { Edit2, Trash2, EyeOff, ChevronLeft, ChevronRight, PauseCircle, PlayCircle, Check, X, Loader2 } from 'lucide-react';
 import type { Product } from '../db';
 
 interface InventoryTableProps {
@@ -7,9 +7,201 @@ interface InventoryTableProps {
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
   onTogglePause: (product: Product) => void;
+  onQuickUpdate?: (product: Product, updates: { price?: number; stock?: number }) => Promise<void>;
 }
 
-export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit, onDelete, onTogglePause }) => {
+interface QuickEditCellProps {
+  product: Product;
+  field: 'price' | 'stock';
+  onSave?: (product: Product, updates: { price?: number; stock?: number }) => Promise<void>;
+  renderDisplay: () => React.ReactNode;
+}
+
+const QuickEditCell: React.FC<QuickEditCellProps> = ({ product, field, onSave, renderDisplay }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState<string>(String(field === 'price' ? product.price : product.stock));
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleStartEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setValue(String(field === 'price' ? product.price : product.stock));
+    setErrorMsg(null);
+    setIsEditing(true);
+  };
+
+  const handleCancel = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setIsEditing(false);
+    setErrorMsg(null);
+  };
+
+  const handleConfirm = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
+    if (!onSave) return;
+
+    const numericValue = Number(value);
+    if (Number.isNaN(numericValue) || numericValue < 0) {
+      setErrorMsg(field === 'price' ? 'Precio inválido' : 'Stock inválido');
+      return;
+    }
+
+    if (field === 'price' && numericValue === product.price) {
+      setIsEditing(false);
+      return;
+    }
+    if (field === 'stock' && numericValue === product.stock) {
+      setIsEditing(false);
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMsg(null);
+    try {
+      await onSave(product, { [field]: numericValue });
+      setIsEditing(false);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Error al actualizar');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleConfirm();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancel();
+    }
+  };
+
+  if (!isEditing || !onSave) {
+    return (
+      <div
+        className="quick-edit-display-wrapper"
+        onClick={onSave ? handleStartEdit : undefined}
+        title={onSave ? `Clic para editar ${field === 'price' ? 'precio' : 'stock'}` : undefined}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.4rem',
+          cursor: onSave ? 'pointer' : 'default',
+          borderRadius: '6px',
+          padding: '0.2rem 0.4rem',
+          transition: 'background 0.15s ease',
+        }}
+      >
+        {renderDisplay()}
+        {onSave && (
+          <button
+            type="button"
+            className="quick-edit-btn"
+            aria-label={`Editar ${field === 'price' ? 'precio' : 'stock'}`}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: '2px',
+              cursor: 'pointer',
+              opacity: 0.4,
+              display: 'inline-flex',
+              alignItems: 'center',
+              color: 'var(--text-secondary)'
+            }}
+          >
+            <Edit2 size={12} />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="quick-edit-form"
+      style={{
+        display: 'inline-flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '0.2rem'
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+        {field === 'price' && <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>$</span>}
+        <input
+          type="number"
+          min={0}
+          step={field === 'price' ? 100 : 1}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          autoFocus
+          disabled={isSaving}
+          style={{
+            width: field === 'price' ? '90px' : '65px',
+            padding: '0.25rem 0.4rem',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            borderRadius: '6px',
+            border: errorMsg ? '1px solid hsl(var(--danger))' : '1px solid hsl(var(--primary))',
+            background: 'var(--bg-card)',
+            color: 'var(--text-primary)',
+            outline: 'none'
+          }}
+        />
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={isSaving}
+          title="Guardar"
+          aria-label="Guardar"
+          style={{
+            background: 'hsl(var(--success))',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+            padding: '0.3rem',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          {isSaving ? <Loader2 size={14} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={14} />}
+        </button>
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={isSaving}
+          title="Cancelar"
+          aria-label="Cancelar"
+          style={{
+            background: 'var(--bg-app)',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '6px',
+            padding: '0.3rem',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <X size={14} />
+        </button>
+      </div>
+      {errorMsg && (
+        <span style={{ fontSize: '0.7rem', color: 'hsl(var(--danger))', fontWeight: 600 }}>
+          {errorMsg}
+        </span>
+      )}
+    </div>
+  );
+};
+
+export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit, onDelete, onTogglePause, onQuickUpdate }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(15);
 
@@ -90,8 +282,22 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
                       </span>
                     </div>
                   </td>
-                  <td className="col-price">{formatCLP(p.price)}</td>
-                  <td>{getStockBadge(p.stock)}</td>
+                  <td className="col-price">
+                    <QuickEditCell
+                      product={p}
+                      field="price"
+                      onSave={onQuickUpdate}
+                      renderDisplay={() => formatCLP(p.price)}
+                    />
+                  </td>
+                  <td>
+                    <QuickEditCell
+                      product={p}
+                      field="stock"
+                      onSave={onQuickUpdate}
+                      renderDisplay={() => getStockBadge(p.stock)}
+                    />
+                  </td>
                   <td>
                     <span className={`badge ${p.pausado ? 'badge-warning' : 'badge-success'}`}>
                       {p.pausado ? 'Pausado' : 'Publicado'}
@@ -100,29 +306,35 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
                   <td>
                     <div className="actions-cell">
                       <button
-                        className="btn-icon"
+                        type="button"
+                        className="action-btn action-btn-edit"
                         onClick={() => onEdit(p)}
-                        title="Editar Repuesto"
+                        title="Editar repuesto completo"
+                        aria-label="Editar repuesto completo"
                       >
-                        <Edit2 size={16} />
+                        <Edit2 size={15} />
                       </button>
                       <button
-                        className="btn-icon"
+                        type="button"
+                        className={`action-btn ${p.pausado ? 'action-btn-play' : 'action-btn-pause'}`}
                         onClick={() => onTogglePause(p)}
-                        title={p.pausado ? 'Retomar publicación' : 'Bloquear publicación'}
+                        title={p.pausado ? 'Reactivar publicación' : 'Pausar publicación'}
+                        aria-label={p.pausado ? 'Reactivar publicación' : 'Pausar publicación'}
                       >
-                        {p.pausado ? <PlayCircle size={16} /> : <PauseCircle size={16} />}
+                        {p.pausado ? <PlayCircle size={15} /> : <PauseCircle size={15} />}
                       </button>
                       <button
-                        className="btn-icon btn-icon-danger"
+                        type="button"
+                        className="action-btn action-btn-danger"
                         onClick={() => {
                           if (window.confirm(`¿Estás seguro que deseas eliminar el repuesto SKU: ${p.sku}?`)) {
                             onDelete(p.id);
                           }
                         }}
-                        title="Eliminar Repuesto"
+                        title="Eliminar repuesto"
+                        aria-label="Eliminar repuesto"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={15} />
                       </button>
                     </div>
                   </td>

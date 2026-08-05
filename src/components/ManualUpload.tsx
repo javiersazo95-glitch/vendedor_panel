@@ -1,9 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
-import { API_BASE_URL, resolveImageUri } from '../utils/imageHelper';
+import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
 import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
+
+function sanitizeCodeInput(value: string): string {
+  return value
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9\-_/]/g, '');
+}
 
 interface ManualUploadProps {
   isOpen: boolean;
@@ -44,24 +51,59 @@ type VehicleCatalogDetail = {
 };
 
 const OTHER_VALUE = '__other__';
-const REQUIRED = <span style={{ color: 'hsl(var(--danger))' }}>*</span>;
+const REQUIRED = <span style={{ color: 'hsl(var(--danger))', fontWeight: 700, marginLeft: '3px' }}>*</span>;
+const OPTIONAL = (
+  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '6px' }}>
+    (Opcional)
+  </span>
+);
 const YEARS = Array.from(
   { length: new Date().getFullYear() + 3 - 1990 },
   (_, index) => new Date().getFullYear() + 2 - index,
 );
 
 const CATEGORIES_FALLBACK = [
-  'Frenos',
-  'Suspension y direccion',
-  'Motor',
-  'Transmision',
-  'Electricidad y sensores',
-  'Carroceria',
-  'Filtros y mantenimiento',
-  'Iluminacion',
-  'Neumaticos y llantas',
   'Accesorios',
+  'Carrocería',
+  'Electricidad y Sensores',
+  'Escape y Enfriamiento',
+  'Filtros y Mantenimiento',
+  'Frenos',
+  'Iluminación',
+  'Motor',
+  'Neumáticos y Llantas',
+  'Suspensión y Dirección',
+  'Transmisión',
 ];
+
+function cleanCategoryName(name: string): string {
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  
+  if (lower === 'suspension y direccion') return 'Suspensión y Dirección';
+  if (lower === 'filtros y mantencion' || lower === 'filtros y mantenimiento') return 'Filtros y Mantenimiento';
+  if (lower === 'transmision') return 'Transmisión';
+  if (lower === 'electricidad y sensores' || lower === 'electrico e iluminacion') return 'Electricidad y Sensores';
+  if (lower === 'escape y enfriamiento') return 'Escape y Enfriamiento';
+  if (lower === 'iluminacion') return 'Iluminación';
+  if (lower === 'carroceria') return 'Carrocería';
+  if (lower === 'neumaticos y llantas') return 'Neumáticos y Llantas';
+  
+  return trimmed;
+}
+
+function deduplicateAndSortCategories(rawCategories: string[]): string[] {
+  const map = new Map<string, string>();
+  for (const raw of rawCategories) {
+    if (!raw) continue;
+    const cleaned = cleanCategoryName(raw);
+    const key = cleaned.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (!map.has(key)) {
+      map.set(key, cleaned);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.localeCompare(b, 'es'));
+}
 
 const PART_BRANDS_FALLBACK = [
   'Bosch',
@@ -153,13 +195,12 @@ function joinValues(values: string[]) {
 }
 
 function createCompatibilityCard(product?: Product | null): CompatibilityCard {
-  const currentYear = new Date().getFullYear();
   return {
     id: Math.random().toString(36).slice(2, 9),
     vehicleBrand: product?.vehicleBrand || '',
     vehicleModel: product?.vehicleModel || '',
-    vehicleYear: product?.vehicleYear || currentYear,
-    vehicleYearTo: product?.vehicleYearTo || product?.vehicleYear || currentYear,
+    vehicleYear: product?.vehicleYear || 0,
+    vehicleYearTo: product?.vehicleYearTo || product?.vehicleYear || 0,
     vehicleVersionIds: [],
     oem: product?.oem || '',
     modelOptions: [],
@@ -358,27 +399,53 @@ function MultiOptionPicker({
 
       {isOpen && (
         <div className="manual-multi-menu">
-          {showSelectAll && (
-            <button
-              type="button"
-              className="manual-select-all"
-              onClick={() => onChange(uniqueOptions.map((option) => option.value))}
-            >
-              Seleccionar todo
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+            {showSelectAll && (
+              <button
+                type="button"
+                className="manual-select-all"
+                style={{ flex: 1, margin: 0 }}
+                onClick={() => onChange(uniqueOptions.map((option) => option.value))}
+              >
+                Seleccionar todo
+              </button>
+            )}
+            {selectedOptions.length > 0 && (
+              <button
+                type="button"
+                className="manual-select-all"
+                style={{ flex: 1, margin: 0, background: '#f1f5f9', color: '#64748b' }}
+                onClick={() => onChange([])}
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
 
-          {uniqueOptions.map((option) => (
+          <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+            {uniqueOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`manual-option-row ${values.includes(option.value) ? 'active' : ''}`}
+                onClick={() => toggleValue(option.value)}
+              >
+                <span>{option.label}</span>
+                {values.includes(option.value) && <Check size={16} />}
+              </button>
+            ))}
+          </div>
+
+          <div className="manual-multi-actions">
             <button
-              key={option.value}
               type="button"
-              className={`manual-option-row ${values.includes(option.value) ? 'active' : ''}`}
-              onClick={() => toggleValue(option.value)}
+              className="manual-multi-confirm"
+              onClick={() => setIsOpen(false)}
             >
-              <span>{option.label}</span>
-              {values.includes(option.value) && <Check size={16} />}
+              <Check size={14} />
+              Aceptar {selectedOptions.length > 0 ? `(${selectedOptions.length})` : ''}
             </button>
-          ))}
+          </div>
         </div>
       )}
     </div>
@@ -395,12 +462,12 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [sku, setSku] = useState('');
   const [oem, setOem] = useState('');
   const [name, setName] = useState('');
-  const [category, setCategory] = useState('Motor');
+  const [category, setCategory] = useState('');
   const [partBrand, setPartBrand] = useState('');
   const [compatibilities, setCompatibilities] = useState<CompatibilityCard[]>(() => [createCompatibilityCard()]);
   const [pricingMode, setPricingMode] = useState<'show_price' | 'quote_only'>('show_price');
   const [price, setPrice] = useState<number>(0);
-  const [stock, setStock] = useState<number>(10);
+  const [stock, setStock] = useState<number>(1);
   const [requiresChassis, setRequiresChassis] = useState<'false' | 'true'>('false');
   const [condition, setCondition] = useState<'ORIGINAL' | 'ALTERNATIVO'>('ORIGINAL');
   const [description, setDescription] = useState('');
@@ -412,6 +479,33 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [catalogCategories, setCatalogCategories] = useState<string[]>(CATEGORIES_FALLBACK);
   const [catalogPartBrands, setCatalogPartBrands] = useState<string[]>(PART_BRANDS_FALLBACK);
   const [vehicleBrandCatalog, setVehicleBrandCatalog] = useState<CatalogOption[]>([]);
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+  const initialSnapshotRef = useRef<string | null>(null);
+
+  const computeSnapshot = () => {
+    return JSON.stringify({
+      sku: sku.trim(),
+      oem: oem.trim(),
+      name: name.trim(),
+      category,
+      partBrand: partBrand.trim(),
+      pricingMode,
+      price,
+      stock,
+      requiresChassis,
+      condition,
+      description: description.trim(),
+      compatibilities: compatibilities.map((card) => ({
+        b: card.vehicleBrand,
+        m: card.vehicleModel,
+        y: card.vehicleYear,
+        yt: card.vehicleYearTo,
+        v: card.vehicleVersionIds,
+        o: card.oem,
+      })),
+      filesCount: imageFiles.length,
+    });
+  };
 
   useEffect(() => {
     return () => {
@@ -423,6 +517,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
   useEffect(() => {
     let active = true;
+    setShowUnsavedConfirm(false);
 
     if (editProduct) {
       // Initializes the form fields from the product being edited. Multiple
@@ -435,7 +530,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setName(editProduct.name);
       setCategory(editProduct.category || 'Motor');
       setPartBrand(editProduct.partBrand);
-      setCompatibilities([createCompatibilityCard(editProduct)]);
+      const initialCards = [createCompatibilityCard(editProduct)];
+      setCompatibilities(initialCards);
       const groups = parseCompatibilityGroups(editProduct);
       if (groups.length > 0) {
         Promise.all(groups.map((ids) => loadVehicleCatalogDetails(ids))).then((detailGroups) => {
@@ -443,7 +539,31 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           const restoredCards = detailGroups
             .map((details) => createCompatibilityCardFromDetails(details, editProduct))
             .filter((card) => card.vehicleVersionIds.length > 0);
-          if (restoredCards.length > 0) setCompatibilities(restoredCards);
+          if (restoredCards.length > 0) {
+            setCompatibilities(restoredCards);
+            initialSnapshotRef.current = JSON.stringify({
+              sku: editProduct.sku.trim(),
+              oem: (editProduct.oem || '').trim(),
+              name: editProduct.name.trim(),
+              category: editProduct.category || 'Motor',
+              partBrand: editProduct.partBrand.trim(),
+              pricingMode: editProduct.pricingMode || 'show_price',
+              price: editProduct.price,
+              stock: editProduct.stock || 0,
+              requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
+              condition: editProduct.condition || 'ORIGINAL',
+              description: (editProduct.description || '').trim(),
+              compatibilities: restoredCards.map((card) => ({
+                b: card.vehicleBrand,
+                m: card.vehicleModel,
+                y: card.vehicleYear,
+                yt: card.vehicleYearTo,
+                v: card.vehicleVersionIds,
+                o: card.oem,
+              })),
+              filesCount: 0,
+            });
+          }
         });
       }
       setPricingMode(editProduct.pricingMode || 'show_price');
@@ -455,22 +575,69 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setImage(editProduct.image || '');
       setImagePreviews(editProduct.image ? [editProduct.image] : []);
       setImageFiles([]);
+
+      initialSnapshotRef.current = JSON.stringify({
+        sku: editProduct.sku.trim(),
+        oem: (editProduct.oem || '').trim(),
+        name: editProduct.name.trim(),
+        category: editProduct.category || 'Motor',
+        partBrand: editProduct.partBrand.trim(),
+        pricingMode: editProduct.pricingMode || 'show_price',
+        price: editProduct.price,
+        stock: editProduct.stock || 0,
+        requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
+        condition: editProduct.condition || 'ORIGINAL',
+        description: (editProduct.description || '').trim(),
+        compatibilities: initialCards.map((card) => ({
+          b: card.vehicleBrand,
+          m: card.vehicleModel,
+          y: card.vehicleYear,
+          yt: card.vehicleYearTo,
+          v: card.vehicleVersionIds,
+          o: card.oem,
+        })),
+        filesCount: 0,
+      });
     } else {
       setSku('');
       setOem('');
       setName('');
-      setCategory('Motor');
+      setCategory('');
       setPartBrand('');
-      setCompatibilities([createCompatibilityCard()]);
+      const defaultCard = [createCompatibilityCard()];
+      setCompatibilities(defaultCard);
       setPricingMode('show_price');
       setPrice(0);
-      setStock(10);
+      setStock(1);
       setRequiresChassis('false');
       setCondition('ORIGINAL');
       setDescription('');
       setImage('');
       setImagePreviews([]);
       setImageFiles([]);
+
+      initialSnapshotRef.current = JSON.stringify({
+        sku: '',
+        oem: '',
+        name: '',
+        category: '',
+        partBrand: '',
+        pricingMode: 'show_price',
+        price: 0,
+        stock: 1,
+        requiresChassis: 'false',
+        condition: 'ORIGINAL',
+        description: '',
+        compatibilities: defaultCard.map((card) => ({
+          b: card.vehicleBrand,
+          m: card.vehicleModel,
+          y: card.vehicleYear,
+          yt: card.vehicleYearTo,
+          v: card.vehicleVersionIds,
+          o: card.oem,
+        })),
+        filesCount: 0,
+      });
     }
     setError(null);
 
@@ -488,7 +655,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       loadCatalog('marcas-vehiculo'),
     ]).then(([categories, vehicleBrands]) => {
       if (!active) return;
-      setCatalogCategories(namesFromCatalog(categories, CATEGORIES_FALLBACK));
+      setCatalogCategories(deduplicateAndSortCategories(namesFromCatalog(categories, CATEGORIES_FALLBACK)));
       setVehicleBrandCatalog(vehicleBrands);
     });
 
@@ -570,32 +737,101 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   }, [isOpen, vehicleBrandCatalog, compatibilityCatalogKey]);
 
   const dialogRef = useFocusTrap(isOpen);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  const triggerError = (msg: string) => {
+    setError(msg);
+    setSaving(false);
+    if (bodyRef.current) {
+      bodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleFormInvalid = (e: React.FormEvent<HTMLFormElement>) => {
+    const target = e.target as HTMLElement;
+    if (target) {
+      target.focus();
+      if (target.scrollIntoView) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      const formGroup = target.closest('.form-group');
+      const labelText = formGroup?.querySelector('.form-label')?.textContent || '';
+      const cleanLabel = labelText
+        .replace('*', '')
+        .replace('(Obligatorio)', '')
+        .replace('(Opcional)', '')
+        .trim();
+      triggerError(`Falta completar el campo obligatorio: "${cleanLabel || 'Requerido'}".`);
+    }
+  };
+
+  const isFormDirty = () => {
+    if (!initialSnapshotRef.current) return false;
+    return computeSnapshot() !== initialSnapshotRef.current;
+  };
+
+  const attemptClose = () => {
+    if (saving) return;
+    if (isFormDirty()) {
+      setShowUnsavedConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
+  const handleForceClose = () => {
+    setShowUnsavedConfirm(false);
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showUnsavedConfirm) {
+          setShowUnsavedConfirm(false);
+        } else {
+          attemptClose();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, showUnsavedConfirm]);
 
   if (!isOpen) return null;
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(e.target.files || []);
+    const newFiles = Array.from(e.target.files || []);
     e.target.value = '';
-    if (selectedFiles.length === 0) return;
+    if (newFiles.length === 0) return;
 
-    if (selectedFiles.length > MAX_PHOTOS) {
-      setError('Puedes cargar maximo 4 fotos por producto.');
+    const currentCount = imagePreviews.length;
+    const availableSlots = MAX_PHOTOS - currentCount;
+
+    if (availableSlots <= 0) {
+      triggerError('Ya has cargado el máximo de 4 fotos por producto.');
       return;
     }
 
-    const validFiles = selectedFiles.slice(0, MAX_PHOTOS);
-    const oversized = validFiles.find((file) => file.size > 2 * 1024 * 1024);
+    if (newFiles.length > availableSlots) {
+      setError(`Solo puedes agregar ${availableSlots} foto(s) más (máximo 4 por producto).`);
+    }
+
+    const filesToAdd = newFiles.slice(0, availableSlots);
+    const oversized = filesToAdd.find((file) => file.size > 2 * 1024 * 1024);
     if (oversized) {
-      setError('Cada imagen debe pesar maximo 2MB. Selecciona archivos mas livianos.');
+      triggerError('Cada imagen debe pesar máximo 2MB. Selecciona archivos más livianos.');
       return;
     }
 
-    imagePreviews.forEach((preview) => {
-      if (preview.startsWith('blob:')) URL.revokeObjectURL(preview);
-    });
+    setError(null);
     setImage('');
-    setImageFiles(validFiles);
-    setImagePreviews(validFiles.map((file) => URL.createObjectURL(file)));
+    const newPreviews = filesToAdd.map((file) => URL.createObjectURL(file));
+    setImageFiles((prev) => [...prev, ...filesToAdd]);
+    setImagePreviews((prev) => [...prev, ...newPreviews]);
   };
 
   const removeImageAt = (index: number) => {
@@ -624,7 +860,12 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           next.vehicleVersionIds = [];
           next.versionOptions = [];
         }
-        if (next.vehicleYearTo < next.vehicleYear) {
+        if (fields.vehicleYear !== undefined && fields.vehicleYear > 0) {
+          if (!next.vehicleYearTo || next.vehicleYearTo < fields.vehicleYear) {
+            next.vehicleYearTo = fields.vehicleYear;
+          }
+        }
+        if (next.vehicleYearTo > 0 && next.vehicleYear > 0 && next.vehicleYearTo < next.vehicleYear) {
           next.vehicleYearTo = next.vehicleYear;
         }
         return next;
@@ -649,32 +890,71 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setSaving(true);
 
     if (!name.trim() || !category.trim() || !partBrand.trim() || !sku.trim()) {
-      setError('Completa nombre, categoria, marca y SKU para registrar el producto.');
-      setSaving(false);
+      triggerError('Completa nombre, categoría, marca y SKU para registrar el producto.');
       return;
     }
 
     if (pricingMode === 'show_price' && price <= 0) {
-      setError('Completa el precio para registrar el producto o cambia a modo cotizacion.');
-      setSaving(false);
+      triggerError('Completa el precio de venta para registrar el producto o cambia a modo cotización.');
       return;
     }
 
     if (stock < 0) {
-      setError('El stock disponible no puede ser menor a 0.');
-      setSaving(false);
+      triggerError('El stock disponible no puede ser menor a 0.');
       return;
     }
 
-    if (compatibilities.some((card) => card.vehicleYearTo < card.vehicleYear)) {
-      setError('El ano hasta no puede ser menor que el ano desde.');
-      setSaving(false);
+    // Validation 1: Compatibility is mandatory for the product
+    const firstCompat = compatibilities[0];
+    const hasFirstBrand = Boolean(firstCompat?.vehicleBrand?.trim());
+    const hasFirstModel = Boolean(firstCompat?.vehicleModel?.trim());
+    const hasFirstYears = Boolean(firstCompat?.vehicleYear > 0 && firstCompat?.vehicleYearTo > 0);
+
+    if (!hasFirstBrand || !hasFirstModel || !hasFirstYears) {
+      if (!hasFirstBrand) {
+        triggerError('Selecciona la marca del vehículo compatible.');
+        return;
+      }
+      if (!hasFirstModel) {
+        triggerError('Selecciona al menos un modelo de vehículo compatible.');
+        return;
+      }
+      if (!hasFirstYears) {
+        triggerError('Selecciona el año desde y el año hasta del vehículo compatible.');
+        return;
+      }
+    }
+
+    for (let i = 1; i < compatibilities.length; i++) {
+      const card = compatibilities[i];
+      const hasBrand = Boolean(card.vehicleBrand.trim());
+      const hasModel = Boolean(card.vehicleModel.trim());
+      const hasYears = Boolean(card.vehicleYear > 0 && card.vehicleYearTo > 0);
+
+      if (hasBrand || hasModel || hasYears) {
+        if (!hasBrand) {
+          triggerError(`En la compatibilidad #${i + 1}, selecciona la marca del vehículo.`);
+          return;
+        }
+        if (!hasModel) {
+          triggerError(`En la compatibilidad #${i + 1}, selecciona al menos un modelo.`);
+          return;
+        }
+        if (!hasYears) {
+          triggerError(`En la compatibilidad #${i + 1}, selecciona el año desde y el año hasta.`);
+          return;
+        }
+      }
+    }
+
+    if (compatibilities.some((card) => card.vehicleYearTo > 0 && card.vehicleYear > 0 && card.vehicleYearTo < card.vehicleYear)) {
+      triggerError('El año hasta no puede ser menor que el año desde.');
       return;
     }
 
-    if (!description.trim()) {
-      setError('La descripcion es obligatoria.');
-      setSaving(false);
+    // Validation 3: Minimum description length (15 characters)
+    if (!description.trim() || description.trim().length < 15) {
+      triggerError('La descripción es obligatoria y debe tener al menos 15 caracteres.');
       return;
     }
 
@@ -694,7 +974,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
             model: card.vehicleModel,
             yearFrom: String(card.vehicleYear),
             yearTo: String(card.vehicleYearTo),
-            oemReference: card.oem,
+            oemReference: sanitizeCodeInput(card.oem),
             versionLabels: selectedVersionLabels,
           };
         })
@@ -711,9 +991,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         )
         .map((version) => version.nombre);
 
+      const finalImage = editProduct && imageFiles.length === 0 && image
+        ? image
+        : imageFiles.length > 0
+        ? ''
+        : DEFAULT_PRODUCT_IMAGE_URL;
+
       const productPayload: Omit<Product, 'id' | 'lastUpdated'> & { id?: string } = {
-        sku: sku.trim().toUpperCase(),
-        oem: primaryCompatibility.oem.trim().toUpperCase(),
+        sku: sanitizeCodeInput(sku),
+        oem: sanitizeCodeInput(primaryCompatibility.oem),
         name: name.trim(),
         category,
         partBrand: partBrand.trim(),
@@ -728,7 +1014,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         requiresChassis: requiresChassis === 'true',
         condition,
         description: description.trim(),
-        image: editProduct && imageFiles.length === 0 ? image : '',
+        image: finalImage,
         vehiculoCatalogoIds: allCatalogIds,
         compatibilityGroupsJson: JSON.stringify(compatibilityGroups),
       };
@@ -752,23 +1038,50 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const suggestedPrice = calculateSuggestedPrice(price, founder);
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content manual-upload-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-label={editProduct ? 'Editar producto' : 'Crear producto'}>
+    <div className="drawer-overlay" onClick={attemptClose}>
+      <div
+        className="drawer-content manual-upload-drawer"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={editProduct ? 'Editar producto' : 'Crear producto'}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header manual-upload-header">
-          <h3>
-            <span className="manual-upload-title-dot"></span>
-            {editProduct ? 'Editar producto' : 'Crear producto'}
-          </h3>
-          <button className="btn-icon" onClick={onClose} aria-label="Cerrar formulario de producto">
+          <div>
+            <h3>
+              <span className="manual-upload-title-dot"></span>
+              {editProduct ? 'Editar producto' : 'Crear producto'}
+            </h3>
+            <span className="drawer-subtitle">
+              {editProduct ? `SKU: ${editProduct.sku}` : 'Carga individual 1:1'}
+            </span>
+          </div>
+          <button type="button" className="btn-icon" onClick={attemptClose} aria-label="Cerrar formulario de producto">
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="modal-body manual-upload-body">
+        <form onSubmit={handleSubmit} onInvalid={handleFormInvalid} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <div className="modal-body manual-upload-body" ref={bodyRef}>
             {error && (
-              <div className="auth-error" style={{ marginBottom: '1.5rem' }}>
-                {error}
+              <div
+                style={{
+                  background: 'hsl(var(--danger) / 0.12)',
+                  border: '1px solid hsl(var(--danger) / 0.4)',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1.1rem',
+                  fontSize: '0.85rem',
+                  color: 'hsl(var(--danger))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.65rem',
+                  marginBottom: '1.5rem',
+                  fontWeight: 600
+                }}
+              >
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                <span>{error}</span>
               </div>
             )}
 
@@ -804,7 +1117,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Marca {REQUIRED}</label>
+                  <label className="form-label">Marca del repuesto {REQUIRED}</label>
                   <SelectOrInput
                     className="form-control focus-primary"
                     placeholder="Selecciona una marca"
@@ -821,8 +1134,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     type="text"
                     className="form-control focus-primary"
                     placeholder="Ej. PFD1234"
+                    maxLength={30}
                     value={sku}
-                    onChange={(e) => setSku(e.target.value)}
+                    onChange={(e) => setSku(sanitizeCodeInput(e.target.value).slice(0, 30))}
                     disabled={!!editProduct}
                     required
                   />
@@ -857,13 +1171,21 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
               <div className="form-section-grid">
                 <div className="form-group">
-                  <label className="form-label">{pricingMode === 'quote_only' ? 'Precio oculto' : 'Precio de venta'} {pricingMode === 'show_price' ? REQUIRED : null}</label>
+                  <label className="form-label">
+                    {pricingMode === 'quote_only' ? 'Precio oculto' : 'Precio de venta'} {pricingMode === 'show_price' ? REQUIRED : OPTIONAL}
+                  </label>
                   <input
                     type="number"
                     className="form-control focus-success"
                     placeholder={pricingMode === 'quote_only' ? 'Se ocultara en el resumen' : '0'}
+                    min={0}
+                    max={99999999}
                     value={pricingMode === 'quote_only' ? '' : price || ''}
-                    onChange={(e) => setPrice(Number(e.target.value))}
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      const clamped = Math.min(99999999, Math.max(0, Number.isNaN(raw) ? 0 : raw));
+                      setPrice(clamped);
+                    }}
                     disabled={pricingMode === 'quote_only'}
                     required={pricingMode === 'show_price'}
                   />
@@ -874,9 +1196,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                   <input
                     type="number"
                     className="form-control focus-success"
-                    placeholder="Ej. 10"
+                    placeholder="Ej. 1"
+                    min={0}
+                    max={99999}
                     value={stock}
-                    onChange={(e) => setStock(Number(e.target.value))}
+                    onChange={(e) => {
+                      const raw = Number(e.target.value);
+                      const clamped = Math.min(99999, Math.max(0, Number.isNaN(raw) ? 0 : raw));
+                      setStock(clamped);
+                    }}
                     required
                   />
                 </div>
@@ -884,17 +1212,16 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
               {pricingMode !== 'quote_only' && price > 0 && (
                 <div className="manual-pricing-helper">
-                  {founder && <div className="manual-pricing-row"><strong>Beneficio Fundador: tarifa RepuesTop fija de 5%</strong></div>}
+                  {founder && <div className="manual-pricing-row"><strong>Beneficio Fundador: tarifa RepuesTop fija de 5% (IVA incl.)</strong></div>}
                   <div className="manual-pricing-row">
-                    <span>Tarifa RepuesTop ({Math.round(priceBreakdown.rate * 100)}%):</span>
-                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopNet)}</strong>
+                    <span>Comisión RepuesTop ({Math.round(priceBreakdown.rate * 100)}% IVA incl.):</span>
+                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopWithIva)}</strong>
+                  </div>
+                  <div className="manual-pricing-row" style={{ paddingLeft: '0.75rem', fontSize: '0.78rem', opacity: 0.85 }}>
+                    <span>↳ Neto comisión: ${formatCLP(priceBreakdown.repuestopNet)} | IVA (19%): ${formatCLP(priceBreakdown.repuestopIva)}</span>
                   </div>
                   <div className="manual-pricing-row">
-                    <span>IVA tarifa RepuesTop:</span>
-                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopIva)}</strong>
-                  </div>
-                  <div className="manual-pricing-row">
-                    <span>Procesamiento Flow (IVA incluido):</span>
+                    <span>Procesamiento Flow (Pasarela + IVA):</span>
                     <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.flowWithIva)}</strong>
                   </div>
                   <div className="manual-pricing-row">
@@ -902,7 +1229,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     <strong className="manual-pricing-fee">-${formatCLP(priceFee)}</strong>
                   </div>
                   <div className="manual-pricing-row">
-                    <strong>Recibiras liquido:</strong>
+                    <strong>Recibirás en tu cuenta (Líquido):</strong>
                     <strong className="manual-pricing-earnings">${formatCLP(sellerEarnings)}</strong>
                   </div>
 
@@ -925,7 +1252,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               <div className="form-section-header accent manual-section-header-actions">
                 <div>
                   <span>3.</span>
-                  Compatibilidad
+                  Compatibilidad {REQUIRED}
                 </div>
                 <button type="button" className="manual-add-compat" onClick={addCompatibility} aria-label="Agregar compatibilidad">
                   <PlusCircle size={26} />
@@ -943,86 +1270,87 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       )}
                     </div>
                     <div className="form-section-grid">
-                <div className="form-group">
-                  <label className="form-label">Marca vehiculo</label>
-                  <SelectOrInput
-                    className="form-control focus-accent"
-                    placeholder="Selecciona una marca"
-                    value={card.vehicleBrand}
-                    onChange={(value) => updateCompatibility(card.id, { vehicleBrand: value })}
-                    options={namesFromCatalog(vehicleBrandCatalog, VEHICLE_BRANDS_FALLBACK)}
-                  />
-                </div>
+                      <div className="form-group">
+                        <label className="form-label">Marca vehiculo {REQUIRED}</label>
+                        <SelectOrInput
+                          className="form-control focus-accent"
+                          placeholder="Selecciona una marca"
+                          value={card.vehicleBrand}
+                          onChange={(value) => updateCompatibility(card.id, { vehicleBrand: value })}
+                          options={namesFromCatalog(vehicleBrandCatalog, VEHICLE_BRANDS_FALLBACK)}
+                        />
+                      </div>
 
-                <div className="form-group">
-                  <label className="form-label">Modelo</label>
-                  <MultiOptionPicker
-                    values={splitValues(card.vehicleModel)}
-                    onChange={(values) => updateCompatibility(card.id, { vehicleModel: joinValues(values) })}
-                    options={card.modelOptions}
-                    placeholder="Selecciona uno o mas modelos"
-                    emptyText={card.vehicleBrand ? 'No hay modelos disponibles para esta marca.' : 'Selecciona primero una marca.'}
-                    disabled={!card.vehicleBrand}
-                  />
-                </div>
+                      <div className="form-group">
+                        <label className="form-label">Modelo {REQUIRED}</label>
+                        <MultiOptionPicker
+                          values={splitValues(card.vehicleModel)}
+                          onChange={(values) => updateCompatibility(card.id, { vehicleModel: joinValues(values) })}
+                          options={card.modelOptions}
+                          placeholder="Selecciona uno o mas modelos"
+                          emptyText={card.vehicleBrand ? 'No hay modelos disponibles para esta marca.' : 'Selecciona primero una marca.'}
+                          disabled={!card.vehicleBrand}
+                        />
+                      </div>
 
-                <div className="form-group">
-                  <label className="form-label">Año desde</label>
-                  <select
-                    className="form-control focus-accent"
-                    value={card.vehicleYear}
-                    onChange={(e) => updateCompatibility(card.id, { vehicleYear: Number(e.target.value) })}
-                  >
-                    {YEARS.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                      <div className="form-group">
+                        <label className="form-label">Año desde {REQUIRED}</label>
+                        <select
+                          className="form-control focus-accent"
+                          value={card.vehicleYear || ''}
+                          onChange={(e) => updateCompatibility(card.id, { vehicleYear: Number(e.target.value) })}
+                        >
+                          <option value="">Año desde</option>
+                          {YEARS.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                <div className="form-group">
-                  <label className="form-label">Año hasta</label>
-                  <select
-                    className="form-control focus-accent"
-                    value={card.vehicleYearTo}
-                    onChange={(e) => updateCompatibility(card.id, { vehicleYearTo: Number(e.target.value) })}
-                  >
-                    {YEARS.filter((year) => year >= card.vehicleYear).map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                      <div className="form-group">
+                        <label className="form-label">Año hasta {REQUIRED}</label>
+                        <select
+                          className="form-control focus-accent"
+                          value={card.vehicleYearTo || ''}
+                          onChange={(e) => updateCompatibility(card.id, { vehicleYearTo: Number(e.target.value) })}
+                        >
+                          <option value="">Año hasta</option>
+                          {YEARS.filter((year) => !card.vehicleYear || year >= card.vehicleYear).map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                <div className="form-group">
-                  <label className="form-label">Versiones disponibles</label>
-                  <MultiOptionPicker
-                    values={card.vehicleVersionIds}
-                    onChange={(values) => updateCompatibility(card.id, { vehicleVersionIds: values })}
-                    options={card.versionOptions.map((version) => ({ label: version.nombre, value: String(version.id) }))}
-                    placeholder="Selecciona versiones"
-                    emptyText={
-                      card.vehicleModel
-                        ? 'No hay versiones disponibles para esos modelos y anos.'
-                        : 'Selecciona uno o mas modelos para ver versiones.'
-                    }
-                    showSelectAll
-                  />
-                </div>
+                      <div className="form-group">
+                        <label className="form-label">Versiones disponibles {OPTIONAL}</label>
+                        <MultiOptionPicker
+                          values={card.vehicleVersionIds}
+                          onChange={(values) => updateCompatibility(card.id, { vehicleVersionIds: values })}
+                          options={card.versionOptions.map((version) => ({ label: version.nombre, value: String(version.id) }))}
+                          placeholder="Selecciona versiones"
+                          emptyText={
+                            card.vehicleModel
+                              ? 'No hay versiones disponibles para esos modelos y anos.'
+                              : 'Selecciona uno o mas modelos para ver versiones.'
+                          }
+                          showSelectAll
+                        />
+                      </div>
 
-                <div className="form-group">
-                  <label className="form-label">Referencia / Parte OEM</label>
-                  <input
-                    type="text"
-                    className="form-control focus-accent"
-                    placeholder="Ej. 04465-0K090"
-                    value={card.oem}
-                    onChange={(e) => updateCompatibility(card.id, { oem: e.target.value })}
-                  />
-                </div>
-
+                      <div className="form-group">
+                        <label className="form-label">Referencia / Parte OEM {OPTIONAL}</label>
+                        <input
+                          type="text"
+                          className="form-control focus-accent"
+                          placeholder="Ej. 04465-0K090"
+                          value={card.oem}
+                          onChange={(e) => updateCompatibility(card.id, { oem: sanitizeCodeInput(e.target.value) })}
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1049,10 +1377,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
             <div className="form-section-card manual-form-section" style={{ borderLeft: '4px solid hsl(var(--primary))' }}>
               <div className="form-section-header primary">
                 <span>4.</span>
-                Fotos
+                Fotos {OPTIONAL}
               </div>
               <div className="form-group form-section-grid-full">
-                <label className="form-label">Agrega hasta 4 fotos claras desde diferentes angulos.</label>
+                <label className="form-label">Agrega hasta 4 fotos claras desde diferentes angulos. {OPTIONAL}</label>
                 <div className="manual-photo-area">
                   <div className="manual-photo-grid">
                     {Array.from({ length: MAX_PHOTOS }).map((_, index) => {
@@ -1072,22 +1400,54 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     })}
                   </div>
 
-                  <label className="form-control-file" style={{ flexGrow: 1 }}>
+                  <label
+                    className={`form-control-file ${imagePreviews.length >= MAX_PHOTOS ? 'disabled' : ''}`}
+                    style={{
+                      flexGrow: 1,
+                      cursor: imagePreviews.length >= MAX_PHOTOS ? 'not-allowed' : 'pointer',
+                      opacity: imagePreviews.length >= MAX_PHOTOS ? 0.5 : 1,
+                      pointerEvents: imagePreviews.length >= MAX_PHOTOS ? 'none' : 'auto'
+                    }}
+                  >
                     <input
                       type="file"
                       accept="image/*"
                       multiple
+                      disabled={imagePreviews.length >= MAX_PHOTOS}
                       style={{ display: 'none' }}
                       onChange={handleImageChange}
                     />
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', width: '100%' }}>
                       <Upload size={16} />
                       <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                        {editProduct ? `Reemplazar fotos (${imagePreviews.length}/${MAX_PHOTOS})` : `Cargar fotos (${imagePreviews.length}/${MAX_PHOTOS})`}
+                        {imagePreviews.length >= MAX_PHOTOS
+                          ? 'Límite máximo alcanzado (4/4 fotos)'
+                          : `Agregar fotos (${imagePreviews.length}/${MAX_PHOTOS})`}
                       </span>
                     </div>
                   </label>
                 </div>
+                {imagePreviews.length === 0 && (
+                  <div
+                    style={{
+                      background: 'hsl(var(--warning) / 0.12)',
+                      border: '1px solid hsl(var(--warning) / 0.4)',
+                      borderRadius: '10px',
+                      padding: '0.75rem 1rem',
+                      fontSize: '0.82rem',
+                      color: 'var(--text-primary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.65rem',
+                      marginTop: '0.85rem'
+                    }}
+                  >
+                    <AlertTriangle size={18} style={{ color: 'hsl(var(--warning))', flexShrink: 0 }} />
+                    <span>
+                      <strong>Atención:</strong> Si registras el producto sin fotos, se publicará automáticamente con la <strong>imagen genérica</strong> predeterminada de RepuesTop.
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1135,15 +1495,54 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
             </div>
           </div>
 
-          <div className="modal-footer manual-upload-footer">
-            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving}>
-              Cancelar
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Guardando...' : editProduct ? 'Guardar cambios' : 'Registrar producto'}
-            </button>
+          <div className="modal-footer manual-upload-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.75rem' }}>
+            {error && (
+              <div
+                style={{
+                  background: 'hsl(var(--danger) / 0.12)',
+                  border: '1px solid hsl(var(--danger) / 0.4)',
+                  borderRadius: '8px',
+                  padding: '0.65rem 0.9rem',
+                  fontSize: '0.82rem',
+                  color: 'hsl(var(--danger))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  width: '100%',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, fontWeight: 600 }}>{error}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
+              <button type="button" className="btn btn-secondary" onClick={attemptClose} disabled={saving}>
+                Cancelar
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? 'Guardando...' : editProduct ? 'Guardar cambios' : 'Registrar producto'}
+              </button>
+            </div>
           </div>
         </form>
+
+        {showUnsavedConfirm && (
+          <div className="manual-unsaved-modal-overlay" onClick={() => setShowUnsavedConfirm(false)}>
+            <div className="manual-unsaved-card" onClick={(e) => e.stopPropagation()}>
+              <h4>¿Descartar cambios no guardados?</h4>
+              <p>Has modificado la información de este producto. Si sales ahora, se perderán todos los datos ingresados.</p>
+              <div className="manual-unsaved-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowUnsavedConfirm(false)}>
+                  Continuar editando
+                </button>
+                <button type="button" className="btn btn-danger" onClick={handleForceClose}>
+                  Descartar cambios
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

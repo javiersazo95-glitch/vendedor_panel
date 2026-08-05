@@ -109,6 +109,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
     await fetchProducts();
   };
 
+  const handleQuickUpdateProduct = async (
+    product: Product,
+    updates: { price?: number; stock?: number }
+  ) => {
+    const updatedProduct: Product = {
+      ...product,
+      price: updates.price !== undefined ? updates.price : product.price,
+      stock: updates.stock !== undefined ? updates.stock : product.stock,
+    };
+    await updateProduct(updatedProduct);
+    await fetchProducts();
+  };
+
   const handleOpenEditModal = (product: Product) => {
     setEditingProduct(product);
     setIsManualOpen(true);
@@ -285,6 +298,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
               onEdit={handleOpenEditModal}
               onDelete={handleDeleteProduct}
               onTogglePause={handleTogglePauseProduct}
+              onQuickUpdate={handleQuickUpdateProduct}
             />
           </>
         )}
