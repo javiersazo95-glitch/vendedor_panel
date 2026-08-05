@@ -110,8 +110,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const [reviewSkuInput, setReviewSkuInput] = useState('');
   const [reviewValidation, setReviewValidation] = useState<{ status: 'idle' | 'checking' | 'valid' | 'invalid'; message: string }>({ status: 'idle', message: '' });
 
-  const [pendingImageFiles, setPendingImageFiles] = useState<FileList | null>(null);
-  const [pendingImageCount, setPendingImageCount] = useState(0);
 
   // Asignación manual de imágenes por SKU antes de iniciar la carga real
   const [imagesModalOpen, setImagesModalOpen] = useState(false);
@@ -286,8 +284,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
       const dt = new DataTransfer();
       files.forEach((f) => dt.items.add(f));
-      setPendingImageFiles(dt.files);
-      setPendingImageCount(files.length);
+      setImageFolderFiles(dt.files);
     } catch {
       // El usuario cerró el selector de carpetas sin elegir ninguna.
     }
@@ -334,7 +331,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const highlightedMissingImageSkus = new Set(missingImageRows.map((item) => item.sku));
 
   const mainDialogRef = useFocusTrap(isOpen && !embedded);
-  const folderConfirmDialogRef = useFocusTrap(pendingImageFiles !== null);
   const reviewSkuDialogRef = useFocusTrap(reviewingLogId !== null);
   const historyDetailDialogRef = useFocusTrap(selectedHistoryItem !== null);
 
@@ -1120,18 +1116,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
   const reviewingLog = logs.find(l => l.id === reviewingLogId) || null;
 
-  const confirmPendingImages = () => {
-    if (pendingImageFiles) setImageFolderFiles(pendingImageFiles);
-    setPendingImageFiles(null);
-    setPendingImageCount(0);
-  };
-
-  const cancelPendingImages = () => {
-    setImageFolderFiles(null);
-    if (folderInputRef.current) folderInputRef.current.value = '';
-    setPendingImageFiles(null);
-    setPendingImageCount(0);
-  };
 
   return (
     <div className={embedded ? "bulk-upload-page" : "modal-overlay"}>
@@ -1878,12 +1862,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                           onChange={(e) => {
                             const files = e.target.files;
                             if (files && files.length > 0) {
-                              const imageCount = Array.from(files).filter((f) => {
-                                const ext = f.name.split('.').pop()?.toLowerCase();
-                                return ext && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
-                              }).length;
-                              setPendingImageFiles(files);
-                              setPendingImageCount(imageCount);
+                              setImageFolderFiles(files);
                             } else {
                               setImageFolderFiles(null);
                             }
@@ -2126,7 +2105,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <h5 style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 700, margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Detalle de Transacciones (Log)
+                        Detalle del Procesamiento
                       </h5>
                       {logFilter !== 'ALL' && (
                         <span
@@ -2167,12 +2146,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                           Exportar Errores (.xlsx)
                         </button>
                       )}
-                      <span 
-                        className="scroll-indicator-pulse"
-                        style={{ fontSize: '0.68rem', color: 'hsl(var(--primary))', fontWeight: 700 }}
-                      >
-                        ↕ Scroll activo
-                      </span>
                     </div>
                   </div>
 
@@ -2207,7 +2180,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                     <table className="log-table">
                       <thead>
                         <tr>
-                          <th style={{ width: '80px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Origen</th>
+                          <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Fila Excel</th>
                           <th style={{ width: '120px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>SKU</th>
                           <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Estado</th>
                           <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Detalle / Error</th>
@@ -2242,7 +2215,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                             <tr key={log.id} style={{ backgroundColor: bgRow, borderLeft: borderLeft }}>
                               <td style={{ padding: '0.5rem 0.75rem' }}>
                                 <span style={{ fontSize: '0.68rem', background: 'var(--bg-app)', padding: '0.15rem 0.35rem', borderRadius: '4px', fontWeight: 700, color: 'var(--text-secondary)' }}>
-                                  {log.row === 0 ? 'DB' : `Fila ${log.row}`}
+                                  {log.row === 0 ? 'Sistema' : `Fila ${log.row}`}
                                 </span>
                               </td>
                               <td style={{ padding: '0.5rem 0.75rem' }}>
@@ -2469,27 +2442,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
         </div>
       </div>
 
-      {pendingImageFiles && (
-        <div className="modal-overlay" style={{ zIndex: 60 }}>
-          <div className="modal-content" ref={folderConfirmDialogRef} role="dialog" aria-modal="true" aria-label="Confirmar imágenes de carpeta" style={{ maxWidth: '360px', width: '90%', padding: '1.5rem' }}>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.5rem' }}>
-              <FolderOpen size={16} style={{ color: 'hsl(var(--accent))' }} />
-              Confirmar Imágenes
-            </h4>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-              Se seleccionaron <strong>{pendingImageCount}</strong> {pendingImageCount === 1 ? 'imagen' : 'imágenes'}. ¿Deseas continuar con la carga?
-            </p>
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-              <button type="button" className="btn btn-secondary" onClick={cancelPendingImages}>
-                Cancelar
-              </button>
-              <button type="button" className="btn btn-primary" onClick={confirmPendingImages}>
-                Continuar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {selectedHistoryItem && createPortal(
         <div className="modal-overlay" style={{ zIndex: 200 }} onMouseDown={() => setSelectedHistoryItem(null)}>
