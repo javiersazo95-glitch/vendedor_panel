@@ -2532,7 +2532,46 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           <div className="modal-content" ref={historyDetailDialogRef} role="dialog" aria-modal="true" aria-label="Registros cargados" style={{ maxWidth: '1050px', width: '94%', maxHeight: '82vh', display: 'flex', flexDirection: 'column' }} onMouseDown={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <h4 style={{ fontSize: '1rem', margin: 0 }}>Registros cargados</h4>
+                <h4 style={{ fontSize: '1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  Registros cargados
+                  {selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                        color: '#047857',
+                        border: '1px solid rgba(16, 185, 129, 0.2)',
+                        borderRadius: '6px',
+                        padding: '0.1rem 0.35rem',
+                        fontSize: '0.62rem',
+                        fontWeight: 700
+                      }}
+                    >
+                      <Zap size={10} />
+                      Carga Rápida
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                        color: '#1d4ed8',
+                        border: '1px solid rgba(59, 130, 246, 0.2)',
+                        borderRadius: '6px',
+                        padding: '0.1rem 0.35rem',
+                        fontSize: '0.62rem',
+                        fontWeight: 700
+                      }}
+                    >
+                      <Package size={10} />
+                      Carga Completa
+                    </span>
+                  )}
+                </h4>
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                   {selectedHistoryItem.id} · {selectedHistoryItem.records?.length ?? 0} registros disponibles
                   {selectedHistoryItem.genericImageSkus && selectedHistoryItem.genericImageSkus.length > 0 && (
@@ -2550,7 +2589,26 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               ) : (
                 <div className="log-table-container" style={{ marginTop: 0 }}>
                   <table className="log-table">
-                    <thead><tr><th>SKU</th><th>Repuesto</th><th>Marca</th><th>Vehículo</th><th>Año</th><th>Stock</th><th>Precio</th><th>Foto</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>Repuesto</th>
+                        <th>Marca</th>
+                        <th>Vehículo</th>
+                        <th>Año</th>
+                        <th style={{
+                          background: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.12)' : undefined,
+                          color: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                          fontWeight: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                        }}>Stock</th>
+                        <th style={{
+                          background: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.12)' : undefined,
+                          color: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                          fontWeight: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                        }}>Precio</th>
+                        <th>Foto</th>
+                      </tr>
+                    </thead>
                     <tbody>{selectedHistoryItem.records.map((product, index) => (
                       <tr key={`${product.id}-${index}`}>
                         <td><code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem' }}>{product.sku}</code></td>
@@ -2558,8 +2616,16 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                         <td>{product.partBrand || '—'}</td>
                         <td>{[product.vehicleBrand, product.vehicleModel].filter(Boolean).join(' ') || '—'}</td>
                         <td>{product.vehicleYear}</td>
-                        <td>{product.stock}</td>
-                        <td>{product.pricingMode === 'quote_only' ? 'A cotizar' : `$${product.price.toLocaleString('es-CL')}`}</td>
+                        <td style={{
+                          background: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.08)' : undefined,
+                          color: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                          fontWeight: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                        }}>{product.stock}</td>
+                        <td style={{
+                          background: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.08)' : undefined,
+                          color: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                          fontWeight: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                        }}>{product.pricingMode === 'quote_only' ? 'A cotizar' : `$${product.price.toLocaleString('es-CL')}`}</td>
                         <td>
                           {selectedHistoryItem.genericImageSkus?.includes(product.sku)
                             ? <span className="badge badge-warning">Genérica</span>
