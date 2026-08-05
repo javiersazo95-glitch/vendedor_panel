@@ -27,6 +27,7 @@ interface BulkUploadHistoryItem {
   warnings: number;
   errors: number;
   status: 'COMPLETADA' | 'CON_ERRORES';
+  mode?: 'FULL_CREATION' | 'EXPRESS_STOCK_PRICE';
   records?: Product[];
   // SKUs saved with a generic placeholder photo instead of a real one, so the
   // vendor can find and fix them later — the history previously had no way to
@@ -824,6 +825,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
         warnings: stats.warnings,
         errors: stats.errors + dbResult.errors.length,
         status: dbResult.errors.length > 0 || stats.errors > 0 ? 'CON_ERRORES' : 'COMPLETADA',
+        mode: uploadMode,
         records: dbResult.success,
         genericImageSkus: genericImageSkus && genericImageSkus.size > 0
           ? dbResult.success.filter((p) => genericImageSkus.has(p.sku)).map((p) => p.sku)
@@ -1209,6 +1211,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       <tr>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>ID carga</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fecha</th>
+                        <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Tipo</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Registros</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Éxito</th>
                         <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fallidos</th>
@@ -1224,6 +1227,45 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                           </td>
                           <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                             {new Date(item.createdAt).toLocaleString('es-CL')}
+                          </td>
+                          <td style={{ padding: '0.65rem 0.75rem' }}>
+                            {item.mode === 'EXPRESS_STOCK_PRICE' ? (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                                  color: '#047857',
+                                  border: '1px solid rgba(16, 185, 129, 0.2)',
+                                  borderRadius: '6px',
+                                  padding: '0.15rem 0.45rem',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                <Zap size={11} />
+                                Rápida
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem',
+                                  backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                                  color: '#1d4ed8',
+                                  border: '1px solid rgba(59, 130, 246, 0.2)',
+                                  borderRadius: '6px',
+                                  padding: '0.15rem 0.45rem',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 700
+                                }}
+                              >
+                                <Package size={11} />
+                                Completa
+                              </span>
+                            )}
                           </td>
                           <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', fontWeight: 700 }}>{item.total}</td>
                           <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--success))', fontWeight: 800 }}>{item.success}</td>
@@ -1272,35 +1314,48 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                   <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-                    <Images size={18} style={{ color: 'hsl(var(--primary))' }} />
-                    Asignar Imágenes a Productos
+                    {uploadMode === 'EXPRESS_STOCK_PRICE' ? (
+                      <>
+                        <Zap size={18} style={{ color: 'hsl(var(--success))' }} />
+                        Confirmar Actualización de Precios y Stock
+                      </>
+                    ) : (
+                      <>
+                        <Images size={18} style={{ color: 'hsl(var(--primary))' }} />
+                        Asignar Imágenes a Productos
+                      </>
+                    )}
                   </h3>
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                    Puedes seleccionar hasta <strong>{MAX_IMAGES_PER_PRODUCT} imágenes por producto</strong> desde tu carpeta cargada.
+                    {uploadMode === 'EXPRESS_STOCK_PRICE'
+                      ? 'Revisa los valores de precio y stock que serán actualizados en tu inventario. Los cambios se aplicarán al confirmar.'
+                      : `Puedes seleccionar hasta ${MAX_IMAGES_PER_PRODUCT} imágenes por producto desde tu carpeta cargada.`}
                   </p>
                 </div>
 
                 {preparedProducts.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-                    {/* Leyenda sutil de color amarillo */}
-                    <div
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.4rem',
-                        background: '#fff8db',
-                        border: '1px solid #facc15',
-                        borderRadius: '8px',
-                        padding: '0.3rem 0.65rem',
-                        fontSize: '0.74rem',
-                        color: '#92400e',
-                        fontWeight: 700
-                      }}
-                      title="Los productos resaltados en amarillo corresponden a aquellos que no tienen una foto real asignada"
-                    >
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
-                      <span>Filas en amarillo = Sin foto asignada</span>
-                    </div>
+                    {/* Leyenda sutil de color amarillo - Solo se muestra en Publicación Completa */}
+                    {uploadMode === 'FULL_CREATION' && (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.4rem',
+                          background: '#fff8db',
+                          border: '1px solid #facc15',
+                          borderRadius: '8px',
+                          padding: '0.3rem 0.65rem',
+                          fontSize: '0.74rem',
+                          color: '#92400e',
+                          fontWeight: 700
+                        }}
+                        title="Los productos resaltados en amarillo corresponden a aquellos que no tienen una foto real asignada"
+                      >
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                        <span>Filas en amarillo = Sin foto asignada</span>
+                      </div>
+                    )}
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Mostrar:</span>
@@ -1446,8 +1501,22 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Modelo Vehículo</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Año Vehículo</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Versión Vehículo</th>
-                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Precio</th>
-                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Stock</th>
+                      <th style={{
+                        padding: '0.5rem 0.75rem',
+                        fontSize: '0.7rem',
+                        whiteSpace: 'nowrap',
+                        background: uploadMode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.12)' : undefined,
+                        color: uploadMode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                        fontWeight: uploadMode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                      }}>Precio</th>
+                      <th style={{
+                        padding: '0.5rem 0.75rem',
+                        fontSize: '0.7rem',
+                        whiteSpace: 'nowrap',
+                        background: uploadMode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.12)' : undefined,
+                        color: uploadMode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                        fontWeight: uploadMode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                      }}>Stock</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Descripción</th>
                       {uploadMode === 'FULL_CREATION' && (
                         <th className="sticky-images" style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
@@ -1497,8 +1566,22 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                             <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleModel || '—'}</td>
                             <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleYear || '—'}</td>
                             <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.vehicleVersion || '—'}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>${product.price?.toLocaleString('es-CL')}</td>
-                            <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{product.stock}</td>
+                            <td style={{
+                              padding: '0.5rem 0.75rem',
+                              fontSize: '0.78rem',
+                              whiteSpace: 'nowrap',
+                              background: uploadMode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.08)' : undefined,
+                              color: uploadMode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                              fontWeight: uploadMode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                            }}>${product.price?.toLocaleString('es-CL')}</td>
+                            <td style={{
+                              padding: '0.5rem 0.75rem',
+                              fontSize: '0.78rem',
+                              whiteSpace: 'nowrap',
+                              background: uploadMode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.08)' : undefined,
+                              color: uploadMode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,
+                              fontWeight: uploadMode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
+                            }}>{product.stock}</td>
                              <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.description}>
                               {product.description || '—'}
                             </td>
