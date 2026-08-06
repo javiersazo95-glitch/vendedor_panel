@@ -735,7 +735,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, vehicleBrandCatalog, compatibilityCatalogKey, compatibilities]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, vehicleBrandCatalog, compatibilityCatalogKey]);
 
   const dialogRef = useFocusTrap(isOpen);
   const bodyRef = useRef<HTMLDivElement>(null);
