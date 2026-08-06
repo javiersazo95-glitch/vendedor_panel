@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
@@ -482,7 +482,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const initialSnapshotRef = useRef<string | null>(null);
 
-  const computeSnapshot = () => {
+  const computeSnapshot = useCallback(() => {
     return JSON.stringify({
       sku: sku.trim(),
       oem: oem.trim(),
@@ -505,7 +505,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       })),
       filesCount: imageFiles.length,
     });
-  };
+  }, [sku, oem, name, category, partBrand, pricingMode, price, stock, requiresChassis, condition, description, compatibilities, imageFiles.length]);
 
   useEffect(() => {
     return () => {
@@ -517,6 +517,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
   useEffect(() => {
     let active = true;
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowUnsavedConfirm(false);
 
     if (editProduct) {
@@ -524,7 +526,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       // synchronous setState calls here are the standard "seed form state
       // from a prop" pattern, not an accidental render loop — reviewed,
       // deliberate exception (QA-SRC-002).
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSku(editProduct.sku);
       setOem(editProduct.oem || '');
       setName(editProduct.name);
@@ -734,7 +735,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, vehicleBrandCatalog, compatibilityCatalogKey]);
+  }, [isOpen, vehicleBrandCatalog, compatibilityCatalogKey, compatibilities]);
 
   const dialogRef = useFocusTrap(isOpen);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -765,19 +766,19 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     }
   };
 
-  const isFormDirty = () => {
+  const isFormDirty = useCallback(() => {
     if (!initialSnapshotRef.current) return false;
     return computeSnapshot() !== initialSnapshotRef.current;
-  };
+  }, [computeSnapshot]);
 
-  const attemptClose = () => {
+  const attemptClose = useCallback(() => {
     if (saving) return;
     if (isFormDirty()) {
       setShowUnsavedConfirm(true);
     } else {
       onClose();
     }
-  };
+  }, [saving, isFormDirty, onClose]);
 
   const handleForceClose = () => {
     setShowUnsavedConfirm(false);
@@ -799,7 +800,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, showUnsavedConfirm]);
+  }, [isOpen, showUnsavedConfirm, attemptClose]);
 
   if (!isOpen) return null;
 
@@ -909,8 +910,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     const hasFirstBrand = Boolean(firstCompat?.vehicleBrand?.trim());
     const hasFirstModel = Boolean(firstCompat?.vehicleModel?.trim());
     const hasFirstYears = Boolean(firstCompat?.vehicleYear > 0 && firstCompat?.vehicleYearTo > 0);
+    const hasFirstVersion = Boolean(firstCompat?.vehicleVersionIds && firstCompat.vehicleVersionIds.length > 0);
 
-    if (!hasFirstBrand || !hasFirstModel || !hasFirstYears) {
+    if (!hasFirstBrand || !hasFirstModel || !hasFirstYears || !hasFirstVersion) {
       if (!hasFirstBrand) {
         triggerError('Selecciona la marca del vehículo compatible.');
         return;
@@ -923,6 +925,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         triggerError('Selecciona el año desde y el año hasta del vehículo compatible.');
         return;
       }
+      if (!hasFirstVersion) {
+        triggerError('Selecciona al menos una versión disponible del vehículo compatible.');
+        return;
+      }
     }
 
     for (let i = 1; i < compatibilities.length; i++) {
@@ -930,8 +936,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       const hasBrand = Boolean(card.vehicleBrand.trim());
       const hasModel = Boolean(card.vehicleModel.trim());
       const hasYears = Boolean(card.vehicleYear > 0 && card.vehicleYearTo > 0);
+      const hasVersion = Boolean(card.vehicleVersionIds && card.vehicleVersionIds.length > 0);
 
-      if (hasBrand || hasModel || hasYears) {
+      if (hasBrand || hasModel || hasYears || hasVersion) {
         if (!hasBrand) {
           triggerError(`En la compatibilidad #${i + 1}, selecciona la marca del vehículo.`);
           return;
@@ -942,6 +949,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         }
         if (!hasYears) {
           triggerError(`En la compatibilidad #${i + 1}, selecciona el año desde y el año hasta.`);
+          return;
+        }
+        if (!hasVersion) {
+          triggerError(`En la compatibilidad #${i + 1}, selecciona al menos una versión disponible.`);
           return;
         }
       }
@@ -1326,7 +1337,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">Versiones disponibles {OPTIONAL}</label>
+                        <label className="form-label">Versiones disponibles {REQUIRED}</label>
                         <MultiOptionPicker
                           values={card.vehicleVersionIds}
                           onChange={(values) => updateCompatibility(card.id, { vehicleVersionIds: values })}

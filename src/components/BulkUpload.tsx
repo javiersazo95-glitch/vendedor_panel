@@ -151,6 +151,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   }, [logs, logFilter, logSearchQuery]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLogPage(1);
   }, [logFilter, logSearchQuery]);
 
@@ -190,6 +191,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setImagesCurrentPage(1);
   }, [imagesPageSize, preparedProducts.length]);
 
@@ -263,7 +265,17 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const handlePickFolder = async () => {
     if (processing) return;
 
-    const showDirectoryPicker = (window as any).showDirectoryPicker;
+    const showDirectoryPicker = (
+      window as unknown as {
+        showDirectoryPicker?: () => Promise<{
+          values: () => AsyncIterable<{
+            kind: string;
+            name: string;
+            getFile: () => Promise<File>;
+          }>;
+        }>;
+      }
+    ).showDirectoryPicker;
     if (typeof showDirectoryPicker !== 'function') {
       folderInputRef.current?.click();
       return;
@@ -499,18 +511,18 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
-          let rows: any[] = [];
+          let rows: Record<string, unknown>[] = [];
           if (dataFile.name.endsWith('.csv')) {
             const Papa = (await import('papaparse')).default;
             const csvText = e.target?.result as string;
-            const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+            const parsed = Papa.parse<Record<string, unknown>>(csvText, { header: true, skipEmptyLines: true });
             rows = parsed.data;
           } else {
             const XLSX = await import('xlsx');
             const data = new Uint8Array(e.target?.result as ArrayBuffer);
             const workbook = XLSX.read(data, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            rows = XLSX.utils.sheet_to_json(sheet);
+            rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
           }
 
           if (rows.length === 0) {
@@ -745,8 +757,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           setAnalysisDone(true);
           setProgress(100);
           setProcessing(false);
-        } catch (innerErr: any) {
-          setLogs([{ id: 'critical-error', row: 0, sku: 'N/A', status: 'ERROR', message: `Fallo crítico de lectura: ${innerErr.message}` }]);
+        } catch (innerErr: unknown) {
+          const errMsg = innerErr instanceof Error ? innerErr.message : String(innerErr);
+          setLogs([{ id: 'critical-error', row: 0, sku: 'N/A', status: 'ERROR', message: `Fallo crítico de lectura: ${errMsg}` }]);
           setStats(s => ({ ...s, errors: 1 }));
           setProgress(100);
           setProcessing(false);
@@ -758,8 +771,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       } else {
         reader.readAsArrayBuffer(dataFile);
       }
-    } catch (err: any) {
-      setLogs([{ id: 'process-error', row: 0, sku: 'N/A', status: 'ERROR', message: `Error en proceso: ${err.message}` }]);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setLogs([{ id: 'process-error', row: 0, sku: 'N/A', status: 'ERROR', message: `Error en proceso: ${errMsg}` }]);
       setStats(s => ({ ...s, errors: 1 }));
       setProgress(100);
       setProcessing(false);
@@ -843,8 +857,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       setActiveTab('upload');
       setProgress(100);
       onUploadSuccess();
-    } catch (err: any) {
-      setLogs((prev) => [...prev, { id: `${Date.now()}-upload-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `Error al iniciar la carga: ${err.message}` }]);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setLogs((prev) => [...prev, { id: `${Date.now()}-upload-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `Error al iniciar la carga: ${errMsg}` }]);
       setStats((prev) => ({ ...prev, errors: prev.errors + 1 }));
     } finally {
       setProcessing(false);
@@ -925,8 +940,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       }
 
       await handleStartUpload(finalProducts, genericImageSkus);
-    } catch (err: any) {
-      setLogs((prev) => [...prev, { id: `${Date.now()}-generic-image-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `No se pudo generar la imagen genérica: ${err?.message || 'error desconocido'}` }]);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setLogs((prev) => [...prev, { id: `${Date.now()}-generic-image-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `No se pudo generar la imagen genérica: ${errMsg}` }]);
       setProcessing(false);
     }
   };
@@ -996,7 +1012,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       setUploadSuccessCount((prev) => (prev || 0) + dbResult.success.length);
       setProgress(100);
       onUploadSuccess();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       setLogs((prev) => [
         ...prev,
         {
@@ -1004,7 +1021,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           row: 0,
           sku: 'N/A',
           status: 'ERROR',
-          message: `Error al reintentar la carga: ${err.message}`
+          message: `Error al reintentar la carga: ${errMsg}`
         }
       ]);
     } finally {
@@ -1954,7 +1971,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                           {...({
                             webkitdirectory: '',
                             directory: '',
-                          } as any)}
+                          } as Record<string, string>)}
                         />
                         <FolderOpen size={24} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
                         <span className="dropzone-title">Carpeta Local</span>
@@ -2272,10 +2289,10 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       </thead>
                       <tbody>
                         {paginatedLogs.map((log) => {
-                          let bgRow = '';
-                          let borderLeft = '';
-                          let iconColor = '';
-                          let IconComponent = CheckCircle2;
+                          let bgRow: string;
+                          let borderLeft: string;
+                          let iconColor: string;
+                          let IconComponent: typeof CheckCircle2;
 
                           if (log.status === 'SUCCESS') {
                             bgRow = 'rgba(16, 185, 129, 0.015)';
