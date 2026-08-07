@@ -4,7 +4,9 @@ import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle
 import type { Product, BatchResult } from '../db';
 import { saveProductsBatch, getAllProducts } from '../db';
 import { useFocusTrap } from '../utils/useFocusTrap';
-import { DEFAULT_PRODUCT_IMAGE_URL } from '../utils/imageHelper';
+import { apiFetch } from '../utils/apiFetch';
+import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from '../utils/imageHelper';
+import { getStoredSession } from '../utils/session';
 
 interface BulkUploadProps {
   isOpen: boolean;
@@ -353,6 +355,44 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const downloadTemplate = async (format: 'xlsx' | 'csv') => {
     const isExpress = uploadMode === 'EXPRESS_STOCK_PRICE';
     
+    if (!isExpress && format === 'xlsx') {
+      try {
+        const session = getStoredSession();
+        if (!session?.sellerId || !session?.token) {
+          alert('Sesión requerida: No encontramos un proveedor activo para descargar la plantilla.');
+          return;
+        }
+        const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/plantilla`, {
+          headers: {
+            'Authorization': `Bearer ${session.token}`,
+          },
+        });
+        if (!response.ok) {
+          let msg = 'No se pudo descargar la plantilla de inventario desde el servidor.';
+          try {
+            const errData = await response.json();
+            msg = errData.message || errData.error || msg;
+          } catch { /* empty */ }
+          alert(msg);
+          return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `plantilla-inventario-repuestop.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        return;
+      } catch (err) {
+        console.error('Error al descargar plantilla:', err);
+        alert('Error al conectar con el servidor para descargar la plantilla.');
+        return;
+      }
+    }
+
     const headers = isExpress
       ? ['sku', 'precio', 'stock']
       : [

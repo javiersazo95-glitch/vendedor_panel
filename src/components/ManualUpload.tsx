@@ -62,20 +62,6 @@ const YEARS = Array.from(
   (_, index) => new Date().getFullYear() + 2 - index,
 );
 
-const CATEGORIES_FALLBACK = [
-  'Accesorios',
-  'Carrocería',
-  'Electricidad y Sensores',
-  'Escape y Enfriamiento',
-  'Filtros y Mantenimiento',
-  'Frenos',
-  'Iluminación',
-  'Motor',
-  'Neumáticos y Llantas',
-  'Suspensión y Dirección',
-  'Transmisión',
-];
-
 function cleanCategoryName(name: string): string {
   const trimmed = name.trim();
   const lower = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -476,7 +462,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [catalogCategories, setCatalogCategories] = useState<string[]>(CATEGORIES_FALLBACK);
+  const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
   const [catalogPartBrands, setCatalogPartBrands] = useState<string[]>(PART_BRANDS_FALLBACK);
   const [vehicleBrandCatalog, setVehicleBrandCatalog] = useState<CatalogOption[]>([]);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
@@ -656,7 +642,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       loadCatalog('marcas-vehiculo'),
     ]).then(([categories, vehicleBrands]) => {
       if (!active) return;
-      setCatalogCategories(deduplicateAndSortCategories(namesFromCatalog(categories, CATEGORIES_FALLBACK)));
+      setCatalogCategories(deduplicateAndSortCategories(namesFromCatalog(categories, [])));
       setVehicleBrandCatalog(vehicleBrands);
     });
 
