@@ -62,27 +62,18 @@ const YEARS = Array.from(
   (_, index) => new Date().getFullYear() + 2 - index,
 );
 
-function cleanCategoryName(name: string): string {
-  const trimmed = name.trim();
-  const lower = trimmed.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  
-  if (lower === 'suspension y direccion') return 'Suspensión y Dirección';
-  if (lower === 'filtros y mantencion' || lower === 'filtros y mantenimiento') return 'Filtros y Mantenimiento';
-  if (lower === 'transmision') return 'Transmisión';
-  if (lower === 'electricidad y sensores' || lower === 'electrico e iluminacion') return 'Electricidad y Sensores';
-  if (lower === 'escape y enfriamiento') return 'Escape y Enfriamiento';
-  if (lower === 'iluminacion') return 'Iluminación';
-  if (lower === 'carroceria') return 'Carrocería';
-  if (lower === 'neumaticos y llantas') return 'Neumáticos y Llantas';
-  
-  return trimmed;
-}
-
+/**
+ * Deduplica las categorias que llegan del catalogo, ignorando acentos para la clave.
+ *
+ * Antes tambien reescribia nombres a una lista propia del panel ("Suspension y Direccion",
+ * "Filtros y Mantenimiento"...). Esos nombres no existen en la taxonomia canonica de 24
+ * categorias del backend, asi que el mapeo quedo obsoleto al eliminar CATEGORIES_FALLBACK.
+ */
 function deduplicateAndSortCategories(rawCategories: string[]): string[] {
   const map = new Map<string, string>();
   for (const raw of rawCategories) {
     if (!raw) continue;
-    const cleaned = cleanCategoryName(raw);
+    const cleaned = raw.trim();
     const key = cleaned.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (!map.has(key)) {
       map.set(key, cleaned);
@@ -143,6 +134,9 @@ const MODELS_FALLBACK: Record<string, string[]> = {
 };
 
 const MAX_PHOTOS = 4;
+
+const CATALOG_ERROR_MESSAGE =
+  'No pudimos cargar las categorías del sistema. Revisa tu conexión y vuelve a abrir el formulario.';
 
 async function loadCatalog(path: string): Promise<CatalogOption[]> {
   try {
@@ -463,6 +457,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogPartBrands, setCatalogPartBrands] = useState<string[]>(PART_BRANDS_FALLBACK);
   const [vehicleBrandCatalog, setVehicleBrandCatalog] = useState<CatalogOption[]>([]);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
@@ -642,8 +637,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       loadCatalog('marcas-vehiculo'),
     ]).then(([categories, vehicleBrands]) => {
       if (!active) return;
+      // Al quitar la lista de categorias hardcodeada, el catalogo remoto pasa a ser
+      // obligatorio. Sin este aviso, un fallo de red dejaba el desplegable vacio y el
+      // vendedor no podia publicar sin entender por que.
+      setCatalogError(categories.length === 0 ? CATALOG_ERROR_MESSAGE : null);
       setCatalogCategories(deduplicateAndSortCategories(namesFromCatalog(categories, [])));
       setVehicleBrandCatalog(vehicleBrands);
+    }).catch(() => {
+      if (!active) return;
+      setCatalogError(CATALOG_ERROR_MESSAGE);
     });
 
     return () => {
@@ -1112,6 +1114,11 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     options={catalogCategories}
                     required
                   />
+                  {catalogError && (
+                    <p role="alert" style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: 'hsl(var(--destructive))' }}>
+                      {catalogError}
+                    </p>
+                  )}
                 </div>
 
                 <div className="form-group">

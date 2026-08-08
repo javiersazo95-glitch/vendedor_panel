@@ -59,6 +59,49 @@ const getIsoTimestampString = (date = new Date()): string => {
   return `${year}${month}${day}_${hours}${minutes}${seconds}`;
 };
 
+/**
+ * Lee columnas de una fila del Excel tolerando mayúsculas y espacios en la cabecera.
+ *
+ * Antes el parser buscaba nombres propios del panel (`sku`, `nombre`, `marca_vehiculo`)
+ * que no existen en la plantilla oficial del backend (`sku_proveedor`,
+ * `nombre_publicado`, `compatibilidad_marca`). Al pasar el botón de descarga a la
+ * plantilla del servidor, cada fila fallaba con "SKU faltante".
+ */
+/**
+ * Contrato oficial de la plantilla: debe coincidir exactamente con
+ * InventarioExcelService.COLUMNAS_EXCEL del backend y con GET /inventario/excel/esquema.
+ * Si el backend cambia una columna, el test de contrato falla y avisa antes que el vendedor.
+ */
+export const PLANTILLA_COLUMNAS = [
+  'nombre_publicado',
+  'categoria',
+  'subcategoria',
+  'marca_repuesto',
+  'sku_proveedor',
+  'referencia_oem',
+  'tipo_precio',
+  'precio',
+  'stock',
+  'condicion',
+  'compatibilidad_marca',
+  'compatibilidad_modelo',
+  'anio_desde',
+  'anio_hasta',
+  'motor',
+  'descripcion',
+] as const;
+
+export const columnReader = (row: Record<string, unknown>) => {
+  const normalized: Record<string, unknown> = {};
+  Object.entries(row).forEach(([key, value]) => {
+    normalized[key.trim().toLowerCase()] = value;
+  });
+  return (name: string): string | number => {
+    const value = normalized[name];
+    return value === undefined || value === null ? '' : (value as string | number);
+  };
+};
+
 const productHasImage = (product: PreparedProduct) => {
   if (product.image && product.image.trim()) return true;
   if (!product.imageFile) return false;
@@ -393,63 +436,15 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       }
     }
 
-    const headers = isExpress
-      ? ['sku', 'precio', 'stock']
-      : [
-          'sku',
-          'oem',
-          'nombre',
-          'categoria',
-          'marca_repuesto',
-          'marca_vehiculo',
-          'modelo_vehiculo',
-          'ano_vehiculo',
-          'version_vehiculo',
-          'precio',
-          'stock',
-          'descripcion',
-          'url_foto'
-        ];
+    // Solo queda la plantilla express (3 columnas), que es propia del panel. La carga
+    // completa usa exclusivamente la plantilla oficial descargada del backend, arriba.
+    const headers = ['sku', 'precio', 'stock'];
+    const sampleRows = [
+      { sku: 'BOS-SPK-FR7DC', precio: 4900, stock: 45 },
+      { sku: 'BRE-BRK-P83085', precio: 34900, stock: 12 }
+    ];
 
-    const sampleRows = isExpress
-      ? [
-          { sku: 'BOS-SPK-FR7DC', precio: 4900, stock: 45 },
-          { sku: 'BRE-BRK-P83085', precio: 34900, stock: 12 }
-        ]
-      : [
-          {
-            sku: 'BOS-SPK-FR7DC',
-            oem: '0242235666',
-            nombre: 'Bujía de Encendido Super Plus',
-            categoria: 'Motor',
-            marca_repuesto: 'Bosch',
-            marca_vehiculo: 'Toyota',
-            modelo_vehiculo: 'Yaris',
-            ano_vehiculo: 2018,
-            version_vehiculo: '1.5 GLI',
-            precio: 4500,
-            stock: 50,
-            descripcion: 'Bujía de encendido de alta durabilidad.',
-            url_foto: ''
-          },
-          {
-            sku: 'BRE-BRK-P83085',
-            oem: '04465-0D020',
-            nombre: 'Pastillas de Freno Brembo',
-            categoria: 'Frenos',
-            marca_repuesto: 'Brembo',
-            marca_vehiculo: 'Toyota',
-            modelo_vehiculo: 'Yaris',
-            ano_vehiculo: 2019,
-            version_vehiculo: '1.5 Sport',
-            precio: 32000,
-            stock: 15,
-            descripcion: 'Pastillas de freno cerámicas delanteras.',
-            url_foto: 'https://pub-650d4cc5c6be42bc9a81e878e6042ea6.r2.dev/Productos/img_generica/imagen-generica.png'
-          }
-        ];
-
-    const filePrefix = isExpress ? 'Plantilla_Stock_Precio_Express' : 'Plantilla_Carga_Masiva_RepuesTop';
+    const filePrefix = 'Plantilla_Stock_Precio_Express';
 
     if (format === 'csv') {
       const Papa = (await import('papaparse')).default;
@@ -661,23 +656,37 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               const row = rows[i];
               const rowNum = i + 2; // Row 1 is header
               
-              // Standardise column mapping
-              const rawSku = row.sku || row.SKU || '';
-              const rawName = row.nombre || row.Nombre || row.name || '';
-              const rawPrice = row.precio || row.Precio || row.price || 0;
-              const rawStock = row.stock || row.Stock || 0;
-              const rawCategory = row.categoria || row.Categoria || row.category || 'Motor';
-              const rawPartBrand = row.marca_repuesto || row.Marca_Repuesto || row.partBrand || '';
-              const rawVehicleBrand = row.marca_vehiculo || row.Marca_Vehiculo || row.vehicleBrand || '';
-              const rawVehicleModel = row.modelo_vehiculo || row.Modelo_Vehiculo || row.vehicleModel || '';
-              const rawVehicleYear = row.ano_vehiculo || row.Ano_Vehiculo || row.vehicleYear || new Date().getFullYear();
-              const rawVehicleVersion = row.version_vehiculo || row.Version_Vehiculo || row.vehicleVersion || '';
-              const rawDescription = row.descripcion || row.Descripcion || row.description || '';
-              const rawImageFilename = row.imagen || row.Imagen || row.image || row.url_foto || row.URL_Foto || row.url_imagen || '';
+              // Contrato oficial de la plantilla que genera el backend (16 columnas).
+              // Ver InventarioExcelService.COLUMNAS_EXCEL y GET /inventario/excel/esquema.
+              const col = columnReader(row);
+              const rawSku = col('sku_proveedor');
+              const rawName = col('nombre_publicado');
+              const rawCategory = col('categoria');
+              const rawSubcategory = col('subcategoria');
+              const rawPartBrand = col('marca_repuesto');
+              const rawOem = col('referencia_oem');
+              const rawPricingMode = col('tipo_precio');
+              const rawPrice = col('precio');
+              const rawStock = col('stock');
+              const rawCondition = col('condicion');
+              const rawVehicleBrand = col('compatibilidad_marca');
+              const rawVehicleModel = col('compatibilidad_modelo');
+              const rawVehicleYear = col('anio_desde');
+              const rawVehicleYearTo = col('anio_hasta');
+              const rawVehicleVersion = col('motor');
+              const rawDescription = col('descripcion');
+              // La columna de imagen aún no está en el contrato oficial (llega en la Fase 6);
+              // se lee si el archivo la trae, y si no, las fotos se asignan por SKU más abajo.
+              const rawImageFilename = col('imagen') || col('url_foto');
 
               const sku = String(rawSku).trim();
               const name = String(rawName).trim();
-              const price = Number(rawPrice);
+              const pricingMode: 'show_price' | 'quote_only' =
+                String(rawPricingMode).trim().toUpperCase() === 'SOLO_COTIZAR' ? 'quote_only' : 'show_price';
+              const condition: 'ORIGINAL' | 'ALTERNATIVO' =
+                String(rawCondition).trim().toUpperCase() === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL';
+              // En modo cotización el precio va vacío a propósito y no debe validarse.
+              const price = pricingMode === 'quote_only' ? 0 : Number(rawPrice);
               const stock = Number(rawStock);
 
               // Detecta problemas de SKU sin abandonar la fila todavía, para poder
@@ -698,11 +707,15 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               // ofrecer un producto ya armado si solo falla el SKU).
               let fieldErrorMessage: string | null = null;
               if (!name) {
-                fieldErrorMessage = 'Nombre de producto faltante.';
-              } else if (isNaN(price) || price <= 0) {
-                fieldErrorMessage = 'El precio debe ser un número mayor a 0.';
+                fieldErrorMessage = 'Falta nombre_publicado.';
+              } else if (!String(rawCategory).trim()) {
+                fieldErrorMessage = 'Falta categoria.';
+              } else if (!String(rawPartBrand).trim()) {
+                fieldErrorMessage = 'Falta marca_repuesto.';
+              } else if (pricingMode === 'show_price' && (isNaN(price) || price <= 0)) {
+                fieldErrorMessage = 'precio debe ser un número mayor a 0 (o usa tipo_precio = SOLO_COTIZAR).';
               } else if (isNaN(stock) || stock < 0) {
-                fieldErrorMessage = 'El stock no puede ser un número negativo.';
+                fieldErrorMessage = 'stock no puede ser un número negativo.';
               }
 
               // Image matching engine
@@ -727,14 +740,18 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
               const buildProductPayload = () => ({
                 sku: normalizedSku || sku.toUpperCase(),
-                oem: String(row.oem || row.OEM || '').trim().toUpperCase(),
+                oem: String(rawOem).trim().toUpperCase(),
                 name,
                 category: String(rawCategory).trim(),
+                subcategory: String(rawSubcategory).trim(),
                 partBrand: String(rawPartBrand).trim(),
                 vehicleBrand: String(rawVehicleBrand).trim(),
                 vehicleModel: String(rawVehicleModel).trim(),
                 vehicleYear: Number(rawVehicleYear) || new Date().getFullYear(),
+                vehicleYearTo: Number(rawVehicleYearTo) || Number(rawVehicleYear) || new Date().getFullYear(),
                 vehicleVersion: String(rawVehicleVersion).trim(),
+                pricingMode,
+                condition,
                 price,
                 stock,
                 description: String(rawDescription).trim(),
@@ -1898,7 +1915,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
                     {uploadMode === 'EXPRESS_STOCK_PRICE'
                       ? 'Ajuste veloz de stock y precio CLP por SKU (3 columnas).'
-                      : 'Formato completo con OEM, vehículos, fotos y columna URL_Foto.'}
+                      : 'Plantilla oficial del sistema, con desplegables de categoría, subcategoría, marcas y vehículos.'}
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1911,15 +1928,19 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                     <FileSpreadsheet size={13} style={{ color: '#107c41' }} />
                     Excel
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem', flex: 1, justifyContent: 'center' }}
-                    onClick={() => downloadTemplate('csv')}
-                  >
-                    <FileText size={13} style={{ color: 'hsl(var(--primary))' }} />
-                    CSV
-                  </button>
+                  {/* El CSV solo existe para el modo express (3 columnas). Para la carga
+                      completa hay un unico formato: la plantilla oficial del backend. */}
+                  {uploadMode === 'EXPRESS_STOCK_PRICE' && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem', flex: 1, justifyContent: 'center' }}
+                      onClick={() => downloadTemplate('csv')}
+                    >
+                      <FileText size={13} style={{ color: 'hsl(var(--primary))' }} />
+                      CSV
+                    </button>
+                  )}
                 </div>
               </div>
 

@@ -8,6 +8,9 @@ export interface Product {
   oem: string;
   name: string;
   category: string;
+  // La plantilla oficial trae subcategoria; sin este campo la carga masiva la
+  // descartaba en silencio aunque el vendedor la hubiera completado.
+  subcategory?: string;
   partBrand: string;
   vehicleBrand: string;
   vehicleModel: string;
@@ -59,6 +62,7 @@ interface ProductDto {
   nombrePublicado?: string;
   repuestoNombre?: string;
   categoria?: string;
+  subcategoria?: string;
   marcaRepuesto?: string;
   compatibilidadMarca?: string;
   compatibilidadModelo?: string;
@@ -88,6 +92,7 @@ function mapDtoToProduct(dto: ProductDto): Product {
     oem: dto.referenciaOem || '',
     name: dto.nombrePublicado || dto.repuestoNombre || '',
     category: dto.categoria || 'Motor',
+    subcategory: dto.subcategoria || undefined,
     partBrand: dto.marcaRepuesto || '',
     vehicleBrand: dto.compatibilidadMarca || '',
     vehicleModel: dto.compatibilidadModelo || '',
@@ -150,6 +155,9 @@ export async function addProduct(
   formData.append('skuProveedor', product.sku);
   formData.append('nombrePublicado', product.name);
   formData.append('categoria', product.category);
+  if (product.subcategory) {
+    formData.append('subcategoria', product.subcategory);
+  }
   formData.append('marcaRepuesto', product.partBrand);
   formData.append('referenciaOem', product.oem || '');
   formData.append('compatibilidadMarca', product.vehicleBrand);
@@ -214,6 +222,9 @@ export async function updateProduct(
     formData.append('skuProveedor', product.sku);
     formData.append('nombrePublicado', product.name);
     formData.append('categoria', product.category);
+    if (product.subcategory) {
+      formData.append('subcategoria', product.subcategory);
+    }
     formData.append('marcaRepuesto', product.partBrand);
     formData.append('referenciaOem', product.oem || '');
     formData.append('compatibilidadMarca', product.vehicleBrand);
@@ -246,6 +257,7 @@ export async function updateProduct(
       skuProveedor: product.sku,
       nombrePublicado: product.name,
       categoria: product.category,
+      subcategoria: product.subcategory || undefined,
       marcaRepuesto: product.partBrand,
       referenciaOem: product.oem || '',
       compatibilidadMarca: product.vehicleBrand,
