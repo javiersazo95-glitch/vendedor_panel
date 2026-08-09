@@ -242,7 +242,7 @@ export async function updateProduct(
     (product.vehiculoCatalogoIds || []).forEach((id) => {
       formData.append('vehiculoCatalogoIds', String(id));
     });
-    formData.append('activo', 'true');
+    formData.append('activo', String(product.activo !== false));
     imageFiles.forEach((file) => formData.append('imagenes', file));
 
     response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}/editar`, {
@@ -273,7 +273,7 @@ export async function updateProduct(
       requiereChasis: product.requiresChassis === true,
       vehiculoCatalogoIds: product.vehiculoCatalogoIds || [],
       compatibilityGroupsJson: product.compatibilityGroupsJson || '',
-      activo: true
+      activo: product.activo !== false
     };
 
     response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}`, {

@@ -45,6 +45,32 @@ describe('saveProductsBatch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not reactivate a paused/deactivated product when it gets overwritten by a bulk update', async () => {
+    const requests: { url: string; body: unknown }[] = [];
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      requests.push({ url: String(url), body: init?.body });
+      if (String(url).includes('/inventario') && !String(url).match(/\/\d+$/)) {
+        // getAllProducts(): one existing product, deactivated.
+        return Promise.resolve(new Response(JSON.stringify([
+          { id: 42, skuProveedor: 'SKU-EXISTING', nombrePublicado: 'Producto existente', activo: false }
+        ]), { status: 200 }));
+      }
+      // updateProduct() JSON branch (no new image): the PUT to /inventario/{id}.
+      return Promise.resolve(new Response(JSON.stringify({ id: 42, skuProveedor: 'SKU-EXISTING', activo: false }), { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await saveProductsBatch([baseRow], true);
+
+    expect(result.errors).toHaveLength(0);
+    const updateCall = requests.find((r) => r.url.match(/\/inventario\/42$/));
+    expect(updateCall).toBeDefined();
+    const payload = JSON.parse(updateCall!.body as string);
+    // The bug: this used to hardcode `activo: true`, silently reactivating a
+    // product the seller had deliberately deactivated (ENG-inventario, bug de activo:true).
+    expect(payload.activo).toBe(false);
+  });
+
   it('reports the original file row (sourceRow), not the array position, when rows were filtered out during analysis (QA-SRC-009)', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (String(url).includes('/inventario') && !String(url).includes('personalizado')) {
