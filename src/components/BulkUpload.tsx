@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye, Search, Download, Pencil, Zap, Package } from 'lucide-react';
 import type { Product, BatchResult } from '../db';
-import { saveProductsBatch, getAllProducts } from '../db';
+import { saveProductsBatch, savePreciosStockBatch, getAllProducts } from '../db';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from '../utils/imageHelper';
@@ -858,6 +858,42 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     }
   };
 
+  /**
+   * Fase 14: el modo Express ya no hace un PUT por producto (saveProductsBatch con
+   * overwriteExisting=true) -- manda todo el lote en un solo POST a /precios-stock y
+   * adapta la respuesta al mismo shape de BatchResult para no tener que tocar el resto de
+   * handleStartUpload/handleRetryFailedRecords. Los productos ya vienen con `id` real en
+   * runtime (se armaron en el analisis como `{...existingProduct, price, stock}`, aunque
+   * el tipo PreparedProduct los declare sin id) -- por eso el cast es seguro aca.
+   */
+  const saveExpressPreciosStock = async (
+    productsData: PreparedProduct[],
+    onProgress?: (percent: number) => void
+  ): Promise<BatchResult> => {
+    if (onProgress) onProgress(0);
+    const items = productsData.map((p) => ({ skuProveedor: p.sku, precio: p.price, stock: p.stock }));
+    const response = await savePreciosStockBatch(items);
+    if (onProgress) onProgress(100);
+
+    const estadoPorSku = new Map(response.filas.map((f) => [f.sku, f]));
+
+    const success: Product[] = [];
+    const errors: { row: number; sku: string; error: string }[] = [];
+    productsData.forEach((p, index) => {
+      const fila = estadoPorSku.get(p.sku);
+      if (fila && fila.estado !== 'ERROR') {
+        success.push(p as unknown as Product);
+      } else {
+        errors.push({
+          row: p.sourceRow ?? index + 2,
+          sku: p.sku,
+          error: fila?.mensajes.join(' ') || 'No se pudo actualizar este producto.'
+        });
+      }
+    });
+    return { success, errors };
+  };
+
   const handleStartUpload = async (productsOverride?: PreparedProduct[], genericImageSkus?: Set<string>) => {
     const productsToSave = productsOverride ?? preparedProducts;
     if (productsToSave.length === 0 || stats.errors > 0) return;
@@ -867,10 +903,13 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     setProgress(startProgress);
 
     try {
-      const dbResult: BatchResult = await saveProductsBatch(productsToSave, uploadMode === 'EXPRESS_STOCK_PRICE', (percent) => {
+      const onProgress = (percent: number) => {
         const mappedPercent = Math.round(startProgress + (percent * ((100 - startProgress) / 100)));
         setProgress(mappedPercent);
-      });
+      };
+      const dbResult: BatchResult = uploadMode === 'EXPRESS_STOCK_PRICE'
+        ? await saveExpressPreciosStock(productsToSave, onProgress)
+        : await saveProductsBatch(productsToSave, false, onProgress);
 
       setSavedSkusSet(new Set(dbResult.success.map((p) => p.sku)));
 
@@ -1042,9 +1081,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     setProgress(0);
 
     try {
-      const dbResult: BatchResult = await saveProductsBatch(failedProducts, uploadMode === 'EXPRESS_STOCK_PRICE', (percent) => {
-        setProgress(percent);
-      });
+      const dbResult: BatchResult = uploadMode === 'EXPRESS_STOCK_PRICE'
+        ? await saveExpressPreciosStock(failedProducts, setProgress)
+        : await saveProductsBatch(failedProducts, false, setProgress);
 
       const newlySucceededSkus = new Set(dbResult.success.map((p) => p.sku));
       const newlyFailedSkus = new Set(dbResult.errors.map((e) => e.sku));

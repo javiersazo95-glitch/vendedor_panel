@@ -103,7 +103,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     let cancelado = false;
     setHistorialLoading(true);
     setHistorialError(null);
-    apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/cargas?page=${historialPage}&size=20`, {
+    apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/cargas?page=${historialPage}&size=20&modo=FULL_CREATION`, {
       headers: { 'Authorization': `Bearer ${session.token}` }
     })
       .then(async (response) => {

@@ -36,6 +36,20 @@ export interface BatchResult {
   errors: { row: number; sku: string; error: string }[];
 }
 
+interface FilaCargaResultado {
+  fila: number;
+  sku: string;
+  estado: 'OK' | 'ADVERTENCIA' | 'ERROR';
+  mensajes: string[];
+}
+
+export interface PrecioStockUpdateResponse {
+  totalFilas: number;
+  productosCargados: number;
+  productosConError: number;
+  filas: FilaCargaResultado[];
+}
+
 type ProductImageInput = File | Blob | (File | Blob)[] | null;
 
 function imageInputList(imageInput?: ProductImageInput): (File | Blob)[] {
@@ -458,4 +472,41 @@ export async function saveProductsBatch(
   return result;
 }
 
+/**
+ * Actualizacion masiva de precio/stock (Fase 14, modo Express). Reemplaza el N-requests-PUT
+ * de saveProductsBatch(..., overwriteExisting=true) por un solo POST al backend: el
+ * servidor resuelve cada SKU y actualiza solo precio/stock, sin poder tocar nombre,
+ * categoria, imagenes ni "activo" (ver PrecioStockItemRequestDTO en el backend) -- asi que
+ * este camino tambien deja de heredar el bug de activo:true de updateProduct().
+ */
+export async function savePreciosStockBatch(
+  items: { skuProveedor: string; precio: number; stock: number }[]
+): Promise<PrecioStockUpdateResponse> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa de vendedor.');
+
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/precios-stock`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${session.token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(items)
+  });
+
+  if (!response.ok) {
+    let errMsg = 'Error al actualizar precios y stock en el servidor.';
+    try {
+      const errData = await response.json();
+      if (errData && errData.message) {
+        errMsg = errData.message;
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(errMsg);
+  }
+
+  return await response.json();
+}
 
