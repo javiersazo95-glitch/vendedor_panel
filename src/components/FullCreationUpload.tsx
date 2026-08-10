@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, SearchCheck, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play } from 'lucide-react';
 import { apiFetch, SessionExpiredError, RequestTimeoutError } from '../utils/apiFetch';
 import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
@@ -71,6 +71,85 @@ const getIsoTimestampString = (date = new Date()): string => {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 };
 
+const MENSAJE_SKU_DUPLICADO = 'SKU repetido dentro de la misma plantilla: ya hay otra fila válida con este mismo SKU, así que esta no se cargaría.';
+
+/**
+ * El dry-run del backend (`/excel/validar`) no puede detectar SKUs duplicados dentro del
+ * mismo archivo: cada fila corre en su propia transaccion que se revierte al terminar
+ * (Fase 7/11), asi que una fila nunca ve lo que "creo" otra fila de la misma simulacion.
+ * Ese hueco se tapa aca comparando texto plano (no es una regla de negocio, es solo
+ * "¿este SKU ya aparecio antes en la lista?") -- la primera aparicion de un SKU se deja
+ * como vino del backend, y cualquier aparicion siguiente se fuerza a ERROR, replicando
+ * exactamente lo que pasaria en la carga real (la primera fila crea el producto, la
+ * segunda choca contra "Ya existe un producto con ese SKU para el proveedor").
+ */
+function marcarSkuDuplicados(data: CargaExcelResponse): CargaExcelResponse {
+  const vistos = new Set<string>();
+  const filas = data.filas.map((fila) => {
+    if (fila.estado === 'ERROR') return fila;
+    const clave = fila.sku.trim().toUpperCase();
+    if (clave && vistos.has(clave)) {
+      return { ...fila, estado: 'ERROR' as const, mensajes: [MENSAJE_SKU_DUPLICADO] };
+    }
+    if (clave) vistos.add(clave);
+    return fila;
+  });
+  return recalcularAgregados(data, filas);
+}
+
+/** Recalcula los totales (mismo criterio que CargaInventarioExcelResponseDTO.desdeFilas en
+ * el backend: las filas con advertencia cuentan como cargadas ademas de contarse aparte). */
+function recalcularAgregados(base: CargaExcelResponse, filas: FilaResultado[]): CargaExcelResponse {
+  const productosConAdvertencia = filas.filter((f) => f.estado === 'ADVERTENCIA').length;
+  const productosConError = filas.filter((f) => f.estado === 'ERROR').length;
+  const productosCargados = filas.filter((f) => f.estado === 'OK' || f.estado === 'ADVERTENCIA').length;
+  return { ...base, filas, productosCargados, productosConAdvertencia, productosConError };
+}
+
+/**
+ * Reconstruye el Excel original dejando solo las filas indicadas (las que pasaron el
+ * analisis), preservando el orden y el contenido tal cual, mas la hoja opcional
+ * "compatibilidades" filtrada a los SKUs que sobreviven. Es el mismo mecanismo que ya usa
+ * exportarErrores() para reconstruir un Excel con datos reales, aplicado al revés: en vez
+ * de quedarse con los errores, se queda con lo valido para no reenviar filas que ya
+ * sabemos que van a fallar.
+ */
+async function construirExcelSoloValidos(dataFile: File, filasASubir: number[]): Promise<File> {
+  const XLSX = await import('xlsx');
+  const buffer = await dataFile.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+
+  const mainSheetName = workbook.SheetNames[0];
+  const mainSheet = workbook.Sheets[mainSheetName];
+  const mainRows = XLSX.utils.sheet_to_json<unknown[]>(mainSheet, { header: 1, defval: '' });
+  const headerRow = (mainRows[0] as unknown[]) ?? [];
+  const filasASubirSet = new Set(filasASubir);
+  const filasValidas = mainRows.filter((_, index) => filasASubirSet.has(index + 1));
+
+  const nuevoWorkbook = XLSX.utils.book_new();
+  const nuevaHojaPrincipal = XLSX.utils.aoa_to_sheet([headerRow, ...filasValidas]);
+  XLSX.utils.book_append_sheet(nuevoWorkbook, nuevaHojaPrincipal, mainSheetName || 'inventario');
+
+  const compatSheet = workbook.Sheets['compatibilidades'];
+  if (compatSheet) {
+    const skuColIndex = (headerRow as string[]).indexOf('sku_proveedor');
+    const skusValidos = new Set(
+      filasValidas.map((row) => String((row as unknown[])[skuColIndex] ?? '').trim().toUpperCase())
+    );
+    const compatRows = XLSX.utils.sheet_to_json<unknown[]>(compatSheet, { header: 1, defval: '' });
+    const compatHeader = (compatRows[0] as unknown[]) ?? [];
+    const compatSkuIndex = 0; // sku_proveedor es siempre la primera columna de esta hoja
+    const compatFiltradas = compatRows
+      .slice(1)
+      .filter((row) => skusValidos.has(String((row as unknown[])[compatSkuIndex] ?? '').trim().toUpperCase()));
+    const nuevaHojaCompat = XLSX.utils.aoa_to_sheet([compatHeader, ...compatFiltradas]);
+    XLSX.utils.book_append_sheet(nuevoWorkbook, nuevaHojaCompat, 'compatibilidades');
+  }
+
+  const wbout = XLSX.write(nuevoWorkbook, { bookType: 'xlsx', type: 'array' });
+  return new File([wbout], dataFile.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
 const ESTADO_BADGE: Record<string, { bg: string; color: string; label: string }> = {
   COMPLETADA: { bg: 'var(--success-bg)', color: 'hsl(var(--success))', label: 'Completada' },
   CON_ERRORES: { bg: 'var(--warning-bg)', color: 'hsl(var(--warning))', label: 'Con errores' },
@@ -116,6 +195,37 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [photoErrorMsg, setPhotoErrorMsg] = useState<string | null>(null);
   const photoFolderInputRef = useRef<HTMLInputElement>(null);
   const photoZipInputRef = useRef<HTMLInputElement>(null);
+  const [productInfoBySku, setProductInfoBySku] = useState<Record<string, { nombre: string; categoria: string }>>({});
+  // Evita que la subida automatica de fotos (ver efecto mas abajo) se dispare mas de una
+  // vez para el mismo resultado de carga.
+  const autoPhotoUploadRef = useRef(false);
+  // Distingue "se acaba de calcular el emparejamiento automatico por SKU" (debe subir
+  // solo) de "el vendedor toco 'Elegir fotos' y selecciono una imagen a mano" (NO debe
+  // subir solo -- puede estar eligiendo varias, subir en el primer clic le corta el paso).
+  const pendingAutoUploadRef = useRef(false);
+  // Evita volver a disparar la descarga automatica del Excel de errores para el mismo
+  // resultado (ver efecto mas abajo, junto a exportarErrores).
+  const autoErrorDownloadRef = useRef(false);
+
+  // El panel derecho (tabla de resultados) debe medir lo mismo que el panel izquierdo
+  // (botones/dropzones), sin importar cual de los dos tenga mas contenido. CSS grid con
+  // align-items:stretch iguala ambos a la MAS ALTA de las dos columnas -- con una tabla
+  // larga eso infla tambien al panel izquierdo. Midiendo el alto real del panel izquierdo
+  // y aplicandolo como limite al derecho (con scroll interno en la tabla) es la unica forma
+  // de igualar ambos sin que ninguno le imponga altura al otro.
+  const leftPanelRef = useRef<HTMLDivElement>(null);
+  const [leftPanelHeight, setLeftPanelHeight] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    const el = leftPanelRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height;
+      if (height) setLeftPanelHeight(height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'history') return;
@@ -193,18 +303,62 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     return assignments;
   };
 
+  /**
+   * FilaCargaResultadoDTO (lo que devuelve el backend) solo trae fila/sku/estado/mensajes:
+   * no hay nombre ni categoria del producto. Para no pegarle al backend de nuevo por cada
+   * SKU, se lee el mismo archivo que ya esta en memoria (dataFile) y se arma un diccionario
+   * sku -> {nombre, categoria} en el cliente, solo para mostrarlo en la tabla de fotos.
+   */
+  useEffect(() => {
+    if (!result || !dataFile) {
+      setProductInfoBySku({});
+      return;
+    }
+    let cancelado = false;
+    (async () => {
+      try {
+        const XLSX = await import('xlsx');
+        const buffer = await dataFile.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+        const headerRow = (rows[0] as string[] | undefined) ?? [];
+        const idxNombre = headerRow.indexOf('nombre_publicado');
+        const idxCategoria = headerRow.indexOf('categoria');
+        const idxSku = headerRow.indexOf('sku_proveedor');
+        if (idxSku === -1) return;
+        const map: Record<string, { nombre: string; categoria: string }> = {};
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i] as unknown[];
+          const sku = String(row?.[idxSku] ?? '').trim();
+          if (!sku) continue;
+          map[sku] = {
+            nombre: idxNombre >= 0 ? String(row?.[idxNombre] ?? '') : '',
+            categoria: idxCategoria >= 0 ? String(row?.[idxCategoria] ?? '') : ''
+          };
+        }
+        if (!cancelado) setProductInfoBySku(map);
+      } catch (err) {
+        console.error('No se pudo leer el archivo original para mostrar nombre/categoria:', err);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [result, dataFile]);
+
   useEffect(() => {
     if (!result || Object.keys(availableImages).length === 0) return;
     const skus = filasConProducto.map((f) => f.sku);
     setImageAssignments((prev) => {
       // No pisa asignaciones manuales que el vendedor ya haya hecho para esta misma carga.
       if (Object.keys(prev).length > 0) return prev;
-      return computeAutoMatches(skus);
+      const matches = computeAutoMatches(skus);
+      if (Object.keys(matches).length > 0) {
+        pendingAutoUploadRef.current = true;
+      }
+      return matches;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, availableImages]);
-
-  if (!isOpen) return null;
 
   const requireSession = () => {
     const session = getStoredSession();
@@ -234,11 +388,18 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   };
 
   const onFileSelected = (file: File | null) => {
+    // Si el navegador re-dispara onChange sobre el MISMO archivo (pasa al re-abrir el
+    // dialogo y volver a elegirlo, aunque no haya cambiado nada), no hay que perder las
+    // fotos que el vendedor ya selecciono para ese Excel -- solo se limpian cuando el
+    // archivo de datos realmente cambia.
+    const esMismoArchivo = file && dataFile && file.name === dataFile.name && file.size === dataFile.size;
     setDataFile(file);
     setPreview(null);
     setResult(null);
     setErrorMsg(null);
-    resetPhotoState();
+    if (!esMismoArchivo) {
+      resetPhotoState();
+    }
   };
 
   const downloadTemplate = async () => {
@@ -267,7 +428,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     }
   };
 
-  const handleValidar = async () => {
+  /**
+   * Primer clic del flujo ("Analizar Carga"): corre el dry-run real del backend y le
+   * suma el chequeo de SKU duplicado que el backend no puede hacer solo. No crea nada
+   * todavia -- es el mismo rol que cumplia "Validar sin guardar" antes, ahora es el unico
+   * primer paso (ya no hay dos botones para elegir).
+   */
+  const handleAnalizar = async () => {
     if (!dataFile) return;
     const session = requireSession();
     if (!session) return;
@@ -283,17 +450,17 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
       );
       if (!response.ok) {
-        setErrorMsg(await readErrorMessage(response, 'No se pudo validar el archivo.'));
+        setErrorMsg(await readErrorMessage(response, 'No se pudo analizar el archivo.'));
         return;
       }
       const data: CargaExcelResponse = await response.json();
-      setPreview(data);
+      setPreview(marcarSkuDuplicados(data));
     } catch (err) {
       if (err instanceof SessionExpiredError || err instanceof RequestTimeoutError) {
         setErrorMsg(err.message);
       } else {
-        console.error('Error al validar Excel:', err);
-        setErrorMsg('Error al conectar con el servidor para validar el archivo.');
+        console.error('Error al analizar Excel:', err);
+        setErrorMsg('Error al conectar con el servidor para analizar el archivo.');
       }
     } finally {
       setValidating(false);
@@ -321,17 +488,35 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     }
   };
 
-  const handleCargar = async () => {
-    if (!dataFile) return;
+  /**
+   * Segundo clic del flujo ("Iniciar Carga"): manda solo las filas validas (OK +
+   * ADVERTENCIA) del analisis. Si hubo filas excluidas, reconstruye un Excel nuevo con
+   * unicamente esas filas -- el backend no tiene forma de "saltarse" filas de un archivo,
+   * asi que la exclusion se hace en el cliente antes de mandar el request.
+   */
+  const handleIniciarCarga = async () => {
+    if (!dataFile || !preview) return;
     const session = requireSession();
     if (!session) return;
+
+    const filasExcluidas = preview.filas.filter((f) => f.estado === 'ERROR');
+    const filasASubir = preview.filas.filter((f) => f.estado !== 'ERROR');
+    if (filasASubir.length === 0) {
+      setErrorMsg('No hay filas válidas para cargar. Corrige el Excel y vuelve a analizarlo.');
+      return;
+    }
+
     setUploading(true);
     setErrorMsg(null);
     setResult(null);
     setPollingStatus(null);
     try {
+      const archivoASubir = filasExcluidas.length === 0
+        ? dataFile
+        : await construirExcelSoloValidos(dataFile, filasASubir.map((f) => f.fila));
+
       const formData = new FormData();
-      formData.append('file', dataFile);
+      formData.append('file', archivoASubir);
       const response = await apiFetch(
         `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/cargar`,
         { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
@@ -345,9 +530,21 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         setPollingStatus(`Procesando ${data.filasProcesadas ?? 0} de ${data.totalFilas} filas...`);
         data = await pollCarga(session.sellerId, session.token, data.jobId);
       }
-      setResult(data);
+
+      // Si se mando un subconjunto, el "fila" que devuelve el backend es relativo a ESE
+      // archivo, no al original -- se remapea por posicion (el orden se preserva de punta
+      // a punta) antes de mezclar con las filas que se excluyeron de entrada, para que el
+      // vendedor siga viendo la numeracion de fila de su Excel original.
+      const filasRemapeadas = filasExcluidas.length === 0
+        ? data.filas
+        : data.filas.map((fila, index) => ({ ...fila, fila: filasASubir[index]?.fila ?? fila.fila }));
+
+      const filasFinal = [...filasRemapeadas, ...filasExcluidas].sort((a, b) => a.fila - b.fila);
+      const resultadoFinal = recalcularAgregados({ ...data, totalFilas: preview.totalFilas }, filasFinal);
+
+      setResult(resultadoFinal);
       setPreview(null);
-      if (data.productosCargados > 0) {
+      if (resultadoFinal.productosCargados > 0) {
         onUploadSuccess();
       }
     } catch (err) {
@@ -502,7 +699,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             { headers: { 'Authorization': `Bearer ${session.token}` } }
           );
           if (!getResponse.ok) {
-            resultados.push({ sku: fila.sku, ok: false, mensaje: await readErrorMessage(getResponse, 'No se pudo leer el producto antes de subir la foto.') });
+            // 404 puntual aca casi siempre significa que el producto que esta carga creo
+            // ya no existe (se borro despues) -- el mensaje generico del backend no deja
+            // eso claro, y el vendedor no tiene forma de saber que paso sin este contexto.
+            const mensaje = getResponse.status === 404
+              ? 'Este producto ya no existe en tu inventario (puede haber sido eliminado). No se pudo subir la foto para este SKU.'
+              : await readErrorMessage(getResponse, 'No se pudo leer el producto antes de subir la foto.');
+            resultados.push({ sku: fila.sku, ok: false, mensaje });
             return;
           }
           const producto = await getResponse.json();
@@ -559,6 +762,25 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     }
   };
 
+  /**
+   * Si el vendedor ya selecciono carpeta/ZIP de fotos ANTES de cargar el Excel, no tiene
+   * sentido pedirle un segundo clic en "Subir fotos" despues -- se suben solas apenas se
+   * calcula el emparejamiento automatico por SKU. La galeria manual sigue disponible para
+   * corregir lo que no matcheo solo o para reintentar fallidas.
+   */
+  useEffect(() => {
+    if (!result) {
+      autoPhotoUploadRef.current = false;
+      pendingAutoUploadRef.current = false;
+      return;
+    }
+    if (!pendingAutoUploadRef.current || autoPhotoUploadRef.current) return;
+    pendingAutoUploadRef.current = false;
+    autoPhotoUploadRef.current = true;
+    uploadPhotos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, imageAssignments]);
+
   const busy = validating || uploading;
 
   const verDetalleCarga = async (cargaId: number) => {
@@ -590,19 +812,49 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setSelectedCarga(null);
   };
 
-  const exportarErrores = async (data: CargaExcelResponse) => {
+  /**
+   * Si `sourceFile` es el mismo archivo que se subio (no aplica al detalle del
+   * historial, donde no tenemos los bytes originales), reconstruye un Excel con
+   * las 17 columnas de la plantilla oficial + el motivo de cada error, para que
+   * el vendedor corrija directo ahi y vuelva a subirlo -- sin tener que buscar
+   * cada fila a mano en su archivo original. Si no hay archivo fuente, cae al
+   * export simple (Fila/SKU/Motivo) de siempre.
+   */
+  const exportarErrores = async (data: CargaExcelResponse, sourceFile?: File | null) => {
     const filasConError = data.filas.filter((f) => f.estado === 'ERROR');
     if (filasConError.length === 0) return;
 
-    const exportData = filasConError.map((f) => ({
-      'Fila': f.fila,
-      'SKU': f.sku,
-      'Estado': 'FALLIDO',
-      'Motivo del Error': f.mensajes.join(' | ')
-    }));
-
     const XLSX = await import('xlsx');
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    let worksheet: import('xlsx').WorkSheet | null = null;
+
+    if (sourceFile) {
+      try {
+        const buffer = await sourceFile.arrayBuffer();
+        const originalWorkbook = XLSX.read(buffer, { type: 'array' });
+        const originalSheet = originalWorkbook.Sheets[originalWorkbook.SheetNames[0]];
+        const originalRows = XLSX.utils.sheet_to_json<unknown[]>(originalSheet, { header: 1, defval: '' });
+        const headerRow = originalRows[0] as string[] | undefined;
+        if (headerRow && headerRow.length > 0) {
+          const filas = filasConError.map((f) => {
+            const original = (originalRows[f.fila - 1] as unknown[]) ?? [];
+            return [...headerRow.map((_, i) => original[i] ?? ''), f.mensajes.join(' | ')];
+          });
+          worksheet = XLSX.utils.aoa_to_sheet([[...headerRow, 'motivo_error'], ...filas]);
+        }
+      } catch (err) {
+        console.error('No se pudo leer el archivo original para reconstruir el Excel de errores:', err);
+      }
+    }
+
+    if (!worksheet) {
+      worksheet = XLSX.utils.json_to_sheet(filasConError.map((f) => ({
+        'Fila': f.fila,
+        'SKU': f.sku,
+        'Estado': 'FALLIDO',
+        'Motivo del Error': f.mensajes.join(' | ')
+      })));
+    }
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Errores_Carga');
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
@@ -617,8 +869,31 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const renderResumen = (data: CargaExcelResponse, titulo: string, permitirExportarErrores = false) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+  /**
+   * El vendedor tiene que enterarse de que hay filas con error, no solo verlo en un
+   * badge que puede pasar de largo -- se descarga el Excel de errores solo (nunca el
+   * completo) automaticamente apenas llega el resultado de una carga real, sin que tenga
+   * que acordarse de tocar "Exportar errores a Excel". El boton sigue ahi por si el
+   * navegador bloquea la descarga automatica o quiere volver a bajarlo despues.
+   */
+  useEffect(() => {
+    if (!result) {
+      autoErrorDownloadRef.current = false;
+      return;
+    }
+    if (autoErrorDownloadRef.current || result.productosConError === 0) return;
+    autoErrorDownloadRef.current = true;
+    exportarErrores(result, dataFile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
+
+  const renderResumen = (data: CargaExcelResponse, titulo: string, permitirExportarErrores = false, sourceFile: File | null = null) => (
+    // flex:1/minHeight:0 son no-op salvo que el padre sea flex (pasa en el panel derecho de
+    // "Nueva carga"; en el modal de historial no hace nada). Necesarios para que la tabla
+    // adentro pueda estirarse hasta el alto disponible y scrollear -- sin esto, envolver
+    // este bloque en un div extra (como el aviso de errores en el analisis) corta la cadena
+    // de flex que hace que .log-table-container llegue a tener una altura real.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1, minHeight: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
         <h4 style={{ fontSize: '0.9rem', fontWeight: 700 }}>{titulo}</h4>
         {permitirExportarErrores && data.productosConError > 0 && (
@@ -626,7 +901,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             type="button"
             className="btn btn-secondary"
             style={{ padding: '0.35rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
-            onClick={() => exportarErrores(data)}
+            onClick={() => exportarErrores(data, sourceFile)}
           >
             <Download size={13} />
             Exportar errores a Excel
@@ -814,6 +1089,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     </div>
   );
 
+  if (!isOpen) return null;
+
   return (
     <div className={embedded ? 'bulk-upload-page' : 'modal-overlay'}>
       <div
@@ -879,274 +1156,454 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           {activeTab === 'history' ? (
             renderHistorial()
           ) : (
-            <>
-              <div className="bulk-mode-selector" style={{ marginBottom: '1rem' }}>
-                <button type="button" className="bulk-mode-tab active-full" disabled>
-                  <Package size={15} />
-                  <span>Publicación Completa</span>
-                </button>
-                <button type="button" className="bulk-mode-tab" onClick={onSwitchToExpress} disabled={busy}>
-                  <Zap size={15} />
-                  <span>Actualización Rápida</span>
-                </button>
-              </div>
+            <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, gap: '1.25rem' }}>
+              {!result ? (
+                <div className="bulk-upload-split-layout">
+                  {/* Left Panel: template download, dropzones, action buttons */}
+                  <div className="bulk-upload-left-panel" ref={leftPanelRef}>
+                    <div className="bulk-mode-selector">
+                      <button type="button" className="bulk-mode-tab active-full" disabled>
+                        <Package size={15} />
+                        <span>Publicación Completa</span>
+                      </button>
+                      <button type="button" className="bulk-mode-tab" onClick={onSwitchToExpress} disabled={busy}>
+                        <Zap size={15} />
+                        <span>Actualización Rápida</span>
+                      </button>
+                    </div>
 
-              {errorMsg && (
-                <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.8rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <AlertTriangle size={15} />
-                  {errorMsg}
+                    {errorMsg && (
+                      <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <AlertTriangle size={15} />
+                        {errorMsg}
+                      </div>
+                    )}
+
+                    <div style={{
+                      background: 'rgba(99, 102, 241, 0.04)',
+                      padding: '0.85rem 1rem',
+                      borderRadius: '12px',
+                      border: '1px solid var(--border-color)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem'
+                    }}>
+                      <h4 style={{ fontSize: '0.825rem', fontWeight: 700 }}>Plantilla Oficial</h4>
+                      <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                        Plantilla oficial del sistema, con desplegables de categoría, subcategoría, marcas y vehículos.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem', width: 'fit-content' }}
+                        onClick={downloadTemplate}
+                        disabled={busy}
+                      >
+                        <FileSpreadsheet size={13} style={{ color: '#107c41' }} />
+                        Descargar Excel
+                      </button>
+                    </div>
+
+                    <div className="dropzones-horizontal-container" style={{ gridTemplateColumns: '1fr' }}>
+                      <div className="form-group">
+                        <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'block' }}>1. Datos (.xlsx)</label>
+                        <label className={`dropzone compact ${dataFile ? 'active' : ''}`}>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".xlsx,.xls"
+                            style={{ display: 'none' }}
+                            disabled={busy}
+                            onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)}
+                          />
+                          <FileSpreadsheet size={24} className="dropzone-icon" />
+                          <span className="dropzone-title">{dataFile ? dataFile.name : 'Fila Productos'}</span>
+                          <span className="dropzone-desc">{dataFile ? 'Archivo listo' : 'Arrastra o sube tu plantilla'}</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'block' }}>2. Fotos (opcional)</label>
+                      <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '0.35rem' }}>
+                        Se emparejan solas por nombre de archivo igual al SKU y se suben apenas termine la carga.
+                      </p>
+                      <div className="dropzones-horizontal-container">
+                        <label className={`dropzone compact ${photoFolderCount > 0 ? 'active' : ''}`}>
+                          <input
+                            ref={photoFolderInputRef}
+                            type="file"
+                            multiple
+                            style={{ display: 'none' }}
+                            disabled={busy}
+                            onChange={(e) => onPhotoFolderSelected(e.target.files)}
+                            {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+                          />
+                          <FolderOpen size={22} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
+                          <span className="dropzone-title">Carpeta Local</span>
+                          <span className="dropzone-desc">{photoFolderCount > 0 ? `${photoFolderCount} imágenes` : 'Sube carpeta con fotos'}</span>
+                        </label>
+                        <label className={`dropzone compact ${photoZipFile ? 'active' : ''}`}>
+                          <input
+                            ref={photoZipInputRef}
+                            type="file"
+                            accept=".zip"
+                            style={{ display: 'none' }}
+                            disabled={busy}
+                            onChange={(e) => onPhotoZipSelected(e.target.files?.[0] ?? null)}
+                          />
+                          <UploadCloud size={22} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
+                          <span className="dropzone-title">{photoZipFile ? photoZipFile.name : 'Archivo ZIP'}</span>
+                          <span className="dropzone-desc">{photoZipFile ? `${Object.keys(availableImages).length} imágenes` : 'Sube un ZIP con fotos'}</span>
+                        </label>
+                      </div>
+                      {photoErrorMsg && (
+                        <p style={{ fontSize: '0.7rem', color: 'hsl(var(--danger))', marginTop: '0.35rem' }}>{photoErrorMsg}</p>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                      {dataFile && (
+                        <button type="button" className="btn-icon" onClick={resetFileState} disabled={busy} aria-label="Quitar archivo" title="Quitar archivo">
+                          <RefreshCw size={15} />
+                        </button>
+                      )}
+                      {!preview ? (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={handleAnalizar}
+                          disabled={!dataFile || busy}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                        >
+                          <Play size={15} />
+                          {validating ? 'Analizando…' : 'Analizar Carga'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={handleIniciarCarga}
+                          disabled={busy || preview.filas.every((f) => f.estado === 'ERROR')}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                        >
+                          <UploadCloud size={15} />
+                          {uploading ? (pollingStatus ?? 'Cargando…') : 'Iniciar Carga'}
+                        </button>
+                      )}
+                    </div>
+
+                    {uploading && pollingStatus && (
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, textAlign: 'right' }}>{pollingStatus}</p>
+                    )}
+                  </div>
+
+                  {/* Right Panel: analisis. Alto limitado al del panel izquierdo
+                      (leftPanelHeight, medido por ResizeObserver) para que ninguno de los
+                      dos le imponga su altura al otro -- la tabla scrollea internamente. */}
+                  <div className="bulk-upload-right-panel" style={leftPanelHeight ? { height: leftPanelHeight, overflow: 'hidden' } : undefined}>
+                    {!preview && (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '350px', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed var(--border-color)', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.01)' }}>
+                        <UploadCloud size={40} style={{ strokeWidth: 1.2, color: 'var(--text-muted)', opacity: 0.5, marginBottom: '0.75rem' }} />
+                        <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Análisis de la plantilla</h4>
+                        <p style={{ fontSize: '0.72rem', maxWidth: '280px', lineHeight: 1.4, color: 'var(--text-muted)' }}>
+                          {errorMsg
+                            ? ' '
+                            : dataFile
+                              ? 'Haz clic en "Analizar Carga" abajo para revisar los registros antes de guardarlos. Todavía no se crea nada.'
+                              : 'Sube tu plantilla a la izquierda para empezar.'}
+                        </p>
+                      </div>
+                    )}
+                    {preview && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        {renderResumen(preview, 'Análisis de la plantilla (nada se guardó todavía)')}
+                        {preview.productosConError > 0 && (
+                          <div style={{ background: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.78rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+                            <span>
+                              {preview.productosConError === 1 ? 'Hay 1 registro' : `Hay ${preview.productosConError} registros`} que no se van a cargar.
+                              Puedes iniciar la carga igual (se excluyen esas filas y al finalizar se genera un Excel para corregirlas),
+                              o corregir el Excel ahora y volver a analizarlo.
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  background: '#ffffff',
+                  border: '1px solid #dfe7f1',
+                  borderRadius: '16px',
+                  padding: '1rem 1.25rem'
+                }}>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0 }}>
+                    {result.productosConError > 0 ? 'Carga finalizada con errores' : 'Carga finalizada'}
+                  </h4>
+                  {dataFile && (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0' }}>{dataFile.name}</p>
+                  )}
                 </div>
               )}
 
-              <div style={{
-                background: 'rgba(99, 102, 241, 0.04)',
-                padding: '0.85rem 1rem',
-                borderRadius: '12px',
-                border: '1px solid var(--border-color)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.5rem',
-                marginBottom: '1rem'
-              }}>
-                <h4 style={{ fontSize: '0.825rem', fontWeight: 700 }}>Plantilla Oficial</h4>
-                <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                  Plantilla oficial del sistema, con desplegables de categoría, subcategoría, marcas y vehículos.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem', width: 'fit-content' }}
-                  onClick={downloadTemplate}
-                  disabled={busy}
-                >
-                  <FileSpreadsheet size={13} style={{ color: '#107c41' }} />
-                  Descargar Excel
-                </button>
-              </div>
+              {result && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700 }}>Detalle de la carga</h4>
+                    {result.productosConError > 0 && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                        onClick={() => exportarErrores(result, dataFile)}
+                      >
+                        <Download size={13} />
+                        Exportar errores a Excel
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.3rem 0.6rem' }}>
+                      <CheckCircle2 size={13} /> {result.productosCargados} OK
+                    </span>
+                    {result.productosConAdvertencia > 0 && (
+                      <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.3rem 0.6rem' }}>
+                        <AlertTriangle size={13} /> {result.productosConAdvertencia} con advertencia
+                      </span>
+                    )}
+                    {result.productosConError > 0 && (
+                      <span className="log-status-badge" style={{ backgroundColor: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.3rem 0.6rem' }}>
+                        <XCircle size={13} /> {result.productosConError} con error
+                      </span>
+                    )}
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', alignSelf: 'center' }}>
+                      {result.totalFilas} filas totales
+                    </span>
+                  </div>
 
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label className={`dropzone compact ${dataFile ? 'active' : ''}`}>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    style={{ display: 'none' }}
-                    disabled={busy}
-                    onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)}
-                  />
-                  <FileSpreadsheet size={24} className="dropzone-icon" />
-                  <span className="dropzone-title">{dataFile ? dataFile.name : 'Fila Productos'}</span>
-                  <span className="dropzone-desc">{dataFile ? 'Archivo listo' : 'Arrastra o sube tu plantilla'}</span>
-                </label>
-              </div>
-
-              {dataFile && (
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-                  <button type="button" className="btn btn-secondary" onClick={handleValidar} disabled={busy} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <SearchCheck size={15} />
-                    {validating ? 'Validando…' : 'Validar sin guardar'}
-                  </button>
-                  <button type="button" className="btn btn-primary" onClick={handleCargar} disabled={busy} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <UploadCloud size={15} />
-                    {uploading ? (pollingStatus ?? 'Cargando…') : 'Cargar inventario'}
-                  </button>
-                  <button type="button" className="btn-icon" onClick={resetFileState} disabled={busy} aria-label="Quitar archivo" title="Quitar archivo">
-                    <RefreshCw size={15} />
-                  </button>
-                </div>
-              )}
-
-              {uploading && pollingStatus && (
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{pollingStatus}</p>
-              )}
-
-              {preview && renderResumen(preview, 'Vista previa (nada se guardó todavía)')}
-              {result && renderResumen(result, result.productosConError > 0 ? 'Carga finalizada con errores' : 'Carga finalizada', true)}
-
-              {filasConProducto.length > 0 && (
-                <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border-color)' }}>
-                  <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '0.25rem' }}>Fotos de los productos</h4>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
-                    Sube una carpeta o un ZIP con las fotos. Se emparejan automáticamente por nombre de archivo
-                    igual al SKU (ej: <code>{filasConProducto[0]?.sku ?? 'SKU-001'}.jpg</code>). Los productos sin foto
-                    quedan con la genérica hasta que la agregues.
-                  </p>
+                  {filasConProducto.length > 0 && Object.keys(availableImages).length === 0 && (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                      No seleccionaste fotos antes de cargar el Excel, así que los productos quedaron con la imagen genérica.
+                      Puedes agregarlas editando cada producto desde Inventario General.
+                    </p>
+                  )}
 
                   {photoErrorMsg && (
-                    <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.5rem 0.75rem', borderRadius: '8px', fontSize: '0.76rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.5rem 0.75rem', borderRadius: '8px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <AlertTriangle size={14} />
                       {photoErrorMsg}
                     </div>
                   )}
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                    <label className={`dropzone compact ${photoFolderCount > 0 ? 'active' : ''}`}>
-                      <input
-                        ref={photoFolderInputRef}
-                        type="file"
-                        multiple
-                        style={{ display: 'none' }}
-                        disabled={photoUploading}
-                        onChange={(e) => onPhotoFolderSelected(e.target.files)}
-                        {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
-                      />
-                      <FolderOpen size={22} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
-                      <span className="dropzone-title">Carpeta Local</span>
-                      <span className="dropzone-desc">{photoFolderCount > 0 ? `${photoFolderCount} imágenes` : 'Sube carpeta con fotos'}</span>
-                    </label>
-                    <label className={`dropzone compact ${photoZipFile ? 'active' : ''}`}>
-                      <input
-                        ref={photoZipInputRef}
-                        type="file"
-                        accept=".zip"
-                        style={{ display: 'none' }}
-                        disabled={photoUploading}
-                        onChange={(e) => onPhotoZipSelected(e.target.files?.[0] ?? null)}
-                      />
-                      <UploadCloud size={22} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
-                      <span className="dropzone-title">{photoZipFile ? photoZipFile.name : 'Archivo ZIP'}</span>
-                      <span className="dropzone-desc">{photoZipFile ? `${Object.keys(availableImages).length} imágenes` : 'Sube un ZIP con fotos'}</span>
-                    </label>
+                  {Object.keys(availableImages).length > 0 && (
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                      {filasConProducto.filter((f) => (imageAssignments[f.sku] || []).length > 0).length} de {filasConProducto.length} productos con foto asignada.
+                      Usa "Elegir fotos" en la tabla para corregir lo que no haya coincidido solo.
+                    </span>
+                  )}
+
+                  {photoUploadResults && (() => {
+                    const subidas = photoUploadResults.filter((r) => r.ok).length;
+                    const fallidas = photoUploadResults.length - subidas;
+                    const todoOk = fallidas === 0;
+                    return (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        background: todoOk ? 'var(--success-bg)' : 'var(--warning-bg)',
+                        color: todoOk ? 'hsl(var(--success))' : 'hsl(var(--warning))',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '10px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600
+                      }}>
+                        {todoOk ? <CheckCircle2 size={16} style={{ flexShrink: 0 }} /> : <AlertTriangle size={16} style={{ flexShrink: 0 }} />}
+                        {todoOk
+                          ? `Fotos subidas: ${subidas} de ${photoUploadResults.length} correctas.`
+                          : `Fotos subidas: ${subidas} de ${photoUploadResults.length} correctas, ${fallidas} fallaron. Revisa la columna "Resultado" en la tabla.`}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="log-table-container" style={{ marginTop: 0 }}>
+                    <table className="log-table">
+                      <thead>
+                        <tr>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Fila</th>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>SKU</th>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Producto</th>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Categoría</th>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Estado</th>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Detalle</th>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Fotos</th>
+                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.filas.map((fila) => {
+                          const info = productInfoBySku[fila.sku];
+                          const tieneProducto = fila.estado !== 'ERROR' && fila.productoId != null;
+                          const seleccionadas = imageAssignments[fila.sku] || [];
+                          const subida = photoUploadResults?.find((r) => r.sku === fila.sku);
+                          const isOpen = gallerySkuOpen === fila.sku;
+                          return (
+                            <React.Fragment key={fila.fila}>
+                              <tr>
+                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.76rem' }}>{fila.fila}</td>
+                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.76rem', fontWeight: 700 }}>{fila.sku}</td>
+                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.74rem', color: 'var(--text-secondary)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={info?.nombre}>
+                                  {info?.nombre || '—'}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                  {info?.categoria || '—'}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.65rem' }}>
+                                  {fila.estado === 'OK' && (
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>OK</span>
+                                  )}
+                                  {fila.estado === 'ADVERTENCIA' && (
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>Advertencia</span>
+                                  )}
+                                  {fila.estado === 'ERROR' && (
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>Error</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                  {fila.mensajes.join(' — ')}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.65rem' }}>
+                                  {!tieneProducto ? (
+                                    <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                  ) : seleccionadas.length > 0 ? (
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>
+                                      {seleccionadas.length}/{MAX_IMAGES_PER_PRODUCT}
+                                    </span>
+                                  ) : (
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>
+                                      Sin foto
+                                    </span>
+                                  )}
+                                  {tieneProducto && subida && (
+                                    <div style={{ fontSize: '0.68rem', color: subida.ok ? 'hsl(var(--success))' : 'hsl(var(--danger))', marginTop: '0.2rem' }}>
+                                      {subida.ok ? 'Subida' : subida.mensaje || 'Falló'}
+                                    </div>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.5rem 0.65rem' }}>
+                                  {tieneProducto ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary"
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+                                      onClick={() => setGallerySkuOpen(isOpen ? null : fila.sku)}
+                                      disabled={photoUploading || Object.keys(availableImages).length === 0}
+                                    >
+                                      {isOpen ? 'Cerrar' : 'Elegir fotos'}
+                                    </button>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                  )}
+                                </td>
+                              </tr>
+                              {isOpen && tieneProducto && (
+                                <tr>
+                                  <td colSpan={8} style={{ padding: '0.65rem', background: 'var(--bg-app)' }}>
+                                    <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                                      Selecciona hasta {MAX_IMAGES_PER_PRODUCT} imágenes para <strong>{fila.sku}</strong>.
+                                    </p>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '0.5rem' }}>
+                                      {Object.keys(availableImages).map((filename) => {
+                                        const isSelected = seleccionadas.includes(filename);
+                                        const limitReached = !isSelected && seleccionadas.length >= MAX_IMAGES_PER_PRODUCT;
+                                        return (
+                                          <div
+                                            key={filename}
+                                            onClick={() => !limitReached && toggleImageSelection(fila.sku, filename)}
+                                            title={limitReached ? `Máximo ${MAX_IMAGES_PER_PRODUCT} imágenes` : filename}
+                                            style={{
+                                              position: 'relative',
+                                              border: isSelected ? '2px solid hsl(var(--primary))' : '1px solid var(--border-color)',
+                                              borderRadius: '8px',
+                                              overflow: 'hidden',
+                                              cursor: limitReached ? 'not-allowed' : 'pointer',
+                                              opacity: limitReached ? 0.4 : 1
+                                            }}
+                                          >
+                                            <img src={imageObjectUrls[filename]} alt={filename} style={{ width: '100%', height: '64px', objectFit: 'cover', display: 'block' }} />
+                                            {isSelected && (
+                                              <div style={{ position: 'absolute', top: 3, right: 3, background: 'hsl(var(--primary))', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <CheckCircle2 size={11} color="white" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
 
-                  {Object.keys(availableImages).length > 0 && (
-                    <>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                          {filasConProducto.filter((f) => (imageAssignments[f.sku] || []).length > 0).length} de {filasConProducto.length} productos con foto asignada
-                        </span>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button type="button" className="btn-icon" onClick={resetPhotoState} disabled={photoUploading} aria-label="Quitar fotos" title="Quitar fotos">
-                            <RefreshCw size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                            onClick={uploadPhotos}
-                            disabled={photoUploading || filasConProducto.every((f) => (imageAssignments[f.sku] || []).length === 0)}
-                          >
-                            <ImageUp size={15} />
-                            {photoUploading ? `Subiendo fotos… ${photoUploadProgress ?? 0}%` : 'Subir fotos'}
-                          </button>
-                        </div>
+                  {Object.keys(availableImages).length > 0 && (() => {
+                    const hayPendientes = filasConProducto.some((f) => {
+                      const asignadas = imageAssignments[f.sku] || [];
+                      if (asignadas.length === 0) return false;
+                      return !photoUploadResults?.find((r) => r.sku === f.sku && r.ok);
+                    });
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                        <button type="button" className="btn-icon" onClick={resetPhotoState} disabled={photoUploading} aria-label="Quitar fotos" title="Quitar fotos">
+                          <RefreshCw size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{ padding: '0.5rem 0.9rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                          onClick={uploadPhotos}
+                          disabled={photoUploading || !hayPendientes}
+                        >
+                          <ImageUp size={15} />
+                          {photoUploading ? `Subiendo fotos… ${photoUploadProgress ?? 0}%` : 'Subir fotos'}
+                        </button>
                       </div>
-
-                      {photoUploadResults && (
-                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                          <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.3rem 0.6rem' }}>
-                            <CheckCircle2 size={13} /> {photoUploadResults.filter((r) => r.ok).length} subidas
-                          </span>
-                          {photoUploadResults.some((r) => !r.ok) && (
-                            <span className="log-status-badge" style={{ backgroundColor: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.3rem 0.6rem' }}>
-                              <XCircle size={13} /> {photoUploadResults.filter((r) => !r.ok).length} fallidas
-                            </span>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="log-table-container" style={{ marginTop: 0, maxHeight: '360px' }}>
-                        <table className="log-table">
-                          <thead>
-                            <tr>
-                              <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>SKU</th>
-                              <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Fotos</th>
-                              <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Resultado</th>
-                              <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Acción</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filasConProducto.map((fila) => {
-                              const seleccionadas = imageAssignments[fila.sku] || [];
-                              const subida = photoUploadResults?.find((r) => r.sku === fila.sku);
-                              const isOpen = gallerySkuOpen === fila.sku;
-                              return (
-                                <React.Fragment key={fila.sku}>
-                                  <tr>
-                                    <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.76rem', fontWeight: 700 }}>{fila.sku}</td>
-                                    <td style={{ padding: '0.5rem 0.65rem' }}>
-                                      {seleccionadas.length > 0 ? (
-                                        <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>
-                                          {seleccionadas.length}/{MAX_IMAGES_PER_PRODUCT}
-                                        </span>
-                                      ) : (
-                                        <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>
-                                          Sin foto
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.72rem', color: subida && !subida.ok ? 'hsl(var(--danger))' : 'var(--text-secondary)' }}>
-                                      {subida ? (subida.ok ? 'Subida' : subida.mensaje || 'Falló') : '—'}
-                                    </td>
-                                    <td style={{ padding: '0.5rem 0.65rem' }}>
-                                      <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
-                                        onClick={() => setGallerySkuOpen(isOpen ? null : fila.sku)}
-                                        disabled={photoUploading}
-                                      >
-                                        {isOpen ? 'Cerrar' : 'Elegir fotos'}
-                                      </button>
-                                    </td>
-                                  </tr>
-                                  {isOpen && (
-                                    <tr>
-                                      <td colSpan={4} style={{ padding: '0.65rem', background: 'var(--bg-app)' }}>
-                                        <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                                          Selecciona hasta {MAX_IMAGES_PER_PRODUCT} imágenes para <strong>{fila.sku}</strong>.
-                                        </p>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '0.5rem' }}>
-                                          {Object.keys(availableImages).map((filename) => {
-                                            const isSelected = seleccionadas.includes(filename);
-                                            const limitReached = !isSelected && seleccionadas.length >= MAX_IMAGES_PER_PRODUCT;
-                                            return (
-                                              <div
-                                                key={filename}
-                                                onClick={() => !limitReached && toggleImageSelection(fila.sku, filename)}
-                                                title={limitReached ? `Máximo ${MAX_IMAGES_PER_PRODUCT} imágenes` : filename}
-                                                style={{
-                                                  position: 'relative',
-                                                  border: isSelected ? '2px solid hsl(var(--primary))' : '1px solid var(--border-color)',
-                                                  borderRadius: '8px',
-                                                  overflow: 'hidden',
-                                                  cursor: limitReached ? 'not-allowed' : 'pointer',
-                                                  opacity: limitReached ? 0.4 : 1
-                                                }}
-                                              >
-                                                <img src={imageObjectUrls[filename]} alt={filename} style={{ width: '100%', height: '64px', objectFit: 'cover', display: 'block' }} />
-                                                {isSelected && (
-                                                  <div style={{ position: 'absolute', top: 3, right: 3, background: 'hsl(var(--primary))', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <CheckCircle2 size={11} color="white" />
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </React.Fragment>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
 
-              {!preview && !result && !errorMsg && (
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                  <FileText size={13} style={{ verticalAlign: 'middle', marginRight: '0.25rem' }} />
-                  Puedes validar el archivo antes de cargarlo para revisar errores sin crear ningún producto.
-                </p>
-              )}
-            </>
+            </div>
           )}
         </div>
+
+        {activeTab === 'upload' && result && (
+          <div className="modal-footer" style={{ padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={resetFileState}
+              style={{ border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', textDecoration: 'underline', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+            >
+              <RefreshCw size={12} />
+              Cargar otro archivo
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onClose}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            >
+              <Package size={15} />
+              Ir a Inventario General
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

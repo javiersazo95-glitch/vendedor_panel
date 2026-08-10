@@ -7,7 +7,7 @@ import { useFocusTrap } from '../utils/useFocusTrap';
 import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
-// import { FullCreationUpload } from './FullCreationUpload';
+import { FullCreationUpload } from './FullCreationUpload';
 
 interface BulkUploadProps {
   isOpen: boolean;
@@ -395,9 +395,15 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
   if (!isOpen) return null;
 
-  // Ambas vistas (FULL_CREATION y EXPRESS_STOCK_PRICE) usan la disposicion split layout unificada.
-  /*
+  // Fase 9: FULL_CREATION migra al endpoint del backend (/excel/validar,
+  // /excel/cargar) via un componente nuevo y autocontenido, en vez de seguir
+  // agregando ramas a este archivo de 2900+ lineas. EXPRESS_STOCK_PRICE (mas
+  // abajo) queda intacto: se migra en una fase aparte.
   if ((uploadMode as string) === 'FULL_CREATION') {
+    // El cast evita que TS reduzca el tipo de uploadMode a solo
+    // 'EXPRESS_STOCK_PRICE' en el resto del archivo: mas abajo siguen
+    // existiendo comparaciones contra 'FULL_CREATION' (JSX que ya no se
+    // alcanza para ese modo, pero que se deja intacta a proposito).
     return (
       <FullCreationUpload
         isOpen={isOpen}
@@ -408,7 +414,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       />
     );
   }
-  */
 
   // 1. Generate & Download CSV/XLSX Templates
   const downloadTemplate = async (format: 'xlsx' | 'csv') => {

@@ -443,6 +443,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [oem, setOem] = useState('');
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
+  const [subcategory, setSubcategory] = useState('');
   const [partBrand, setPartBrand] = useState('');
   const [compatibilities, setCompatibilities] = useState<CompatibilityCard[]>(() => [createCompatibilityCard()]);
   const [pricingMode, setPricingMode] = useState<'show_price' | 'quote_only'>('show_price');
@@ -457,6 +458,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
+  const [catalogCategoriesRaw, setCatalogCategoriesRaw] = useState<CatalogOption[]>([]);
+  const [catalogSubcategories, setCatalogSubcategories] = useState<string[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogPartBrands, setCatalogPartBrands] = useState<string[]>(PART_BRANDS_FALLBACK);
   const [vehicleBrandCatalog, setVehicleBrandCatalog] = useState<CatalogOption[]>([]);
@@ -469,6 +472,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       oem: oem.trim(),
       name: name.trim(),
       category,
+      subcategory,
       partBrand: partBrand.trim(),
       pricingMode,
       price,
@@ -486,7 +490,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       })),
       filesCount: imageFiles.length,
     });
-  }, [sku, oem, name, category, partBrand, pricingMode, price, stock, requiresChassis, condition, description, compatibilities, imageFiles.length]);
+  }, [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, compatibilities, imageFiles.length]);
 
   useEffect(() => {
     return () => {
@@ -511,6 +515,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setOem(editProduct.oem || '');
       setName(editProduct.name);
       setCategory(editProduct.category || 'Motor');
+      setSubcategory(editProduct.subcategory || '');
       setPartBrand(editProduct.partBrand);
       const initialCards = [createCompatibilityCard(editProduct)];
       setCompatibilities(initialCards);
@@ -528,6 +533,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               oem: (editProduct.oem || '').trim(),
               name: editProduct.name.trim(),
               category: editProduct.category || 'Motor',
+              subcategory: editProduct.subcategory || '',
               partBrand: editProduct.partBrand.trim(),
               pricingMode: editProduct.pricingMode || 'show_price',
               price: editProduct.price,
@@ -585,6 +591,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setOem('');
       setName('');
       setCategory('');
+      setSubcategory('');
       setPartBrand('');
       const defaultCard = [createCompatibilityCard()];
       setCompatibilities(defaultCard);
@@ -603,6 +610,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         oem: '',
         name: '',
         category: '',
+        subcategory: '',
         partBrand: '',
         pricingMode: 'show_price',
         price: 0,
@@ -641,6 +649,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       // obligatorio. Sin este aviso, un fallo de red dejaba el desplegable vacio y el
       // vendedor no podia publicar sin entender por que.
       setCatalogError(categories.length === 0 ? CATALOG_ERROR_MESSAGE : null);
+      setCatalogCategoriesRaw(categories);
       setCatalogCategories(deduplicateAndSortCategories(namesFromCatalog(categories, [])));
       setVehicleBrandCatalog(vehicleBrands);
     }).catch(() => {
@@ -665,6 +674,34 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       active = false;
     };
   }, [category, isOpen]);
+
+  useEffect(() => {
+    // La subcategoria es una taxonomia cerrada por categoria (el backend descarta en
+    // silencio -- con una advertencia -- cualquier subcategoria que no pertenezca a la
+    // categoria elegida), asi que el desplegable se resuelve por id via
+    // /categorias-repuesto/{id}/subcategorias en vez de dejar texto libre como en marca.
+    if (!isOpen || !category) {
+      setCatalogSubcategories([]);
+      return;
+    }
+    const normalized = category.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const foundCategory = catalogCategoriesRaw.find(
+      (option) => option.nombre.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') === normalized,
+    );
+    if (!foundCategory) {
+      setCatalogSubcategories([]);
+      return;
+    }
+    let active = true;
+
+    loadCatalog(`categorias-repuesto/${foundCategory.id}/subcategorias`).then((subcategories) => {
+      if (active) setCatalogSubcategories(namesFromCatalog(subcategories, []));
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [category, isOpen, catalogCategoriesRaw]);
 
   const compatibilityCatalogKey = compatibilities
     .map((card) => `${card.id}|${card.vehicleBrand}|${card.vehicleModel}|${card.vehicleYear}|${card.vehicleYearTo}`)
@@ -1002,6 +1039,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         oem: sanitizeCodeInput(primaryCompatibility.oem),
         name: name.trim(),
         category,
+        subcategory: subcategory.trim() || undefined,
         partBrand: partBrand.trim(),
         vehicleBrand: primaryCompatibility.vehicleBrand.trim(),
         vehicleModel: primaryCompatibility.vehicleModel.trim(),
@@ -1119,6 +1157,29 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       {catalogError}
                     </p>
                   )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Subcategoria {OPTIONAL}</label>
+                  <select
+                    className="form-control focus-primary"
+                    value={subcategory}
+                    onChange={(e) => setSubcategory(e.target.value)}
+                    disabled={!category || catalogSubcategories.length === 0}
+                  >
+                    <option value="">
+                      {!category
+                        ? 'Selecciona primero una categoria'
+                        : catalogSubcategories.length === 0
+                        ? 'Sin subcategorias disponibles'
+                        : 'Selecciona una subcategoria'}
+                    </option>
+                    {catalogSubcategories.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="form-group">

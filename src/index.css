@@ -2131,6 +2131,12 @@ h1, h2, h3, h4, h5, h6 {
   display: grid;
   grid-template-columns: 1fr 1.25fr;
   gap: 2rem;
+  /* "start": cada columna toma su propia altura natural. Si se usa "stretch", el grid
+     iguala ambas columnas a la MAS ALTA de las dos -- con una tabla larga, eso hace crecer
+     tambien al panel izquierdo (botones/dropzones) y deja un hueco vacio debajo de ellos.
+     La altura del panel derecho se limita en cambio por JS (ver leftPanelHeight en
+     FullCreationUpload.tsx) para igualar exactamente la altura real del panel izquierdo,
+     con scroll interno en la tabla si hay mas filas de las que entran. */
   align-items: start;
 }
 
@@ -2150,7 +2156,7 @@ h1, h2, h3, h4, h5, h6 {
   flex-direction: column;
   justify-content: flex-start;
   min-width: 0;
-  height: 100%;
+  min-height: 0;
   background: #ffffff;
   border: 1px solid #dfe7f1;
   border-radius: 16px;
@@ -2201,13 +2207,38 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-muted);
 }
 
-/* Make logs table container scrollable with fixed size in split panel */
+/* La tabla de resultados ocupa todo el alto disponible del panel derecho, en vez de
+   cortarse a una altura fija y dejar espacio vacio debajo (el panel izquierdo, con sus
+   dropzones y botones, suele ser mas alto que una tabla de pocas filas). */
+.bulk-upload-right-panel > div {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .bulk-upload-right-panel .log-table-container {
-  max-height: 310px;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .bulk-upload-right-panel > div:first-child {
   border-radius: 14px;
+}
+
+/* Dropzone con archivo ya cargado: distingue visualmente de una vacia. */
+.dropzone.active {
+  border-color: hsl(var(--success));
+  background: var(--success-bg);
+}
+
+.dropzone.active .dropzone-icon {
+  color: hsl(var(--success));
+}
+
+.dropzone.active .dropzone-title {
+  color: hsl(var(--success));
 }
 
 @media (max-width: 992px) {
