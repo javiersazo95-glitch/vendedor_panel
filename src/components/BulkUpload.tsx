@@ -1339,7 +1339,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="log-table-container" style={{ marginTop: 0, flex: 1 }}>
+                <div className="log-table-container" style={{ marginTop: 0, flex: 1, maxHeight: 'calc(100vh - 360px)', minHeight: '440px' }}>
                   <table className="log-table">
                     <thead>
                       <tr>
@@ -1420,13 +1420,14 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                           <td style={{ padding: '0.65rem 0.75rem' }}>
                             <button
                               type="button"
-                              className="btn-icon"
+                              className="btn btn-secondary"
+                              style={{ padding: '0.35rem 0.65rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                               title="Ver registros cargados"
                               aria-label={`Ver registros de la carga ${item.id}`}
                               onClick={() => setSelectedHistoryItem(item)}
-                              style={{ color: 'hsl(var(--primary))' }}
                             >
-                              <Eye size={17} />
+                              <Eye size={13} />
+                              Ver detalle
                             </button>
                           </td>
                         </tr>
@@ -2013,7 +2014,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 {/* Input 1: CSV/Excel Data */}
                 <div className="form-group">
                   <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'block' }}>1. Datos (.csv, .xlsx)</label>
-                  <label className={`dropzone compact ${dataFile ? 'active' : ''}`}>
+                  <label className={`dropzone compact ${dataFile ? 'active' : ''}`} style={{ height: '125px', padding: '1rem' }}>
                     <input
                       type="file"
                       ref={dataFileInputRef}
@@ -2023,8 +2024,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       disabled={processing}
                     />
                     <FileSpreadsheet size={24} className="dropzone-icon" />
-                    <span className="dropzone-title">Fila Productos</span>
-                    <span className="dropzone-desc">Arrastra o sube tu plantilla</span>
+                    <span className="dropzone-title">Plantilla de Inventario</span>
+                    <span className="dropzone-desc">Arrastra o selecciona tu archivo Excel / CSV</span>
                     {dataFile && (
                       <div className="file-selected-badge" style={{ marginTop: '0.25rem', maxWidth: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
@@ -2178,9 +2179,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
             </div>
 
             {/* Right Panel: Analysis & logs */}
-            <div className="bulk-upload-right-panel">
+            <div className="bulk-upload-right-panel" style={{ display: 'flex', flexDirection: 'column' }}>
               {logs.length === 0 && !processing && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '350px', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed var(--border-color)', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.01)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, minHeight: '100%', height: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed var(--border-color)', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.01)' }}>
                   <UploadCloud size={40} style={{ strokeWidth: 1.2, color: 'var(--text-muted)', opacity: 0.5, marginBottom: '0.75rem' }} />
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Análisis Post Carga</h4>
                   <p style={{ fontSize: '0.72rem', maxWidth: '280px', lineHeight: 1.4, color: 'var(--text-muted)' }}>

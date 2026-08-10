@@ -2131,13 +2131,7 @@ h1, h2, h3, h4, h5, h6 {
   display: grid;
   grid-template-columns: 1fr 1.25fr;
   gap: 2rem;
-  /* "start": cada columna toma su propia altura natural. Si se usa "stretch", el grid
-     iguala ambas columnas a la MAS ALTA de las dos -- con una tabla larga, eso hace crecer
-     tambien al panel izquierdo (botones/dropzones) y deja un hueco vacio debajo de ellos.
-     La altura del panel derecho se limita en cambio por JS (ver leftPanelHeight en
-     FullCreationUpload.tsx) para igualar exactamente la altura real del panel izquierdo,
-     con scroll interno en la tabla si hay mas filas de las que entran. */
-  align-items: start;
+  align-items: stretch;
 }
 
 .bulk-upload-left-panel {
@@ -2162,6 +2156,7 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 16px;
   padding: 1.25rem;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  height: 100%;
 }
 
 .bulk-upload-left-panel > div:first-child {
@@ -2214,7 +2209,8 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 0;
+  height: 100%;
+  min-height: 100%;
 }
 
 .bulk-upload-right-panel .log-table-container {
@@ -2225,6 +2221,20 @@ h1, h2, h3, h4, h5, h6 {
 
 .bulk-upload-right-panel > div:first-child {
   border-radius: 14px;
+}
+
+/* Spin animation for loading icons */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 
 /* Dropzone con archivo ya cargado: distingue visualmente de una vacia. */
@@ -2239,6 +2249,87 @@ h1, h2, h3, h4, h5, h6 {
 
 .dropzone.active .dropzone-title {
   color: hsl(var(--success));
+}
+
+/* Full Creation Theme & Blue Palette Overrides */
+.dropzone.active-full {
+  border-color: #2563eb !important;
+  background: rgba(37, 99, 235, 0.04) !important;
+}
+
+.dropzone.active-full .dropzone-icon {
+  color: #2563eb !important;
+}
+
+.dropzone.active-full .dropzone-title {
+  color: #1d4ed8 !important;
+}
+
+/* Blocked/Disabled Dropzone state for mutual exclusion */
+.dropzone.disabled,
+.dropzone.blocked {
+  opacity: 0.5;
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  border-style: dashed !important;
+  cursor: not-allowed !important;
+}
+
+.dropzone.disabled *,
+.dropzone.blocked * {
+  cursor: not-allowed !important;
+}
+
+.dropzone-clear-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.dropzone-clear-btn:hover {
+  background: #ef4444;
+  border-color: #dc2626;
+  color: #ffffff;
+  transform: scale(1.08);
+}
+
+.full-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary-blue {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  border-color: #1e40af !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25) !important;
+}
+
+.btn-primary-blue:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35) !important;
 }
 
 @media (max-width: 992px) {

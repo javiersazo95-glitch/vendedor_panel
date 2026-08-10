@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Trash2, Eye } from 'lucide-react';
 import { apiFetch, SessionExpiredError, RequestTimeoutError } from '../utils/apiFetch';
 import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
@@ -221,11 +221,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     if (!el) return;
     const observer = new ResizeObserver((entries) => {
       const height = entries[0]?.contentRect.height;
-      if (height) setLeftPanelHeight(height);
+      if (height) {
+        setLeftPanelHeight((prev) => (prev !== height ? height : prev));
+      }
     });
     observer.observe(el);
     return () => observer.disconnect();
-  });
+  }, []);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'history') return;
@@ -967,7 +969,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   );
 
   const renderHistorial = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '420px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '520px', width: '100%', flex: 1 }}>
       <div>
         <h3 style={{ fontSize: '1.05rem', margin: 0 }}>Historial de cargas</h3>
         <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
@@ -987,7 +989,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       )}
 
       {historial && historial.content.length === 0 && (
-        <div style={{ border: '1px dashed var(--border-color)', borderRadius: '14px', minHeight: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+        <div style={{ border: '1px dashed var(--border-color)', borderRadius: '14px', minHeight: '320px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
           <div>
             <FileText size={34} style={{ marginBottom: '0.65rem', opacity: 0.6 }} />
             <p style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Aún no hay cargas registradas</p>
@@ -998,7 +1000,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
 
       {historial && historial.content.length > 0 && (
         <>
-          <div className="log-table-container" style={{ marginTop: 0 }}>
+          <div className="log-table-container" style={{ marginTop: 0, flex: 1, maxHeight: 'calc(100vh - 360px)', minHeight: '440px' }}>
             <table className="log-table">
               <thead>
                 <tr>
@@ -1033,7 +1035,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         </span>
                       </td>
                       <td style={{ padding: '0.65rem 0.75rem' }}>
-                        <button type="button" className="btn btn-secondary" style={{ padding: '0.3rem 0.55rem', fontSize: '0.72rem' }} onClick={() => verDetalleCarga(item.id)}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                          onClick={() => verDetalleCarga(item.id)}
+                        >
+                          <Eye size={13} />
                           Ver detalle
                         </button>
                       </td>
@@ -1102,8 +1110,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       >
         <div className="modal-header">
           <div>
-            <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <UploadCloud size={20} style={{ color: 'hsl(var(--primary))' }} />
+            <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
+              <UploadCloud size={20} style={{ color: '#2563eb' }} />
               Cargar Inventario Masivo
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
@@ -1123,9 +1131,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             onClick={() => setActiveTab('upload')}
             style={{
               border: 'none',
-              borderBottom: activeTab === 'upload' ? '3px solid hsl(var(--primary))' : '3px solid transparent',
+              borderBottom: activeTab === 'upload' ? '3px solid #2563eb' : '3px solid transparent',
               background: 'transparent',
-              color: activeTab === 'upload' ? 'hsl(var(--primary))' : 'var(--text-secondary)',
+              color: activeTab === 'upload' ? '#2563eb' : 'var(--text-secondary)',
               fontWeight: 800,
               fontSize: '0.82rem',
               padding: '0.65rem 0.85rem',
@@ -1139,9 +1147,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             onClick={() => setActiveTab('history')}
             style={{
               border: 'none',
-              borderBottom: activeTab === 'history' ? '3px solid hsl(var(--primary))' : '3px solid transparent',
+              borderBottom: activeTab === 'history' ? '3px solid #2563eb' : '3px solid transparent',
               background: 'transparent',
-              color: activeTab === 'history' ? 'hsl(var(--primary))' : 'var(--text-secondary)',
+              color: activeTab === 'history' ? '#2563eb' : 'var(--text-secondary)',
               fontWeight: 800,
               fontSize: '0.82rem',
               padding: '0.65rem 0.85rem',
@@ -1180,15 +1188,18 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     )}
 
                     <div style={{
-                      background: 'rgba(99, 102, 241, 0.04)',
+                      background: 'rgba(37, 99, 235, 0.04)',
                       padding: '0.85rem 1rem',
                       borderRadius: '12px',
-                      border: '1px solid var(--border-color)',
+                      border: '1px solid rgba(37, 99, 235, 0.2)',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '0.5rem'
                     }}>
-                      <h4 style={{ fontSize: '0.825rem', fontWeight: 700 }}>Plantilla Oficial</h4>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <h4 style={{ fontSize: '0.825rem', fontWeight: 700, color: '#1d4ed8' }}>Plantilla Oficial</h4>
+                        <span className="full-badge"><Package size={11} /> Publicación Completa</span>
+                      </div>
                       <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
                         Plantilla oficial del sistema, con desplegables de categoría, subcategoría, marcas y vehículos.
                       </p>
@@ -1206,8 +1217,24 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
 
                     <div className="dropzones-horizontal-container" style={{ gridTemplateColumns: '1fr' }}>
                       <div className="form-group">
-                        <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'block' }}>1. Datos (.xlsx)</label>
-                        <label className={`dropzone compact ${dataFile ? 'active' : ''}`}>
+                        <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ color: '#2563eb', fontWeight: 800 }}>1.</span> DATOS (.XLSX)
+                        </label>
+                        <div
+                          className={`dropzone compact ${dataFile ? 'active-full' : ''}`}
+                          style={{ position: 'relative', cursor: busy ? 'not-allowed' : 'pointer', height: '125px', padding: '1rem' }}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (!busy) fileInputRef.current?.click();
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !busy) {
+                              e.preventDefault();
+                              fileInputRef.current?.click();
+                            }
+                          }}
+                        >
                           <input
                             ref={fileInputRef}
                             type="file"
@@ -1216,94 +1243,200 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                             disabled={busy}
                             onChange={(e) => onFileSelected(e.target.files?.[0] ?? null)}
                           />
-                          <FileSpreadsheet size={24} className="dropzone-icon" />
-                          <span className="dropzone-title">{dataFile ? dataFile.name : 'Fila Productos'}</span>
-                          <span className="dropzone-desc">{dataFile ? 'Archivo listo' : 'Arrastra o sube tu plantilla'}</span>
-                        </label>
+                          {dataFile && (
+                            <button
+                              type="button"
+                              className="dropzone-clear-btn"
+                              title="Quitar archivo de datos"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onFileSelected(null);
+                              }}
+                            >
+                              <X size={13} />
+                            </button>
+                          )}
+                          <FileSpreadsheet size={24} className="dropzone-icon" style={{ color: dataFile ? '#2563eb' : 'var(--text-muted)' }} />
+                          <span className="dropzone-title">{dataFile ? dataFile.name : 'Plantilla de Inventario'}</span>
+                          <span className="dropzone-desc">{dataFile ? 'Archivo de datos listo' : 'Arrastra o selecciona tu archivo Excel / CSV'}</span>
+                        </div>
                       </div>
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ fontSize: '0.72rem', marginBottom: '0.35rem', display: 'block' }}>2. Fotos (opcional)</label>
-                      <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '0.35rem' }}>
-                        Se emparejan solas por nombre de archivo igual al SKU y se suben apenas termine la carga.
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                          <span style={{ color: '#2563eb', fontWeight: 800 }}>2.</span> FOTOS (OPCIONAL)
+                        </label>
+                        {(photoFolderCount > 0 || photoZipFile !== null) && (
+                          <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 600, background: 'rgba(37, 99, 235, 0.08)', padding: '0.15rem 0.45rem', borderRadius: '6px' }}>
+                            1 formato activo
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '0.4rem' }}>
+                        Se emparejan solas por SKU. Selecciona una carpeta O un ZIP (el otro se bloqueará).
                       </p>
                       <div className="dropzones-horizontal-container">
-                        <label className={`dropzone compact ${photoFolderCount > 0 ? 'active' : ''}`}>
+                        {/* Dropzone 1: Carpeta Local */}
+                        <div
+                          className={`dropzone compact ${photoFolderCount > 0 ? 'active-full' : ''} ${photoZipFile !== null ? 'blocked' : ''}`}
+                          style={{ position: 'relative', cursor: (busy || photoZipFile !== null) ? 'not-allowed' : 'pointer', height: '125px', padding: '1rem' }}
+                          title={photoZipFile !== null ? 'Bloqueado: Hay un archivo ZIP seleccionado' : undefined}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (!busy && photoZipFile === null) {
+                              photoFolderInputRef.current?.click();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !busy && photoZipFile === null) {
+                              e.preventDefault();
+                              photoFolderInputRef.current?.click();
+                            }
+                          }}
+                        >
                           <input
                             ref={photoFolderInputRef}
                             type="file"
                             multiple
                             style={{ display: 'none' }}
-                            disabled={busy}
+                            disabled={busy || photoZipFile !== null}
                             onChange={(e) => onPhotoFolderSelected(e.target.files)}
                             {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
                           />
-                          <FolderOpen size={22} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
+                          {photoFolderCount > 0 && (
+                            <button
+                              type="button"
+                              className="dropzone-clear-btn"
+                              title="Quitar carpeta de fotos"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onPhotoFolderSelected(null);
+                              }}
+                            >
+                              <X size={13} />
+                            </button>
+                          )}
+                          {photoZipFile !== null ? (
+                            <Lock size={22} className="dropzone-icon" style={{ color: '#94a3b8' }} />
+                          ) : (
+                            <FolderOpen size={22} className="dropzone-icon" style={{ color: photoFolderCount > 0 ? '#2563eb' : '#3b82f6' }} />
+                          )}
                           <span className="dropzone-title">Carpeta Local</span>
-                          <span className="dropzone-desc">{photoFolderCount > 0 ? `${photoFolderCount} imágenes` : 'Sube carpeta con fotos'}</span>
-                        </label>
-                        <label className={`dropzone compact ${photoZipFile ? 'active' : ''}`}>
+                          <span className="dropzone-desc" style={photoZipFile !== null ? { color: '#94a3b8', fontWeight: 600 } : undefined}>
+                            {photoZipFile !== null
+                              ? 'Bloqueado (ZIP activo)'
+                              : photoFolderCount > 0
+                              ? `${photoFolderCount} imágenes`
+                              : 'Sube carpeta con fotos'}
+                          </span>
+                        </div>
+
+                        {/* Dropzone 2: Archivo ZIP */}
+                        <div
+                          className={`dropzone compact ${photoZipFile ? 'active-full' : ''} ${photoFolderCount > 0 ? 'blocked' : ''}`}
+                          style={{ position: 'relative', cursor: (busy || photoFolderCount > 0) ? 'not-allowed' : 'pointer', height: '125px', padding: '1rem' }}
+                          title={photoFolderCount > 0 ? 'Bloqueado: Hay una carpeta local seleccionada' : undefined}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (!busy && photoFolderCount === 0) {
+                              photoZipInputRef.current?.click();
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.key === 'Enter' || e.key === ' ') && !busy && photoFolderCount === 0) {
+                              e.preventDefault();
+                              photoZipInputRef.current?.click();
+                            }
+                          }}
+                        >
                           <input
                             ref={photoZipInputRef}
                             type="file"
                             accept=".zip"
                             style={{ display: 'none' }}
-                            disabled={busy}
+                            disabled={busy || photoFolderCount > 0}
                             onChange={(e) => onPhotoZipSelected(e.target.files?.[0] ?? null)}
                           />
-                          <UploadCloud size={22} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
+                          {photoZipFile && (
+                            <button
+                              type="button"
+                              className="dropzone-clear-btn"
+                              title="Quitar archivo ZIP"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onPhotoZipSelected(null);
+                              }}
+                            >
+                              <X size={13} />
+                            </button>
+                          )}
+                          {photoFolderCount > 0 ? (
+                            <Lock size={22} className="dropzone-icon" style={{ color: '#94a3b8' }} />
+                          ) : (
+                            <UploadCloud size={22} className="dropzone-icon" style={{ color: photoZipFile ? '#2563eb' : '#3b82f6' }} />
+                          )}
                           <span className="dropzone-title">{photoZipFile ? photoZipFile.name : 'Archivo ZIP'}</span>
-                          <span className="dropzone-desc">{photoZipFile ? `${Object.keys(availableImages).length} imágenes` : 'Sube un ZIP con fotos'}</span>
-                        </label>
+                          <span className="dropzone-desc" style={photoFolderCount > 0 ? { color: '#94a3b8', fontWeight: 600 } : undefined}>
+                            {photoFolderCount > 0
+                              ? 'Bloqueado (Carpeta activa)'
+                              : photoZipFile
+                              ? `${Object.keys(availableImages).length} imágenes`
+                              : 'Sube un ZIP con fotos'}
+                          </span>
+                        </div>
                       </div>
                       {photoErrorMsg && (
                         <p style={{ fontSize: '0.7rem', color: 'hsl(var(--danger))', marginTop: '0.35rem' }}>{photoErrorMsg}</p>
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                      {dataFile && (
-                        <button type="button" className="btn-icon" onClick={resetFileState} disabled={busy} aria-label="Quitar archivo" title="Quitar archivo">
-                          <RefreshCw size={15} />
-                        </button>
-                      )}
-                      {!preview ? (
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={handleAnalizar}
-                          disabled={!dataFile || busy}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-                        >
-                          <Play size={15} />
-                          {validating ? 'Analizando…' : 'Analizar Carga'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          onClick={handleIniciarCarga}
-                          disabled={busy || preview.filas.every((f) => f.estado === 'ERROR')}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-                        >
-                          <UploadCloud size={15} />
-                          {uploading ? (pollingStatus ?? 'Cargando…') : 'Iniciar Carga'}
-                        </button>
+                    {/* Botón principal de Análisis e Indicador de Progreso */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-primary-blue"
+                        onClick={handleAnalizar}
+                        disabled={!dataFile || busy}
+                        style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem' }}
+                      >
+                        <Play size={15} />
+                        {validating ? 'Analizando…' : 'Analizar Carga'}
+                      </button>
+
+                      {/* Barra de progreso igual al flujo exprés */}
+                      {(validating || uploading) && (
+                        <div style={{ marginTop: '0.25rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            <span>Progreso</span>
+                            <span>{validating ? '100%' : 'En curso'}</span>
+                          </div>
+                          <div className="import-progress-bar" style={{ margin: '0.35rem 0 0 0', height: '6px', borderRadius: '99px', overflow: 'hidden', backgroundColor: 'rgba(37, 99, 235, 0.1)' }}>
+                            <div className="import-progress-fill" style={{ width: '100%', height: '100%', backgroundColor: '#2563eb', borderRadius: '99px', transition: 'width 0.3s ease' }}></div>
+                          </div>
+                        </div>
                       )}
                     </div>
-
-                    {uploading && pollingStatus && (
-                      <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, textAlign: 'right' }}>{pollingStatus}</p>
-                    )}
                   </div>
 
-                  {/* Right Panel: analisis. Alto limitado al del panel izquierdo
-                      (leftPanelHeight, medido por ResizeObserver) para que ninguno de los
-                      dos le imponga su altura al otro -- la tabla scrollea internamente. */}
-                  <div className="bulk-upload-right-panel" style={leftPanelHeight ? { height: leftPanelHeight, overflow: 'hidden' } : undefined}>
-                    {!preview && (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '350px', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed var(--border-color)', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.01)' }}>
+                  {/* Right Panel: analisis. Alto igualado dinamicamente al del panel izquierdo */}
+                  <div className="bulk-upload-right-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                    {validating ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', flex: 1, minHeight: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed rgba(37, 99, 235, 0.3)', borderRadius: '16px', background: 'rgba(37, 99, 235, 0.02)' }}>
+                        <RefreshCw className="spin" size={36} style={{ color: '#2563eb', marginBottom: '0.85rem' }} />
+                        <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>Analizando plantilla...</h4>
+                        <p style={{ fontSize: '0.74rem', maxWidth: '300px', lineHeight: 1.45, color: 'var(--text-secondary)' }}>
+                          Validando registros, estructura de datos, vehículos y SKUs duplicados. Todavía no se crea nada.
+                        </p>
+                      </div>
+                    ) : !preview ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', flex: 1, minHeight: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed var(--border-color)', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.01)' }}>
                         <UploadCloud size={40} style={{ strokeWidth: 1.2, color: 'var(--text-muted)', opacity: 0.5, marginBottom: '0.75rem' }} />
                         <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Análisis de la plantilla</h4>
                         <p style={{ fontSize: '0.72rem', maxWidth: '280px', lineHeight: 1.4, color: 'var(--text-muted)' }}>
@@ -1314,19 +1447,26 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                               : 'Sube tu plantilla a la izquierda para empezar.'}
                         </p>
                       </div>
-                    )}
+                    ) : null}
                     {preview && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {renderResumen(preview, 'Análisis de la plantilla (nada se guardó todavía)')}
                         {preview.productosConError > 0 && (
-                          <div style={{ background: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.78rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
-                            <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
-                            <span>
-                              {preview.productosConError === 1 ? 'Hay 1 registro' : `Hay ${preview.productosConError} registros`} que no se van a cargar.
-                              Puedes iniciar la carga igual (se excluyen esas filas y al finalizar se genera un Excel para corregirlas),
-                              o corregir el Excel ahora y volver a analizarlo.
-                            </span>
-                          </div>
+                          preview.productosCargados === 0 ? (
+                            <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.78rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                              <XCircle size={15} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+                              <span>
+                                <strong>No hay registros válidos para avanzar con la carga.</strong> {preview.productosConError === 1 ? 'La 1 fila analizada contiene errores.' : `Las ${preview.productosConError} filas analizadas contienen errores.`} Corrige la plantilla Excel y vuelve a analizarla.
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ background: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.78rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                              <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+                              <span>
+                                {preview.productosConError === 1 ? 'Hay 1 registro con error que no se va a cargar.' : `Hay ${preview.productosConError} registros con error que no se van a cargar.`} Puedes iniciar la carga con los {preview.productosCargados} registros válidos (las filas con error se excluirán y se generará un Excel con el detalle), o corregir la plantilla y volver a analizarla.
+                              </span>
+                            </div>
+                          )
                         )}
                       </div>
                     )}
@@ -1583,28 +1723,83 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           )}
         </div>
 
-        {activeTab === 'upload' && result && (
-          <div className="modal-footer" style={{ padding: '1rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '1.25rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {activeTab === 'history' ? (
             <button
               type="button"
-              onClick={resetFileState}
-              style={{ border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', textDecoration: 'underline', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+              className="btn btn-primary btn-primary-blue"
+              style={{ marginLeft: 'auto', padding: '0.65rem 1.6rem', fontSize: '0.85rem', borderRadius: '12px', fontWeight: 700 }}
+              onClick={() => setActiveTab('upload')}
             >
-              <RefreshCw size={12} />
-              Cargar otro archivo
+              Nueva carga
             </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={onClose}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <Package size={15} />
-              Ir a Inventario General
-            </button>
+          ) : !result ? (
+              <>
+                {(dataFile || photoFolderCount > 0 || photoZipFile) && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ marginRight: 'auto', background: 'rgba(239, 68, 68, 0.05)', color: 'hsl(var(--danger))', borderColor: 'rgba(239, 68, 68, 0.1)' }}
+                    onClick={resetFileState}
+                    disabled={busy}
+                  >
+                    Limpiar Vista
+                  </button>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem', marginLeft: 'auto' }}>
+                  {!preview && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      Primero analiza la carga.
+                    </span>
+                  )}
+                  {preview && preview.productosCargados === 0 && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      Corrige los errores del análisis para poder iniciar la carga.
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-primary-blue"
+                    onClick={handleIniciarCarga}
+                    disabled={!preview || busy || preview.productosCargados === 0}
+                    style={{
+                      padding: '0.65rem 1.6rem',
+                      fontSize: '0.85rem',
+                      borderRadius: '12px',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.4rem'
+                    }}
+                  >
+                    <UploadCloud size={16} />
+                    {uploading ? (pollingStatus ?? 'Cargando…') : 'Iniciar Carga'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap', width: '100%' }}>
+                <button
+                  type="button"
+                  onClick={resetFileState}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', textDecoration: 'underline', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                >
+                  <RefreshCw size={12} />
+                  Cargar otro archivo
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-primary-blue"
+                  onClick={onClose}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  <Package size={15} />
+                  Ir a Inventario General
+                </button>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
-    </div>
   );
 };
