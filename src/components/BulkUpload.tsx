@@ -444,7 +444,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `plantilla-inventario-repuestop.xlsx`;
+        link.download = `plantilla-inventario-repuestop_${getIsoTimestampString()}.xlsx`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

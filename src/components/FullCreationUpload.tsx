@@ -399,7 +399,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = 'plantilla-inventario-repuestop.xlsx';
+      link.download = `plantilla-inventario-repuestop_${getIsoTimestampString()}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
