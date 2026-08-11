@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Trash2, Eye } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Eye } from 'lucide-react';
 import { apiFetch, SessionExpiredError, RequestTimeoutError } from '../utils/apiFetch';
 import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
@@ -207,27 +207,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   // resultado (ver efecto mas abajo, junto a exportarErrores).
   const autoErrorDownloadRef = useRef(false);
 
-  // El panel derecho (tabla de resultados) debe medir lo mismo que el panel izquierdo
-  // (botones/dropzones), sin importar cual de los dos tenga mas contenido. CSS grid con
-  // align-items:stretch iguala ambos a la MAS ALTA de las dos columnas -- con una tabla
-  // larga eso infla tambien al panel izquierdo. Midiendo el alto real del panel izquierdo
-  // y aplicandolo como limite al derecho (con scroll interno en la tabla) es la unica forma
-  // de igualar ambos sin que ninguno le imponga altura al otro.
-  const leftPanelRef = useRef<HTMLDivElement>(null);
-  const [leftPanelHeight, setLeftPanelHeight] = useState<number | undefined>(undefined);
 
-  useEffect(() => {
-    const el = leftPanelRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver((entries) => {
-      const height = entries[0]?.contentRect.height;
-      if (height) {
-        setLeftPanelHeight((prev) => (prev !== height ? height : prev));
-      }
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'history') return;
@@ -1168,7 +1148,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
               {!result ? (
                 <div className="bulk-upload-split-layout">
                   {/* Left Panel: template download, dropzones, action buttons */}
-                  <div className="bulk-upload-left-panel" ref={leftPanelRef}>
+                  <div className="bulk-upload-left-panel">
                     <div className="bulk-mode-selector">
                       <button type="button" className="bulk-mode-tab active-full" disabled>
                         <Package size={15} />
