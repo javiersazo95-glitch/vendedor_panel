@@ -2398,18 +2398,40 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                     </span>
                   </div>
 
-                  <div className="log-table-container" style={{ flexGrow: 1, marginTop: 0 }}>
-                    <table className="log-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Fila Excel</th>
-                          <th style={{ width: '120px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>SKU</th>
-                          <th style={{ width: '90px', padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Estado</th>
-                          <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem' }}>Detalle / Error</th>
-                          <th style={{ width: '110px', padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center' }}>Acción</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                  <div className="log-table-container" style={{ flexGrow: 1, marginTop: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    {/* Cabecera fija: fuera del scroll vertical */}
+                    <div style={{ background: 'var(--bg-sidebar, #f8fafc)', borderBottom: '1px solid var(--border-color)', flexShrink: 0, paddingRight: '14px' }}>
+                      <table className="log-table" style={{ width: '100%', tableLayout: 'fixed', margin: 0 }}>
+                        <colgroup>
+                          <col style={{ width: '90px' }} />
+                          <col style={{ width: '130px' }} />
+                          <col style={{ width: '95px' }} />
+                          <col style={{ width: 'auto' }} />
+                          <col style={{ width: '110px' }} />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th style={{ padding: '0.55rem 0.75rem', fontSize: '0.7rem', background: 'transparent', borderBottom: 'none' }}>Fila Excel</th>
+                            <th style={{ padding: '0.55rem 0.75rem', fontSize: '0.7rem', background: 'transparent', borderBottom: 'none' }}>SKU</th>
+                            <th style={{ padding: '0.55rem 0.75rem', fontSize: '0.7rem', background: 'transparent', borderBottom: 'none' }}>Estado</th>
+                            <th style={{ padding: '0.55rem 0.75rem', fontSize: '0.7rem', background: 'transparent', borderBottom: 'none' }}>Detalle / Error</th>
+                            <th style={{ padding: '0.55rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', background: 'transparent', borderBottom: 'none' }}>Acción</th>
+                          </tr>
+                        </thead>
+                      </table>
+                    </div>
+
+                    {/* Cuerpo scrollable a partir de la primera fila */}
+                    <div className="log-table-body-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                      <table className="log-table" style={{ width: '100%', tableLayout: 'fixed', margin: 0 }}>
+                        <colgroup>
+                          <col style={{ width: '90px' }} />
+                          <col style={{ width: '130px' }} />
+                          <col style={{ width: '95px' }} />
+                          <col style={{ width: 'auto' }} />
+                          <col style={{ width: '110px' }} />
+                        </colgroup>
+                        <tbody>
                         {paginatedLogs.map((log) => {
                           let bgRow: string;
                           let borderLeft: string;
@@ -2522,6 +2544,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
 
                   {filteredLogs.length > logPageSize && (

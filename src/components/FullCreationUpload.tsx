@@ -168,6 +168,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [validating, setValidating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [actionProgress, setActionProgress] = useState(0);
   const [pollingStatus, setPollingStatus] = useState<string | null>(null);
   const [preview, setPreview] = useState<CargaExcelResponse | null>(null);
   const [result, setResult] = useState<CargaExcelResponse | null>(null);
@@ -421,9 +422,21 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     const session = requireSession();
     if (!session) return;
     setValidating(true);
+    setActionProgress(8);
     setErrorMsg(null);
     setPreview(null);
     setResult(null);
+
+    // Incremento gradual y realista mientras el backend procesa las filas
+    const progressInterval = setInterval(() => {
+      setActionProgress((prev) => {
+        if (prev < 40) return prev + Math.floor(Math.random() * 8 + 5);
+        if (prev < 75) return prev + Math.floor(Math.random() * 5 + 3);
+        if (prev < 92) return prev + 2;
+        return prev;
+      });
+    }, 180);
+
     try {
       const formData = new FormData();
       formData.append('file', dataFile);
@@ -431,13 +444,18 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/validar`,
         { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
       );
+      clearInterval(progressInterval);
       if (!response.ok) {
+        setActionProgress(0);
         setErrorMsg(await readErrorMessage(response, 'No se pudo analizar el archivo.'));
         return;
       }
+      setActionProgress(100);
       const data: CargaExcelResponse = await response.json();
       setPreview(marcarSkuDuplicados(data));
     } catch (err) {
+      clearInterval(progressInterval);
+      setActionProgress(0);
       if (err instanceof SessionExpiredError || err instanceof RequestTimeoutError) {
         setErrorMsg(err.message);
       } else {
@@ -445,6 +463,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         setErrorMsg('Error al conectar con el servidor para analizar el archivo.');
       }
     } finally {
+      clearInterval(progressInterval);
       setValidating(false);
     }
   };
@@ -464,6 +483,10 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       const data: CargaExcelResponse = await response.json();
       if (!data.estado || !JOB_ESTADOS_EN_CURSO.has(data.estado)) {
         return data;
+      }
+      if (data.totalFilas > 0 && data.filasProcesadas != null) {
+        const pct = Math.min(95, Math.max(10, Math.round((data.filasProcesadas / data.totalFilas) * 100)));
+        setActionProgress(pct);
       }
       setPollingStatus(`Procesando ${data.filasProcesadas ?? 0} de ${data.totalFilas} filas...`);
       await wait(POLL_INTERVAL_MS);
@@ -489,9 +512,19 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     }
 
     setUploading(true);
+    setActionProgress(10);
     setErrorMsg(null);
     setResult(null);
     setPollingStatus(null);
+
+    const uploadProgressInterval = setInterval(() => {
+      setActionProgress((prev) => {
+        if (prev < 45) return prev + Math.floor(Math.random() * 7 + 4);
+        if (prev < 85) return prev + Math.floor(Math.random() * 4 + 2);
+        return prev;
+      });
+    }, 200);
+
     try {
       const archivoASubir = filasExcluidas.length === 0
         ? dataFile
@@ -503,7 +536,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/cargar`,
         { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
       );
+      clearInterval(uploadProgressInterval);
       if (!response.ok) {
+        setActionProgress(0);
         setErrorMsg(await readErrorMessage(response, 'No se pudo cargar el archivo.'));
         return;
       }
@@ -512,6 +547,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         setPollingStatus(`Procesando ${data.filasProcesadas ?? 0} de ${data.totalFilas} filas...`);
         data = await pollCarga(session.sellerId, session.token, data.jobId);
       }
+      setActionProgress(100);
 
       // Si se mando un subconjunto, el "fila" que devuelve el backend es relativo a ESE
       // archivo, no al original -- se remapea por posicion (el orden se preserva de punta
@@ -530,6 +566,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         onUploadSuccess();
       }
     } catch (err) {
+      clearInterval(uploadProgressInterval);
+      setActionProgress(0);
       if (err instanceof SessionExpiredError || err instanceof RequestTimeoutError) {
         setErrorMsg(err.message);
       } else {
@@ -537,6 +575,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         setErrorMsg(err instanceof Error ? err.message : 'Error al conectar con el servidor para cargar el archivo.');
       }
     } finally {
+      clearInterval(uploadProgressInterval);
       setUploading(false);
       setPollingStatus(null);
     }
@@ -910,39 +949,60 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       </div>
 
       {data.filas.length > 0 && (
-        <div className="log-table-container" style={{ marginTop: 0 }}>
-          <table className="log-table">
-            <thead>
-              <tr>
-                <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Fila</th>
-                <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>SKU</th>
-                <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Estado</th>
-                <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Detalle</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.filas.map((fila) => (
-                <tr key={fila.fila}>
-                  <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.76rem' }}>{fila.fila}</td>
-                  <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.76rem', fontWeight: 700 }}>{fila.sku}</td>
-                  <td style={{ padding: '0.5rem 0.65rem' }}>
-                    {fila.estado === 'OK' && (
-                      <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>OK</span>
-                    )}
-                    {fila.estado === 'ADVERTENCIA' && (
-                      <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>Advertencia</span>
-                    )}
-                    {fila.estado === 'ERROR' && (
-                      <span className="log-status-badge" style={{ backgroundColor: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>Error</span>
-                    )}
-                  </td>
-                  <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                    {fila.mensajes.join(' — ')}
-                  </td>
+        <div className="log-table-container" style={{ marginTop: 0, flex: 1, minHeight: 0, maxHeight: '390px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Cabecera fija: fuera del scroll vertical */}
+          <div style={{ background: 'var(--bg-sidebar, #f8fafc)', borderBottom: '1px solid var(--border-color)', flexShrink: 0, paddingRight: '14px' }}>
+            <table className="log-table" style={{ width: '100%', tableLayout: 'fixed', margin: 0 }}>
+              <colgroup>
+                <col style={{ width: '70px' }} />
+                <col style={{ width: '130px' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: 'auto' }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', textAlign: 'center', background: 'transparent', borderBottom: 'none' }}>Fila</th>
+                  <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', background: 'transparent', borderBottom: 'none' }}>SKU</th>
+                  <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', background: 'transparent', borderBottom: 'none' }}>Estado</th>
+                  <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', background: 'transparent', borderBottom: 'none' }}>Detalle</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+            </table>
+          </div>
+
+          {/* Cuerpo con scroll propio que inicia exactamente en la primera fila */}
+          <div className="log-table-body-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+            <table className="log-table" style={{ width: '100%', tableLayout: 'fixed', margin: 0 }}>
+              <colgroup>
+                <col style={{ width: '70px' }} />
+                <col style={{ width: '130px' }} />
+                <col style={{ width: '120px' }} />
+                <col style={{ width: 'auto' }} />
+              </colgroup>
+              <tbody>
+                {data.filas.map((fila) => (
+                  <tr key={fila.fila}>
+                    <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.78rem', whiteSpace: 'nowrap', textAlign: 'center', color: 'var(--text-secondary)' }}>{fila.fila}</td>
+                    <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.78rem', fontWeight: 750, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>{fila.sku}</td>
+                    <td style={{ padding: '0.55rem 0.85rem', whiteSpace: 'nowrap' }}>
+                      {fila.estado === 'OK' && (
+                        <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.2rem 0.5rem', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>OK</span>
+                      )}
+                      {fila.estado === 'ADVERTENCIA' && (
+                        <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.2rem 0.5rem', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>Advertencia</span>
+                      )}
+                      {fila.estado === 'ERROR' && (
+                        <span className="log-status-badge" style={{ backgroundColor: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.2rem 0.5rem', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>Error</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      {fila.mensajes.join(' — ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
@@ -1394,11 +1454,11 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       {(validating || uploading) && (
                         <div style={{ marginTop: '0.25rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            <span>Progreso</span>
-                            <span>{validating ? '100%' : 'En curso'}</span>
+                            <span>{validating ? 'Analizando registros…' : (pollingStatus ?? 'Cargando inventario…')}</span>
+                            <span style={{ color: '#2563eb', fontWeight: 700 }}>{actionProgress}%</span>
                           </div>
                           <div className="import-progress-bar" style={{ margin: '0.35rem 0 0 0', height: '6px', borderRadius: '99px', overflow: 'hidden', backgroundColor: 'rgba(37, 99, 235, 0.1)' }}>
-                            <div className="import-progress-fill" style={{ width: '100%', height: '100%', backgroundColor: '#2563eb', borderRadius: '99px', transition: 'width 0.3s ease' }}></div>
+                            <div className="import-progress-fill" style={{ width: `${actionProgress}%`, height: '100%', backgroundColor: '#2563eb', borderRadius: '99px', transition: 'width 0.25s ease' }}></div>
                           </div>
                         </div>
                       )}
@@ -1429,7 +1489,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       </div>
                     ) : null}
                     {preview && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                         {renderResumen(preview, 'Análisis de la plantilla (nada se guardó todavía)')}
                         {preview.productosConError > 0 && (
                           preview.productosCargados === 0 ? (
@@ -1548,18 +1608,18 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     );
                   })()}
 
-                  <div className="log-table-container" style={{ marginTop: 0 }}>
+                  <div className="log-table-container" style={{ marginTop: 0, maxHeight: '440px', overflowY: 'auto' }}>
                     <table className="log-table">
-                      <thead>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--bg-sidebar, #f8fafc)' }}>
                         <tr>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Fila</th>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>SKU</th>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Producto</th>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Categoría</th>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Estado</th>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Detalle</th>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Fotos</th>
-                          <th style={{ padding: '0.5rem 0.65rem', fontSize: '0.7rem' }}>Acción</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', width: '65px', minWidth: '65px', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2, textAlign: 'center' }}>Fila</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', width: '130px', minWidth: '130px', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2 }}>SKU</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2 }}>Producto</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2 }}>Categoría</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', width: '110px', minWidth: '110px', whiteSpace: 'nowrap', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2 }}>Estado</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2 }}>Detalle</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2 }}>Fotos</th>
+                          <th style={{ padding: '0.55rem 0.85rem', fontSize: '0.72rem', position: 'sticky', top: 0, background: 'var(--bg-sidebar, #f8fafc)', zIndex: 2 }}>Acción</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1572,26 +1632,26 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                           return (
                             <React.Fragment key={fila.fila}>
                               <tr>
-                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.76rem' }}>{fila.fila}</td>
-                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.76rem', fontWeight: 700 }}>{fila.sku}</td>
-                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.74rem', color: 'var(--text-secondary)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={info?.nombre}>
+                                <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.78rem', whiteSpace: 'nowrap', textAlign: 'center', color: 'var(--text-secondary)' }}>{fila.fila}</td>
+                                <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.78rem', fontWeight: 750, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>{fila.sku}</td>
+                                <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.74rem', color: 'var(--text-secondary)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={info?.nombre}>
                                   {info?.nombre || '—'}
                                 </td>
-                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                                <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                                   {info?.categoria || '—'}
                                 </td>
-                                <td style={{ padding: '0.5rem 0.65rem' }}>
+                                <td style={{ padding: '0.55rem 0.85rem', whiteSpace: 'nowrap' }}>
                                   {fila.estado === 'OK' && (
-                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>OK</span>
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--success-bg)', color: 'hsl(var(--success))', padding: '0.2rem 0.5rem', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>OK</span>
                                   )}
                                   {fila.estado === 'ADVERTENCIA' && (
-                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>Advertencia</span>
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.2rem 0.5rem', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>Advertencia</span>
                                   )}
                                   {fila.estado === 'ERROR' && (
-                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.15rem 0.35rem', fontSize: '0.65rem' }}>Error</span>
+                                    <span className="log-status-badge" style={{ backgroundColor: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.2rem 0.5rem', fontSize: '0.68rem', whiteSpace: 'nowrap' }}>Error</span>
                                   )}
                                 </td>
-                                <td style={{ padding: '0.5rem 0.65rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                                   {fila.mensajes.join(' — ')}
                                 </td>
                                 <td style={{ padding: '0.5rem 0.65rem' }}>
