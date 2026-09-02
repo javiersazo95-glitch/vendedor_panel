@@ -2529,15 +2529,48 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .manual-compat-list {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
+  width: 100%;
+}
+
+.manual-compat-list > * {
+  width: 100%;
+}
+
+/* Las cards "Compatibilidad #n" van de a dos por fila: la #2 aparece al lado de la #1,
+   la #3 debajo de la #1 (no de la #2), etc. La card universal y "Requiere chasis" siguen
+   siendo filas completas porque son hermanas de esta grilla, no hijas. */
+.manual-compat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+/* Mientras haya una sola compatibilidad, ocupa el ancho completo. */
+.manual-compat-grid > .manual-compat-card:only-child {
+  grid-column: 1 / -1;
 }
 
 .manual-compat-card {
+  width: 100%;
   padding: 14px;
   border: 1px solid #dfe8f3;
   border-radius: 8px;
   background: #ffffff;
+}
+
+/* La seccion de compatibilidad se apila en una sola columna: la card universal, cada
+   card "Compatibilidad #n" y el campo "Requiere chasis" ocupan su propia fila completa,
+   y los campos internos de cada card tambien van uno debajo del otro. */
+.manual-compat-card .form-section-grid {
+  grid-template-columns: 1fr;
+}
+
+.manual-compat-card .form-section-grid-full {
+  grid-column: span 1;
 }
 
 .manual-compat-card-header {
@@ -2561,6 +2594,116 @@ h1, h2, h3, h4, h5, h6 {
   color: #dc2626;
   background: rgba(220, 38, 38, 0.1);
   cursor: pointer;
+}
+
+.manual-universal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #dfe8f3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.manual-universal-card.is-active {
+  border-color: rgba(47, 125, 240, 0.4);
+  background: rgba(47, 125, 240, 0.05);
+}
+
+.manual-universal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.manual-universal-title strong {
+  font-size: 0.92rem;
+  color: #1e293b;
+}
+
+.manual-universal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: #2f7df0;
+  background: rgba(47, 125, 240, 0.12);
+}
+
+.manual-universal-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.manual-universal-switch-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.manual-universal-switch-row input {
+  position: absolute;
+  opacity: 0;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.manual-universal-slider {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.15s ease;
+}
+
+.manual-universal-slider::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: transform 0.15s ease;
+}
+
+.manual-universal-switch-row input:checked + .manual-universal-slider {
+  background: #2f7df0;
+}
+
+.manual-universal-switch-row input:checked + .manual-universal-slider::before {
+  transform: translateX(20px);
+}
+
+.manual-universal-switch-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.manual-universal-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(47, 125, 240, 0.12);
+  color: #2f7df0;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .manual-chassis-field {
@@ -2914,6 +3057,10 @@ h1, h2, h3, h4, h5, h6 {
 
   .manual-form-section .form-section-grid-full {
     grid-column: span 1;
+  }
+
+  .manual-compat-grid {
+    grid-template-columns: 1fr;
   }
 }
 

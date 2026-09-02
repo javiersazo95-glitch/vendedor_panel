@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, Globe, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
 import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount } from '../utils/pricing';
@@ -446,6 +446,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [subcategory, setSubcategory] = useState('');
   const [partBrand, setPartBrand] = useState('');
   const [compatibilities, setCompatibilities] = useState<CompatibilityCard[]>(() => [createCompatibilityCard()]);
+  // Compatibilidad universal: el repuesto es compatible con cualquier vehiculo. Al activarlo
+  // se oculta y omite el detalle de compatibilidad (mismo comportamiento que el formulario mobile).
+  const [isUniversal, setIsUniversal] = useState(false);
   const [pricingMode, setPricingMode] = useState<'show_price' | 'quote_only'>('show_price');
   const [price, setPrice] = useState<number>(0);
   const [stock, setStock] = useState<number>(1);
@@ -480,6 +483,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       requiresChassis,
       condition,
       description: description.trim(),
+      isUniversal,
       compatibilities: compatibilities.map((card) => ({
         b: card.vehicleBrand,
         m: card.vehicleModel,
@@ -490,7 +494,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       })),
       filesCount: imageFiles.length,
     });
-  }, [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, compatibilities, imageFiles.length]);
+  }, [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, isUniversal, compatibilities, imageFiles.length]);
 
   useEffect(() => {
     return () => {
@@ -541,6 +545,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
               condition: editProduct.condition || 'ORIGINAL',
               description: (editProduct.description || '').trim(),
+              isUniversal: editProduct.esUniversal === true,
               compatibilities: restoredCards.map((card) => ({
                 b: card.vehicleBrand,
                 m: card.vehicleModel,
@@ -558,6 +563,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setPrice(editProduct.price);
       setStock(editProduct.stock || 0);
       setRequiresChassis(editProduct.requiresChassis ? 'true' : 'false');
+      setIsUniversal(editProduct.esUniversal === true);
       setCondition(editProduct.condition || 'ORIGINAL');
       setDescription(editProduct.description || '');
       setImage(editProduct.image || '');
@@ -576,6 +582,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
         condition: editProduct.condition || 'ORIGINAL',
         description: (editProduct.description || '').trim(),
+        isUniversal: editProduct.esUniversal === true,
         compatibilities: initialCards.map((card) => ({
           b: card.vehicleBrand,
           m: card.vehicleModel,
@@ -599,6 +606,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setPrice(0);
       setStock(1);
       setRequiresChassis('false');
+      setIsUniversal(false);
       setCondition('ORIGINAL');
       setDescription('');
       setImage('');
@@ -618,6 +626,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         requiresChassis: 'false',
         condition: 'ORIGINAL',
         description: '',
+        isUniversal: false,
         compatibilities: defaultCard.map((card) => ({
           b: card.vehicleBrand,
           m: card.vehicleModel,
@@ -931,7 +940,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       return;
     }
 
-    // Validation 1: Compatibility is mandatory for the product
+    // Validation 1: Compatibility is mandatory for the product, unless it is universal
+    // (compatible con cualquier vehiculo -> no se pide detalle de compatibilidad).
+    if (!isUniversal) {
     const firstCompat = compatibilities[0];
     const hasFirstBrand = Boolean(firstCompat?.vehicleBrand?.trim());
     const hasFirstModel = Boolean(firstCompat?.vehicleModel?.trim());
@@ -988,6 +999,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       triggerError('El año hasta no puede ser menor que el año desde.');
       return;
     }
+    }
 
     // Validation 3: Minimum description length (15 characters)
     if (!description.trim() || description.trim().length < 15) {
@@ -1036,16 +1048,17 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
       const productPayload: Omit<Product, 'id' | 'lastUpdated'> & { id?: string } = {
         sku: sanitizeCodeInput(sku),
-        oem: sanitizeCodeInput(primaryCompatibility.oem),
+        oem: sanitizeCodeInput(isUniversal ? oem : primaryCompatibility.oem),
         name: name.trim(),
         category,
         subcategory: subcategory.trim() || undefined,
         partBrand: partBrand.trim(),
-        vehicleBrand: primaryCompatibility.vehicleBrand.trim(),
-        vehicleModel: primaryCompatibility.vehicleModel.trim(),
-        vehicleYear: Number(primaryCompatibility.vehicleYear),
-        vehicleYearTo: Number(primaryCompatibility.vehicleYearTo),
-        vehicleVersion: joinValues(primaryVersionLabels),
+        esUniversal: isUniversal,
+        vehicleBrand: isUniversal ? '' : primaryCompatibility.vehicleBrand.trim(),
+        vehicleModel: isUniversal ? '' : primaryCompatibility.vehicleModel.trim(),
+        vehicleYear: isUniversal ? 0 : Number(primaryCompatibility.vehicleYear),
+        vehicleYearTo: isUniversal ? 0 : Number(primaryCompatibility.vehicleYearTo),
+        vehicleVersion: isUniversal ? '' : joinValues(primaryVersionLabels),
         pricingMode,
         price: pricingMode === 'quote_only' ? 0 : Number(price),
         stock: Number(stock),
@@ -1053,8 +1066,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         condition,
         description: description.trim(),
         image: finalImage,
-        vehiculoCatalogoIds: allCatalogIds,
-        compatibilityGroupsJson: JSON.stringify(compatibilityGroups),
+        vehiculoCatalogoIds: isUniversal ? [] : allCatalogIds,
+        compatibilityGroupsJson: isUniversal ? '[]' : JSON.stringify(compatibilityGroups),
       };
 
       if (editProduct) {
@@ -1320,11 +1333,45 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                   <span>3.</span>
                   Compatibilidad {REQUIRED}
                 </div>
-                <button type="button" className="manual-add-compat" onClick={addCompatibility} aria-label="Agregar compatibilidad">
-                  <PlusCircle size={26} />
-                </button>
+                {!isUniversal && (
+                  <button type="button" className="manual-add-compat" onClick={addCompatibility} aria-label="Agregar compatibilidad">
+                    <PlusCircle size={26} />
+                  </button>
+                )}
               </div>
               <div className="manual-compat-list">
+                <div className={`manual-universal-card${isUniversal ? ' is-active' : ''}`}>
+                  <div className="manual-universal-title">
+                    <div className="manual-universal-icon">
+                      <Globe size={20} />
+                    </div>
+                    <strong>Compatibilidad universal</strong>
+                  </div>
+                  <p className="manual-universal-desc">
+                    Actívalo si este repuesto es compatible con todo tipo de vehículo.
+                  </p>
+                  <label className="manual-universal-switch-row">
+                    <input
+                      type="checkbox"
+                      checked={isUniversal}
+                      onChange={(e) => setIsUniversal(e.target.checked)}
+                      aria-label="Compatibilidad universal"
+                    />
+                    <span className="manual-universal-slider" />
+                    <span className="manual-universal-switch-label">
+                      {isUniversal ? 'Activada' : 'Desactivada'}
+                    </span>
+                  </label>
+                  {isUniversal && (
+                    <div className="manual-universal-badge">
+                      <Check size={16} />
+                      <span>Repuesto universal: se mostrará para cualquier modelo o patente buscada.</span>
+                    </div>
+                  )}
+                </div>
+
+                {!isUniversal && (
+                  <div className="manual-compat-grid">
                 {compatibilities.map((card, index) => (
                   <div className="manual-compat-card" key={card.id}>
                     <div className="manual-compat-card-header">
@@ -1420,6 +1467,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     </div>
                   </div>
                 ))}
+                  </div>
+                )}
 
                 <div className="form-group form-section-grid-full manual-chassis-field">
                   <label className="form-label">Requiere Chasis? {REQUIRED}</label>

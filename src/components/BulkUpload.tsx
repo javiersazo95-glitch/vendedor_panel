@@ -84,12 +84,14 @@ export const PLANTILLA_COLUMNAS = [
   'precio',
   'stock',
   'condicion',
+  'compatibilidad_general',
   'compatibilidad_marca',
   'compatibilidad_modelo',
   'anio_desde',
   'anio_hasta',
   'motor',
   'descripcion',
+  'requiere_chasis',
 ] as const;
 
 export const columnReader = (row: Record<string, unknown>) => {
@@ -696,6 +698,12 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               const rawVehicleYearTo = col('anio_hasta');
               const rawVehicleVersion = col('motor');
               const rawDescription = col('descripcion');
+              // Compatibilidad universal: SI publica el repuesto como universal (compatible
+              // con cualquier vehiculo) e ignora las columnas de compatibilidad de la fila.
+              const rawCompatGeneral = col('compatibilidad_general');
+              const isUniversalRow = ['SI', 'SÍ', 'TRUE', '1'].includes(
+                String(rawCompatGeneral).trim().toUpperCase()
+              );
               // La columna de imagen aún no está en el contrato oficial (llega en la Fase 6);
               // se lee si el archivo la trae, y si no, las fotos se asignan por SKU más abajo.
               const rawImageFilename = col('imagen') || col('url_foto');
@@ -766,11 +774,12 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 category: String(rawCategory).trim(),
                 subcategory: String(rawSubcategory).trim(),
                 partBrand: String(rawPartBrand).trim(),
-                vehicleBrand: String(rawVehicleBrand).trim(),
-                vehicleModel: String(rawVehicleModel).trim(),
-                vehicleYear: Number(rawVehicleYear) || new Date().getFullYear(),
-                vehicleYearTo: Number(rawVehicleYearTo) || Number(rawVehicleYear) || new Date().getFullYear(),
-                vehicleVersion: String(rawVehicleVersion).trim(),
+                esUniversal: isUniversalRow,
+                vehicleBrand: isUniversalRow ? '' : String(rawVehicleBrand).trim(),
+                vehicleModel: isUniversalRow ? '' : String(rawVehicleModel).trim(),
+                vehicleYear: isUniversalRow ? 0 : (Number(rawVehicleYear) || new Date().getFullYear()),
+                vehicleYearTo: isUniversalRow ? 0 : (Number(rawVehicleYearTo) || Number(rawVehicleYear) || new Date().getFullYear()),
+                vehicleVersion: isUniversalRow ? '' : String(rawVehicleVersion).trim(),
                 pricingMode,
                 condition,
                 price,

@@ -24,6 +24,9 @@ export interface Product {
   condition?: 'ORIGINAL' | 'ALTERNATIVO';
   requiresChassis?: boolean;
   vehicleYearTo?: number;
+  // Compatibilidad universal: el repuesto se publica sin compatibilidad vehicular y
+  // aparece para cualquier busqueda de modelo/patente (backend: esUniversal).
+  esUniversal?: boolean;
   vehiculoCatalogoIds?: number[];
   compatibilityGroupsJson?: string;
   lastUpdated?: string;
@@ -55,6 +58,28 @@ type ProductImageInput = File | Blob | (File | Blob)[] | null;
 function imageInputList(imageInput?: ProductImageInput): (File | Blob)[] {
   if (!imageInput) return [];
   return Array.isArray(imageInput) ? imageInput : [imageInput];
+}
+
+/**
+ * Agrega al FormData el flag de compatibilidad universal y los campos de compatibilidad
+ * vehicular. Cuando el repuesto es universal (esUniversal), la compatibilidad va vacia:
+ * el backend igual procesa el texto de compatibilidad si llega, asi que hay que limpiarlo
+ * aca para que el repuesto quede realmente universal.
+ */
+function appendCompatibilidad(formData: FormData, product: { esUniversal?: boolean; vehicleBrand: string; vehicleModel: string; vehicleYear: number; vehicleYearTo?: number; vehicleVersion: string; vehiculoCatalogoIds?: number[]; compatibilityGroupsJson?: string; }): void {
+  const universal = product.esUniversal === true;
+  formData.append('esUniversal', String(universal));
+  formData.append('compatibilidadMarca', universal ? '' : product.vehicleBrand);
+  formData.append('compatibilidadModelo', universal ? '' : product.vehicleModel);
+  formData.append('anioDesde', universal ? '' : String(product.vehicleYear));
+  formData.append('anioHasta', universal ? '' : String(product.vehicleYearTo ?? product.vehicleYear));
+  formData.append('motor', universal ? '' : product.vehicleVersion);
+  formData.append('compatibilityGroupsJson', universal ? '' : (product.compatibilityGroupsJson || ''));
+  if (!universal) {
+    (product.vehiculoCatalogoIds || []).forEach((id) => {
+      formData.append('vehiculoCatalogoIds', String(id));
+    });
+  }
 }
 
 // Helper to retrieve JWT token and sellerId from the current tab session.
@@ -90,6 +115,7 @@ interface ProductDto {
   pricingMode?: string;
   condicion?: string;
   requiereChasis?: boolean;
+  esUniversal?: boolean;
   vehiculoCatalogoIds?: number[];
   compatibilityGroupsJson?: string;
   updatedAt?: string;
@@ -119,6 +145,7 @@ function mapDtoToProduct(dto: ProductDto): Product {
     pricingMode: dto.pricingMode === 'QUOTE_ONLY' ? 'quote_only' : 'show_price',
     condition: dto.condicion === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL',
     requiresChassis: dto.requiereChasis === true,
+    esUniversal: dto.esUniversal === true,
     vehicleYearTo: dto.anioHasta || dto.anioDesde || new Date().getFullYear(),
     vehiculoCatalogoIds: dto.vehiculoCatalogoIds || [],
     compatibilityGroupsJson: dto.compatibilityGroupsJson || '',
@@ -174,21 +201,13 @@ export async function addProduct(
   }
   formData.append('marcaRepuesto', product.partBrand);
   formData.append('referenciaOem', product.oem || '');
-  formData.append('compatibilidadMarca', product.vehicleBrand);
-  formData.append('compatibilidadModelo', product.vehicleModel);
-  formData.append('anioDesde', String(product.vehicleYear));
-  formData.append('anioHasta', String(product.vehicleYearTo ?? product.vehicleYear));
-  formData.append('motor', product.vehicleVersion);
+  appendCompatibilidad(formData, product);
   formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
   formData.append('precio', String(product.price));
   formData.append('stock', String(product.stock));
   formData.append('descripcion', product.description || '');
   formData.append('condicion', product.condition || 'ORIGINAL');
   formData.append('requiereChasis', String(product.requiresChassis === true));
-  formData.append('compatibilityGroupsJson', product.compatibilityGroupsJson || '');
-  (product.vehiculoCatalogoIds || []).forEach((id) => {
-    formData.append('vehiculoCatalogoIds', String(id));
-  });
   formData.append('activo', 'true');
   imageFiles.forEach((file) => formData.append('imagenes', file));
 
@@ -241,21 +260,13 @@ export async function updateProduct(
     }
     formData.append('marcaRepuesto', product.partBrand);
     formData.append('referenciaOem', product.oem || '');
-    formData.append('compatibilidadMarca', product.vehicleBrand);
-    formData.append('compatibilidadModelo', product.vehicleModel);
-    formData.append('anioDesde', String(product.vehicleYear));
-    formData.append('anioHasta', String(product.vehicleYearTo ?? product.vehicleYear));
-    formData.append('motor', product.vehicleVersion);
+    appendCompatibilidad(formData, product);
     formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
     formData.append('precio', String(product.price));
     formData.append('stock', String(product.stock));
     formData.append('descripcion', product.description || '');
     formData.append('condicion', product.condition || 'ORIGINAL');
     formData.append('requiereChasis', String(product.requiresChassis === true));
-    formData.append('compatibilityGroupsJson', product.compatibilityGroupsJson || '');
-    (product.vehiculoCatalogoIds || []).forEach((id) => {
-      formData.append('vehiculoCatalogoIds', String(id));
-    });
     formData.append('activo', String(product.activo !== false));
     imageFiles.forEach((file) => formData.append('imagenes', file));
 
@@ -274,19 +285,20 @@ export async function updateProduct(
       subcategoria: product.subcategory || undefined,
       marcaRepuesto: product.partBrand,
       referenciaOem: product.oem || '',
-      compatibilidadMarca: product.vehicleBrand,
-      compatibilidadModelo: product.vehicleModel,
-      anioDesde: product.vehicleYear,
-      anioHasta: product.vehicleYearTo ?? product.vehicleYear,
-      motor: product.vehicleVersion,
+      esUniversal: product.esUniversal === true,
+      compatibilidadMarca: product.esUniversal ? '' : product.vehicleBrand,
+      compatibilidadModelo: product.esUniversal ? '' : product.vehicleModel,
+      anioDesde: product.esUniversal ? undefined : product.vehicleYear,
+      anioHasta: product.esUniversal ? undefined : (product.vehicleYearTo ?? product.vehicleYear),
+      motor: product.esUniversal ? '' : product.vehicleVersion,
       pricingMode: product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE',
       precio: product.price,
       stock: product.stock,
       descripcion: product.description || '',
       condicion: product.condition || 'ORIGINAL',
       requiereChasis: product.requiresChassis === true,
-      vehiculoCatalogoIds: product.vehiculoCatalogoIds || [],
-      compatibilityGroupsJson: product.compatibilityGroupsJson || '',
+      vehiculoCatalogoIds: product.esUniversal ? [] : (product.vehiculoCatalogoIds || []),
+      compatibilityGroupsJson: product.esUniversal ? '' : (product.compatibilityGroupsJson || ''),
       activo: product.activo !== false
     };
 

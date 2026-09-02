@@ -89,10 +89,14 @@ describe('contrato de columnas de la plantilla oficial', () => {
     expect(col('columna_inexistente')).toBe('');
   });
 
-  it('el contrato tiene las 16 columnas del backend, en orden', () => {
-    expect(PLANTILLA_COLUMNAS).toHaveLength(16);
+  it('el contrato tiene las 18 columnas del backend, en orden', () => {
+    expect(PLANTILLA_COLUMNAS).toHaveLength(18);
     expect(PLANTILLA_COLUMNAS[0]).toBe('nombre_publicado');
     expect(PLANTILLA_COLUMNAS[4]).toBe('sku_proveedor');
-    expect(PLANTILLA_COLUMNAS[15]).toBe('descripcion');
+    expect(PLANTILLA_COLUMNAS[9]).toBe('condicion');
+    // compatibilidad_general va justo despues de condicion (columna K).
+    expect(PLANTILLA_COLUMNAS[10]).toBe('compatibilidad_general');
+    expect(PLANTILLA_COLUMNAS[16]).toBe('descripcion');
+    expect(PLANTILLA_COLUMNAS[17]).toBe('requiere_chasis');
   });
 });
