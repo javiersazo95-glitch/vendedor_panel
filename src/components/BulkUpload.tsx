@@ -69,30 +69,12 @@ const getIsoTimestampString = (date = new Date()): string => {
  * plantilla del servidor, cada fila fallaba con "SKU faltante".
  */
 /**
- * Contrato oficial de la plantilla: debe coincidir exactamente con
- * InventarioExcelService.COLUMNAS_EXCEL del backend y con GET /inventario/excel/esquema.
- * Si el backend cambia una columna, el test de contrato falla y avisa antes que el vendedor.
+ * Contrato oficial de la plantilla: vive en `src/utils/plantillaMapping.ts` (lo comparte
+ * el flujo "Adaptar mi plantilla") y se re-exporta aquí para no romper imports ni el test
+ * de contrato. Debe coincidir exactamente con InventarioExcelService.COLUMNAS_EXCEL del
+ * backend y con GET /inventario/excel/esquema.
  */
-export const PLANTILLA_COLUMNAS = [
-  'nombre_publicado',
-  'categoria',
-  'subcategoria',
-  'marca_repuesto',
-  'sku_proveedor',
-  'referencia_oem',
-  'tipo_precio',
-  'precio',
-  'stock',
-  'condicion',
-  'compatibilidad_general',
-  'compatibilidad_marca',
-  'compatibilidad_modelo',
-  'anio_desde',
-  'anio_hasta',
-  'motor',
-  'descripcion',
-  'requiere_chasis',
-] as const;
+export { PLANTILLA_COLUMNAS } from '../utils/plantillaMapping';
 
 export const columnReader = (row: Record<string, unknown>) => {
   const normalized: Record<string, unknown> = {};

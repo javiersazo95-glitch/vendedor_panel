@@ -32,6 +32,10 @@ export interface Product {
   lastUpdated?: string;
   activo?: boolean;
   pausado?: boolean;
+  destacado?: boolean;
+  topDesde?: string | null;
+  topHasta?: string | null;
+  topGratuito?: boolean | null;
 }
 
 export interface BatchResult {
@@ -122,6 +126,10 @@ interface ProductDto {
   createdAt?: string;
   activo?: boolean;
   pausado?: boolean;
+  destacado?: boolean;
+  topDesde?: string | null;
+  topHasta?: string | null;
+  topGratuito?: boolean | null;
 }
 
 // Helper to map Spring Boot DTO (ProveedorProductoResponseDTO) to frontend Product interface
@@ -152,7 +160,34 @@ function mapDtoToProduct(dto: ProductDto): Product {
     lastUpdated: dto.updatedAt || dto.createdAt || new Date().toISOString(),
     activo: dto.activo !== false,
     pausado: dto.pausado === true,
+    destacado: dto.destacado === true,
+    topDesde: dto.topDesde ?? null,
+    topHasta: dto.topHasta ?? null,
+    topGratuito: dto.topGratuito ?? null,
   };
+}
+
+export interface ProductTopSummary {
+  activos: number;
+  gratuitosDisponibles: number;
+  maximo: number;
+  cuposGratuitos: number;
+  costoMonedas: number;
+  duracionDias: number;
+  saldoMonedas: number;
+}
+
+export interface WalletBalance {
+  saldo: number;
+}
+
+async function getApiError(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = await response.json() as { message?: string; error?: string; errors?: string[] };
+    return data.message || data.error || (Array.isArray(data.errors) ? data.errors.join('\n') : fallback);
+  } catch {
+    return fallback;
+  }
 }
 
 export async function getAllProducts(): Promise<Product[]> {
@@ -371,6 +406,59 @@ export function resumeProduct(id: string): Promise<Product> {
   return setProductPaused(id, false);
 }
 
+export async function getProductTopSummary(): Promise<ProductTopSummary> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/top/resumen`, {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo consultar el estado de productos Top.'));
+  return response.json() as Promise<ProductTopSummary>;
+}
+
+export async function setProductTop(id: string, renovar = false): Promise<Product> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}/top`, {
+    method: 'PATCH',
+    headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ destacado: true, renovar }),
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo actualizar el producto Top.'));
+  return mapDtoToProduct(await response.json() as ProductDto);
+}
+
+export async function getWalletBalance(): Promise<WalletBalance> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/saldo`, {
+    method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo consultar el monedero.'));
+  return response.json() as Promise<WalletBalance>;
+}
+
+export async function rechargeWallet(pack: { name: string; coins: number; amount: number }, paymentMethod: string): Promise<WalletBalance> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/compras`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({
+      cantidadFichas: pack.coins,
+      montoPagado: pack.amount,
+      packNombre: pack.name,
+      metodoPago: paymentMethod,
+      referenciaPago: `WEB-${Date.now()}`,
+      origen: 'INVENTARIO',
+    }),
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo registrar la recarga.'));
+  await response.json();
+  return getWalletBalance();
+}
+
 // Batch save for bulk upload
 export async function saveProductsBatch(
   productsData: (Omit<Product, 'id' | 'lastUpdated'> & { imageFile?: File | Blob | (File | Blob)[] | null; sourceRow?: number })[],
@@ -521,4 +609,3 @@ export async function savePreciosStockBatch(
 
   return await response.json();
 }
-

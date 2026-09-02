@@ -1,12 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { Edit2, Trash2, EyeOff, ChevronLeft, ChevronRight, PauseCircle, PlayCircle, Check, X, Loader2 } from 'lucide-react';
+import { Edit2, Trash2, EyeOff, ChevronLeft, ChevronRight, PauseCircle, PlayCircle, Check, X, Loader2, Star } from 'lucide-react';
 import type { Product } from '../db';
+import { getProductTopStatus, topLabel } from '../utils/productTop';
+import topVentasBadge from '../assets/top-ventas-badge-transparent.png';
 
 interface InventoryTableProps {
   products: Product[];
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
   onTogglePause: (product: Product) => void;
+  onManageTop?: (product: Product) => void;
   onQuickUpdate?: (product: Product, updates: { price?: number; stock?: number }) => Promise<void>;
 }
 
@@ -201,7 +204,7 @@ const QuickEditCell: React.FC<QuickEditCellProps> = ({ product, field, onSave, r
   );
 };
 
-export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit, onDelete, onTogglePause, onQuickUpdate }) => {
+export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit, onDelete, onTogglePause, onManageTop, onQuickUpdate }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(15);
 
@@ -257,8 +260,9 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
               </tr>
             </thead>
             <tbody>
-              {paginatedProducts.map((p) => (
-                <tr key={p.id} style={p.pausado ? { opacity: 0.62, background: 'var(--bg-app)' } : undefined}>
+              {paginatedProducts.map((p) => {
+                const topStatus = getProductTopStatus(p);
+                return <tr key={p.id} className={topStatus.state === 'active' ? 'inventory-row-top' : topStatus.state === 'expired' ? 'inventory-row-top-expired' : ''} style={p.pausado ? { opacity: 0.62, background: 'var(--bg-app)' } : undefined}>
                   <td className="col-sku" title={p.sku}>
                     {p.sku}
                   </td>
@@ -302,9 +306,19 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
                     <span className={`badge ${p.pausado ? 'badge-warning' : 'badge-success'}`}>
                       {p.pausado ? 'Pausado' : 'Publicado'}
                     </span>
+                    {topLabel(topStatus) && <span className={`top-table-badge ${topStatus.state === 'expired' ? 'expired' : ''}`}><img src={topVentasBadge} alt="Insignia Top Ventas" />{topLabel(topStatus)}</span>}
                   </td>
                   <td>
                     <div className="actions-cell">
+                      <button
+                        type="button"
+                        className={`action-btn action-btn-top ${topStatus.state === 'active' ? 'active' : ''}`}
+                        onClick={() => onManageTop?.(p)}
+                        title={topStatus.state === 'active' ? 'Renovar producto Top' : 'Marcar como producto Top'}
+                        aria-label={topStatus.state === 'active' ? 'Renovar producto Top' : 'Marcar como producto Top'}
+                      >
+                        <Star size={16} fill={topStatus.state === 'active' ? 'currentColor' : 'none'} />
+                      </button>
                       <button
                         type="button"
                         className="action-btn action-btn-edit"
@@ -338,8 +352,8 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
                       </button>
                     </div>
                   </td>
-                </tr>
-              ))}
+                </tr>;
+              })}
             </tbody>
           </table>
         )}

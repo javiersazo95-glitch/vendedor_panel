@@ -66,4 +66,12 @@ describe('InventoryTable', () => {
     // immediately, without requiring an unrelated page change first.
     expect(screen.getAllByText(/^SKU-/)).toHaveLength(5);
   });
+
+  it('makes a current Top product explicit in the row and opens its management action', () => {
+    const onManageTop = vi.fn();
+    render(<InventoryTable products={[{ ...mockProducts[0], destacado: true, topHasta: new Date(Date.now() + 86_400_000 * 3).toISOString() }]} onEdit={vi.fn()} onDelete={vi.fn()} onTogglePause={vi.fn()} onManageTop={onManageTop} />);
+    expect(screen.getByText(/Producto Top/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Renovar producto Top'));
+    expect(onManageTop).toHaveBeenCalledWith(expect.objectContaining({ id: '1' }));
+  });
 });

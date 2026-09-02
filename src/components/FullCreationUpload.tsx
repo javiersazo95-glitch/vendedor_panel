@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Eye } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Eye, Wand2 } from 'lucide-react';
 import { apiFetch, SessionExpiredError, RequestTimeoutError } from '../utils/apiFetch';
 import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
+import { PlantillaMapper } from './PlantillaMapper';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -166,6 +167,10 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   onSwitchToExpress
 }) => {
   const [dataFile, setDataFile] = useState<File | null>(null);
+  // Flujo "Adaptar mi plantilla": el vendedor mapea su propio Excel y genera el archivo
+  // oficial en memoria, que luego entra al mismo dry-run / carga.
+  const [showMapper, setShowMapper] = useState(false);
+  const [dataFromMapper, setDataFromMapper] = useState(false);
   const [validating, setValidating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [actionProgress, setActionProgress] = useState(0);
@@ -366,8 +371,16 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setPreview(null);
     setResult(null);
     setErrorMsg(null);
+    setShowMapper(false);
+    setDataFromMapper(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     resetPhotoState();
+  };
+
+  const handleMappedFileGenerated = (file: File) => {
+    onFileSelected(file);
+    setDataFromMapper(true);
+    setShowMapper(false);
   };
 
   const onFileSelected = (file: File | null) => {
@@ -380,6 +393,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setPreview(null);
     setResult(null);
     setErrorMsg(null);
+    setDataFromMapper(false);
     if (!esMismoArchivo) {
       resetPhotoState();
     }
@@ -1148,6 +1162,53 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           : { maxWidth: '1000px', width: '95%', maxHeight: '92vh' }
         }
       >
+        {activeTab === 'upload' && !result && !showMapper && (
+          <section className="bulk-purpose-panel">
+            <div className="bulk-purpose-head">
+              <div className="bulk-purpose-icon"><UploadCloud size={20} /></div>
+              <div>
+                <h4>Para qué sirve la Carga Masiva</h4>
+                <p>
+                  Publica o actualiza <strong>cientos de repuestos a la vez</strong> desde un solo
+                  archivo Excel, en lugar de cargarlos uno por uno. Todo lo que subes aquí queda
+                  disponible <strong>al instante en la plataforma web y en la app móvil</strong>,
+                  con el mismo stock, precio y descripción en todos los canales.
+                </p>
+              </div>
+            </div>
+
+            <div className="bulk-purpose-cols">
+              <div className="bulk-purpose-benefits">
+                <span className="bulk-purpose-label">Beneficios</span>
+                <ul>
+                  <li>Ahorras horas de trabajo: un archivo reemplaza cientos de formularios.</li>
+                  <li>Menos errores: la plantilla valida categorías, marcas y años antes de publicar.</li>
+                  <li>Catálogo consistente: mismos datos en la web y en la app, siempre sincronizados.</li>
+                  <li>Control total: revisas un análisis previo y nada se guarda hasta que confirmas.</li>
+                  <li>Historial completo: cada carga queda registrada y puedes descargar el detalle de errores.</li>
+                </ul>
+              </div>
+              <div className="bulk-purpose-steps">
+                <span className="bulk-purpose-label">Cómo se usa, paso a paso</span>
+                <ol>
+                  <li><strong>Descarga la plantilla oficial</strong> con el botón “Descargar Excel”.</li>
+                  <li><strong>Completa el Excel</strong>: una fila por repuesto, usando los desplegables de categoría, marca y compatibilidad.</li>
+                  <li><strong>Sube el archivo</strong> en el recuadro “DATOS (.XLSX)” (opcionalmente agrega una carpeta o ZIP con las fotos).</li>
+                  <li><strong>Analiza la plantilla</strong>: el panel revisa fila por fila y te muestra válidas, alertas y errores, sin guardar nada todavía.</li>
+                  <li><strong>Corrige si hace falta</strong> y vuelve a analizar, o continúa solo con las filas válidas.</li>
+                  <li><strong>Inicia la carga</strong>: los productos se publican en la web y la app. Los que no tengan foto quedan con una imagen genérica hasta que subas la real.</li>
+                  <li><strong>Revisa el resultado</strong> en “Historial de cargas” y descarga el reporte de errores si corresponde.</li>
+                </ol>
+              </div>
+            </div>
+
+            <p className="bulk-purpose-foot">
+              ¿Solo necesitas cambiar precios o stock de productos que ya existen? Usa
+              <strong> Actualización Rápida</strong>: una plantilla de 3 columnas (sku, precio, stock).
+            </p>
+          </section>
+        )}
+
         <div className="modal-header">
           <div>
             <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
@@ -1205,7 +1266,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             renderHistorial()
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, gap: '1.25rem' }}>
-              {!result ? (
+              {showMapper ? (
+                <PlantillaMapper
+                  onCancel={() => setShowMapper(false)}
+                  onGenerated={handleMappedFileGenerated}
+                />
+              ) : !result ? (
                 <div className="bulk-upload-split-layout">
                   {/* Left Panel: template download, dropzones, action buttons */}
                   <div className="bulk-upload-left-panel">
@@ -1227,32 +1293,70 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       </div>
                     )}
 
-                    <div style={{
-                      background: 'rgba(37, 99, 235, 0.04)',
-                      padding: '0.85rem 1rem',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(37, 99, 235, 0.2)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.5rem'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <h4 style={{ fontSize: '0.825rem', fontWeight: 700, color: '#1d4ed8' }}>Plantilla Oficial</h4>
-                        <span className="full-badge"><Package size={11} /> Publicación Completa</span>
+                    {dataFromMapper ? (
+                      <div className="mapper-generated-card">
+                        <span className="mapper-generated-grid" aria-hidden />
+                        <div className="mapper-generated-top">
+                          <div className="mapper-generated-check"><CheckCircle2 size={18} /></div>
+                          <div className="mapper-generated-info">
+                            <span className="mapper-kicker">Plantilla adaptada</span>
+                            <strong>Tu archivo ya está en formato oficial</strong>
+                            <span className="mapper-generated-file"><FileSpreadsheet size={12} /> {dataFile?.name}</span>
+                          </div>
+                        </div>
+                        <p className="mapper-generated-hint">
+                          Ahora pulsa <b>Analizar Carga</b> para revisar fila por fila y luego
+                          <b> Iniciar Carga</b> para publicar en la plataforma web y en la app.
+                        </p>
+                        <div className="mapper-generated-actions">
+                          <button type="button" className="btn btn-secondary" onClick={() => setShowMapper(true)} disabled={busy}>
+                            <Wand2 size={13} /> Volver a mapear
+                          </button>
+                          <button type="button" className="btn btn-secondary" onClick={() => { onFileSelected(null); setDataFromMapper(false); }} disabled={busy}>
+                            Descartar
+                          </button>
+                        </div>
                       </div>
-                      <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                        Plantilla oficial del sistema, con desplegables de categoría, subcategoría, marcas y vehículos.
-                      </p>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ padding: '0.4rem 0.65rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.25rem', width: 'fit-content' }}
-                        onClick={downloadTemplate}
-                        disabled={busy}
-                      >
-                        <FileSpreadsheet size={13} style={{ color: '#107c41' }} />
-                        Descargar Excel
-                      </button>
+                    ) : (
+                    <>
+                    <div className="tpl-choice">
+                      <h4 className="tpl-choice-title">¿Cómo quieres cargar tus datos?</h4>
+
+                      <div className="tpl-choice-opt">
+                        <div className="tpl-choice-opt-icon"><FileSpreadsheet size={15} /></div>
+                        <div className="tpl-choice-opt-body">
+                          <b>Usa la plantilla oficial</b>
+                          <span>Excel del sistema con desplegables de categoría, subcategoría, marcas y vehículos.</span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary tpl-choice-btn"
+                            onClick={downloadTemplate}
+                            disabled={busy}
+                          >
+                            <FileSpreadsheet size={13} style={{ color: '#107c41' }} />
+                            Descargar Excel
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="tpl-choice-sep"><span>o</span></div>
+
+                      <div className="tpl-choice-opt">
+                        <div className="tpl-choice-opt-icon violet"><Wand2 size={15} /></div>
+                        <div className="tpl-choice-opt-body">
+                          <b>Ya tengo mi propio Excel</b>
+                          <span>Relaciona tus columnas con las oficiales y generamos la plantilla por ti.</span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary tpl-choice-btn"
+                            onClick={() => setShowMapper(true)}
+                            disabled={busy}
+                          >
+                            <Wand2 size={13} style={{ color: '#7c3aed' }} />
+                            Adaptar mi plantilla
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="dropzones-horizontal-container" style={{ gridTemplateColumns: '1fr' }}>
@@ -1303,6 +1407,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         </div>
                       </div>
                     </div>
+                    </>
+                    )}
 
                     <div className="form-group">
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
@@ -1773,7 +1879,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             >
               Nueva carga
             </button>
-          ) : !result ? (
+          ) : showMapper ? null : !result ? (
               <>
                 {(dataFile || photoFolderCount > 0 || photoZipFile) && (
                   <button

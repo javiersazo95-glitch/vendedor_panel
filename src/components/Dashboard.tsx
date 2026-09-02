@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown } from 'lucide-react';
+import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
-import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct } from '../db';
+import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, rechargeWallet, setProductTop, type ProductTopSummary } from '../db';
 import { KPIs } from './KPIs';
 import { Filters } from './Filters';
 import { InventoryTable } from './InventoryTable';
+import { InventoryGrid } from './InventoryGrid';
 import { ManualUpload } from './ManualUpload';
 import { BulkUpload } from './BulkUpload';
+import { TopModal } from './TopModal';
+import { WalletModal } from './WalletModal';
+import { RepuestopCoin } from './RepuestopCoin';
 
 interface DashboardProps {
   userEmail: string;
@@ -27,6 +31,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   // renders as an off-canvas drawer toggled by this state.
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAssigningImages, setIsAssigningImages] = useState(false);
+  const [inventoryView, setInventoryView] = useState<'table' | 'grid'>('table');
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [topProduct, setTopProduct] = useState<Product | null>(null);
+  const [topSummary, setTopSummary] = useState<ProductTopSummary | null>(null);
+  const [topLoading, setTopLoading] = useState(false);
+  const [topSaving, setTopSaving] = useState(false);
+  const [topError, setTopError] = useState<string | null>(null);
 
   // Modals visibility state
   const [isManualOpen, setIsManualOpen] = useState(false);
@@ -61,6 +74,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
     }
   };
 
+  const refreshWallet = async () => {
+    setWalletLoading(true);
+    try { const result = await getWalletBalance(); setWalletBalance(result.saldo); }
+    catch { /* The Top summary still provides the authoritative balance when available. */ }
+    finally { setWalletLoading(false); }
+  };
+
   useEffect(() => {
     document.documentElement.removeAttribute('data-theme');
     localStorage.removeItem('theme');
@@ -70,7 +90,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
     // reviewed exception rather than unnoticed debt (QA-SRC-002).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProducts();
+    // El saldo es global de la cuenta y debe cargarse igual que el inventario;
+    // antes el encabezado quedaba en el valor inicial (0) hasta abrir el popup.
+    void refreshWallet();
   }, []);
+
+  const openWallet = () => { setWalletOpen(true); void refreshWallet(); };
+
+  const openTop = (product: Product) => {
+    setTopProduct(product); setTopError(null); setTopLoading(true);
+    void getProductTopSummary().then((summary) => { setTopSummary(summary); setWalletBalance(summary.saldoMonedas); })
+      .catch((err: unknown) => setTopError(err instanceof Error ? err.message : 'No se pudo consultar productos Top.'))
+      .finally(() => setTopLoading(false));
+  };
+
+  const handleTopConfirm = async (renew: boolean) => {
+    if (!topProduct) return;
+    setTopSaving(true); setTopError(null);
+    try {
+      await setProductTop(topProduct.id, renew);
+      setTopProduct(null);
+      await Promise.all([fetchProducts(), refreshWallet()]);
+    } catch (err) { setTopError(err instanceof Error ? err.message : 'No se pudo actualizar el producto Top.'); }
+    finally { setTopSaving(false); }
+  };
+
+  const handleRecharge = async (pack: { name: string; coins: number; amount: number }, method: string) => {
+    const result = await rechargeWallet(pack, method);
+    setWalletBalance(result.saldo);
+    const summary = await getProductTopSummary();
+    setTopSummary(summary);
+  };
 
   // 4. Product actions
   const handleDeleteProduct = async (id: string) => {
@@ -214,12 +264,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
               {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
             <div>
-              <h1>{activeView === 'bulk' ? 'Carga Masiva' : 'Inventario Automotriz'}</h1>
-              <p>{activeView === 'bulk' ? 'Carga y validación masiva de stock de repuestos' : 'Monitoreo y carga masiva de stock de repuestos'}</p>
+              <h1>Panel de gestión masiva del vendedor</h1>
+              <p>{activeView === 'bulk'
+                ? 'Publica y actualiza cientos de repuestos a la vez desde una sola plantilla.'
+                : 'Administra todo tu inventario y realiza cargas masivas. Cada cambio se sincroniza al instante con la plataforma web y la app móvil.'}</p>
             </div>
           </div>
 
           <div className="header-actions">
+            <button type="button" className="wallet-header-button" onClick={openWallet} aria-label="Abrir monedero RepuesTop">
+              <RepuestopCoin size={42} /><span>{walletLoading ? '…' : walletBalance.toLocaleString('es-CL')}</span><small>monedas</small>
+            </button>
             {/* Profile Avatar Widget */}
             <div className="user-profile">
               <div className="avatar">
@@ -291,15 +346,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
               onClearFilters={handleClearFilters}
             />
 
+            <div className="inventory-view-toolbar">
+              <div><strong>Vista de inventario</strong><span>{filteredProducts.length.toLocaleString('es-CL')} repuestos encontrados</span></div>
+              <div className="inventory-view-switch" role="group" aria-label="Cambiar vista de inventario">
+                <button type="button" className={inventoryView === 'table' ? 'active' : ''} onClick={() => setInventoryView('table')} aria-pressed={inventoryView === 'table'} title="Vista de tabla"><List size={17} /> Tabla</button>
+                <button type="button" className={inventoryView === 'grid' ? 'active' : ''} onClick={() => setInventoryView('grid')} aria-pressed={inventoryView === 'grid'} title="Vista de cuadrícula"><Grid2X2 size={17} /> Cuadrícula</button>
+              </div>
+            </div>
+
             {/* Main High Density Inventory Table */}
-            <InventoryTable
+            {inventoryView === 'table' ? <InventoryTable
               key={`${searchQuery}-${categoryFilter}-${partBrandFilter}-${vehicleBrandFilter}-${yearFilter}`}
               products={filteredProducts}
               onEdit={handleOpenEditModal}
               onDelete={handleDeleteProduct}
               onTogglePause={handleTogglePauseProduct}
+              onManageTop={openTop}
               onQuickUpdate={handleQuickUpdateProduct}
-            />
+            /> : <InventoryGrid products={filteredProducts} onEdit={handleOpenEditModal} onDelete={handleDeleteProduct} onTogglePause={handleTogglePauseProduct} onManageTop={openTop} />}
           </>
         )}
       </main>
@@ -312,6 +376,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         editProduct={editingProduct}
         founder={founder}
       />
+      <TopModal product={topProduct} visible={!walletOpen} summary={topSummary} loading={topLoading} saving={topSaving} error={topError} onClose={() => !topSaving && setTopProduct(null)} onConfirm={handleTopConfirm} onRecharge={openWallet} />
+      {walletOpen && <WalletModal balance={walletBalance} loading={walletLoading} onClose={() => setWalletOpen(false)} onRecharge={handleRecharge} />}
     </div>
   );
 };
