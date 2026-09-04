@@ -34,11 +34,44 @@ npm run preview   # sirve el build de dist/ localmente
 
 - **Login** (`src/components/Auth.tsx`): correo/contraseña o Google OAuth contra el backend.
 - **Carga manual 1:1** (`src/components/ManualUpload.tsx`): alta o edición de un producto individual, con catálogo de vehículos y cálculo de comisión.
-- **Carga masiva** (`src/components/BulkUpload.tsx`): importación desde plantilla Excel/CSV, con asignación de imágenes desde ZIP/carpeta y generación de imagen genérica cuando no hay foto real.
+- **Carga masiva — Publicación Completa** (`src/components/FullCreationUpload.tsx`): sube la
+  plantilla oficial al backend (`/excel/validar` para el análisis previo, `/excel/cargar` para
+  publicar, con polling cuando el archivo supera el umbral asíncrono), asigna las fotos por SKU
+  desde ZIP o carpeta y deja una imagen genérica cuando no hay foto real. `BulkUpload.tsx`
+  ya solo atiende **Actualización Rápida** (plantilla de 3 columnas: sku, precio, stock) y
+  deriva la publicación completa al componente de arriba.
+- **Adaptar mi plantilla** (`src/components/PlantillaMapper.tsx`, `src/utils/plantillaMapping.ts`):
+  para el vendedor que ya lleva su inventario en su propio Excel. Relaciona sus columnas con
+  las oficiales, manda las que sobran a la descripción y genera el archivo en formato oficial,
+  todo en el navegador. El plan de mejoras de este flujo está en
+  [PLAN_CARGA_MASIVA_PLANTILLA.md](PLAN_CARGA_MASIVA_PLANTILLA.md).
 - **Inventario** (`src/components/InventoryTable.tsx`, `src/components/Dashboard.tsx`): listado, filtros, pausar/reanudar y eliminar productos.
 
 ## Estructura
 
 - `src/db.ts` — capa de acceso a la API del backend (productos, batch de carga masiva).
+- `src/utils/plantillaMapping.ts` — contrato de columnas de la plantilla y lógica pura del
+  adaptador (autodetección, mapeo de valores, generación del `.xlsx` oficial).
+- `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
+  prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).
 - `src/utils/imageHelper.ts` — resolución de URLs de imágenes y `API_BASE_URL`.
+
+## El contrato de la plantilla de carga masiva
+
+La lista de columnas **no es de este repositorio**. La fuente autoritativa es
+`InventarioExcelService.COLUMNAS_EXCEL` en el backend, hoy en la versión `2.0.0` con 18
+columnas, y se expone además por `GET /inventario/excel/esquema`.
+
+Importa saberlo porque **el backend lee cada fila por posición, no por nombre de columna**, y
+rechaza cualquier archivo cuya cabecera no calce exactamente con esa lista (las columnas
+propias del vendedor al final sí se toleran). Si el backend cambia sus columnas, hay que
+actualizar en el mismo ciclo:
+
+1. `PLANTILLA_COLUMNAS` y `PLANTILLA_CAMPOS` en `src/utils/plantillaMapping.ts`.
+2. Los dos generadores de la raíz, y volver a correrlos para regenerar los `.xlsx` de prueba.
+3. `src/components/BulkUpload.columns.test.ts`, que es el test de contrato que avisa antes que
+   el vendedor.
+
+Consumir el esquema del backend en vez de mantener la lista a mano es la Fase 1 de
+[PLAN_CARGA_MASIVA_PLANTILLA.md](PLAN_CARGA_MASIVA_PLANTILLA.md).
