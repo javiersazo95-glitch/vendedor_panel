@@ -36,6 +36,12 @@ import {
   partirRangoAnios,
 } from '../utils/plantillaNormalizacion';
 import {
+  detectarSkusRepetidos,
+  pareceColumnaDeAplicacion,
+  parsearAplicacion,
+  separarPorSku,
+} from '../utils/plantillaCompatibilidad';
+import {
   contarValoresDeColumna,
   decisionesDeCatalogo,
   todasLasSubcategorias,
@@ -68,6 +74,37 @@ function traeRangosDeAnios(mapping: Mapping, cols: UserColumn[], rows: unknown[]
   const col = id ? cols.find((c) => c.id === id) : undefined;
   if (!col) return false;
   return pareceColumnaDeRangos(rows.slice(0, 50).map((r) => String((r as unknown[])[col.index] ?? '')));
+}
+
+/**
+ * Busca la columna que trae la aplicación escrita de corrido. Mira primero las que ya
+ * quedaron en compatibilidad y después las que el vendedor no asignó a nada: una columna
+ * "Aplicación" es justamente la que no calzaba en ninguna parte y terminaba en la
+ * descripción, perdiendo la compatibilidad.
+ */
+function buscarColumnaAplicacion(
+  mapping: Mapping,
+  userCols: UserColumn[],
+  userRows: unknown[][],
+  marcas: string[],
+): { col: UserColumn; ejemplo?: string; partes: ReturnType<typeof parsearAplicacion>; necesitaAsignar: boolean } | null {
+  if (marcas.length === 0) return null;
+  const asignadas = new Set(Object.values(mapping.oficial).filter(Boolean) as string[]);
+  const candidatas = [
+    ...['compatibilidad_modelo', 'compatibilidad_marca']
+      .map((key) => userCols.find((c) => c.id === mapping.oficial[key]))
+      .filter((c): c is UserColumn => !!c)
+      .map((col) => ({ col, necesitaAsignar: false })),
+    ...userCols.filter((c) => !asignadas.has(c.id)).map((col) => ({ col, necesitaAsignar: true })),
+  ];
+
+  for (const { col, necesitaAsignar } of candidatas) {
+    const muestra = userRows.slice(0, 50).map((r) => String((r as unknown[])[col.index] ?? '')).filter(Boolean);
+    if (!pareceColumnaDeAplicacion(muestra, marcas)) continue;
+    const ejemplo = muestra.find((v) => parsearAplicacion(v, marcas));
+    return { col, ejemplo, partes: ejemplo ? parsearAplicacion(ejemplo, marcas) : null, necesitaAsignar };
+  }
+  return null;
 }
 
 const plural = (n: number, singular: string, plural_: string) =>
@@ -208,11 +245,17 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    * Revisión del archivo ya transformado. Se calcula sólo en el paso 3 porque transforma
    * todas las filas, y en los pasos anteriores no se muestra.
    */
-  const { revision, cambios } = useMemo(() => {
-    if (paso !== 3 || !mapping) return { revision: null, cambios: [] };
-    const { aoa, cambios: hechos } = buildOfficialAoADetallado(userRows, userCols, mapping, campos);
+  const { revision, cambios, separacion } = useMemo(() => {
+    if (paso !== 3 || !mapping) return { revision: null, cambios: [], separacion: null };
+    const { aoa, cambios: hechos } = buildOfficialAoADetallado(
+      userRows, userCols, mapping, campos, esquema.catalogos,
+    );
+    // Con el SKU repetido, lo que se revisa es el archivo ya agrupado: es el que se sube.
+    const separada = mapping.agruparPorSku ? separarPorSku(aoa) : null;
+    const paraRevisar = separada ? separada.inventario : aoa;
     return {
-      revision: revisarAoA(aoa, campos, {
+      separacion: separada,
+      revision: revisarAoA(paraRevisar, campos, {
         maxFilas: 20,
         primeraFilaArchivo: filaEncabezados + 2,
         catalogos: esquema.catalogos,
@@ -346,6 +389,23 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     });
   };
 
+  /** ¿El archivo repite el mismo código una vez por vehículo? */
+  const skusRepetidos = useMemo(() => {
+    const id = mapping?.oficial.sku_proveedor;
+    const col = id ? userCols.find((c) => c.id === id) : undefined;
+    return col ? detectarSkusRepetidos(userRows, col.index) : null;
+  }, [mapping, userCols, userRows]);
+
+  /** ¿La columna de compatibilidad trae marca, modelo y años escritos de corrido? */
+  const columnaAplicacion = useMemo(
+    () => (mapping ? buscarColumnaAplicacion(mapping, userCols, userRows, esquema.catalogos.marcasVehiculo) : null),
+    [mapping, userCols, userRows, esquema],
+  );
+
+  const setBandera = (clave: 'parsearAplicacion' | 'agruparPorSku' | 'dividirAnios', valor: boolean) => {
+    setMapping((prev) => (prev ? { ...prev, [clave]: valor } : prev));
+  };
+
   const setDividirAnios = (valor: boolean) => {
     setMapping((prev) => (prev ? { ...prev, dividirAnios: valor } : prev));
   };
@@ -361,8 +421,13 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   };
 
   const buildFile = async (): Promise<File> => {
-    const aoa = buildOfficialAoA(userRows, userCols, mapping as Mapping, campos);
-    return buildOfficialXlsxFile(aoa, `plantilla-adaptada_${getIsoTimestampString()}.xlsx`, esquema.version);
+    const aoa = buildOfficialAoA(
+      userRows, userCols, mapping as Mapping, campos, esquema.catalogos,
+    );
+    const nombre = `plantilla-adaptada_${getIsoTimestampString()}.xlsx`;
+    if (!mapping?.agruparPorSku) return buildOfficialXlsxFile(aoa, nombre, esquema.version);
+    const { inventario, compatibilidades } = separarPorSku(aoa);
+    return buildOfficialXlsxFile(inventario, nombre, esquema.version, compatibilidades);
   };
 
   const handleGenerate = () => {
@@ -687,10 +752,68 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           </div>
         )}
 
+        {skusRepetidos && skusRepetidos.skus > 0 && (
+          <label className="mapper-switch">
+            <input
+              type="checkbox"
+              aria-label="Juntar las filas repetidas del mismo código"
+              checked={mapping.agruparPorSku ?? false}
+              onChange={(e) => setBandera('agruparPorSku', e.target.checked)}
+            />
+            <span>
+              <b>Tu archivo repite el mismo código en varias filas</b>
+              {skusRepetidos.ejemplo ? ` (${skusRepetidos.ejemplo.sku} aparece ${skusRepetidos.ejemplo.veces} veces)` : ''}.
+              Si es porque el mismo repuesto sirve para varios autos, lo publicamos como{' '}
+              <b>un repuesto con varias compatibilidades</b> en vez de {plural(skusRepetidos.filasExtra + skusRepetidos.skus, 'repuesto repetido', 'repuestos repetidos')}.
+            </span>
+          </label>
+        )}
+
+        {columnaAplicacion && (
+          <label className="mapper-switch">
+            <input
+              type="checkbox"
+              aria-label="Separar marca, modelo y años de la columna de compatibilidad"
+              checked={mapping.parsearAplicacion ?? false}
+              onChange={(e) => {
+                // Si la columna todavía no estaba asignada a nada, activarlo también la
+                // pone donde corresponde: no tiene sentido pedir dos gestos para una idea.
+                if (e.target.checked && columnaAplicacion.necesitaAsignar) {
+                  setOficial('compatibilidad_modelo', columnaAplicacion.col.id);
+                }
+                setBandera('parsearAplicacion', e.target.checked);
+              }}
+            />
+            <span>
+              <b>Tu columna "{columnaAplicacion.col.displayHeader}" trae la marca, el modelo y los años juntos.</b>{' '}
+              Los separamos por ti
+              {columnaAplicacion.partes
+                ? `: "${columnaAplicacion.ejemplo}" queda como ${columnaAplicacion.partes.marca} · ${columnaAplicacion.partes.modelo}`
+                  + `${columnaAplicacion.partes.anioDesde ? ` · ${columnaAplicacion.partes.anioDesde}${columnaAplicacion.partes.anioHasta ? `-${columnaAplicacion.partes.anioHasta}` : ''}` : ''}`
+                : ''}
+              . Así el repuesto aparece cuando alguien busca por su auto.
+            </span>
+          </label>
+        )}
+
+        <label className="mapper-switch">
+          <input
+            type="checkbox"
+            aria-label="Todo mi inventario es universal"
+            checked={(mapping.defaults?.compatibilidad_general ?? '') === 'SI'}
+            onChange={(e) => setDefault('compatibilidad_general', e.target.checked ? 'SI' : '')}
+          />
+          <span>
+            <b>Todo mi inventario es universal.</b> Marca esto sólo si tus repuestos sirven para
+            cualquier vehículo; se publican sin compatibilidad por auto.
+          </span>
+        </label>
+
         {columnaAniosConRangos && (
           <label className="mapper-switch">
             <input
               type="checkbox"
+              aria-label="Separar el rango de años en año desde y año hasta"
               checked={mapping.dividirAnios ?? false}
               onChange={(e) => setDividirAnios(e.target.checked)}
             />
@@ -831,8 +954,18 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       {chipArchivo}
       {parseError && <div className="mapper-alert error"><AlertTriangle size={15} /> {parseError}</div>}
 
+      {separacion && (
+        <div className="mapper-alert info">
+          <span>
+            Juntamos las filas repetidas: <b>{plural(revision?.total ?? 0, 'repuesto', 'repuestos')}</b> con{' '}
+            <b>{plural(separacion.compatibilidades.length - 1, 'compatibilidad extra', 'compatibilidades extra')}</b>.
+            {separacion.advertencias.length > 0 ? ` ${separacion.advertencias.join(' ')}` : ''}
+          </span>
+        </div>
+      )}
+
       <div className="mapper-counts">
-        <span><b>{filasListas.toLocaleString('es-CL')}</b> repuestos en tu archivo</span>
+        <span><b>{filasListas.toLocaleString('es-CL')}</b> {separacion ? 'filas en tu archivo' : 'repuestos en tu archivo'}</span>
         <span className="ok"><b>{(revision?.publicables ?? 0).toLocaleString('es-CL')}</b> se pueden publicar</span>
         {(revision?.conError ?? 0) > 0 && (
           <span className="mal"><b>{revision?.conError.toLocaleString('es-CL')}</b> con problemas</span>

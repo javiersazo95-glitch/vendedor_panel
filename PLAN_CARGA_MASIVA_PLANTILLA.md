@@ -393,7 +393,7 @@ necesita decisión humana ("Amortiguacion" no se parece lo suficiente a "Suspens
 
 140 tests verdes en el panel, 17 de ellos nuevos.
 
-### Fase 6 — Compatibilidad múltiple y texto libre `panel` `backend`
+### Fase 6 — Compatibilidad múltiple y texto libre `panel` `backend` — COMPLETADA 2026-09-04
 
 Resuelve U6, G1, G3.
 
@@ -405,6 +405,45 @@ Resuelve U6, G1, G3.
 - Interruptor "todo mi inventario es universal".
 - **Backend:** agregar `referencia_oem` a `COLUMNAS_COMPATIBILIDADES` para cerrar G1 (cambio
   aditivo, sube versión menor).
+
+**Resultado.** Plantilla **2.1.0**.
+
+**Backend (G1).** `COLUMNAS_COMPATIBILIDADES` suma `referencia_oem`. Agregar la columna no
+bastaba: la carga masiva nunca armaba `compatibilityGroupsJson`, que es de donde la ficha del
+comprador lee el OEM por vehículo (`adapters.js`, `g.referenciaOem`), así que un repuesto con
+tres compatibilidades perdía el OEM de cada una aunque la columna existiera.
+`resolverCompatibilidadMultiple` arma ahora un grupo por compatibilidad resuelta —marca,
+modelo, años, motor, OEM y su id de catálogo—; una fila sin OEM propio hereda el del producto,
+igual que hace la ficha. La guarda de encabezados aprendió a distinguir columnas obligatorias
+de opcionales al final: un archivo 2.0.0 sin la columna de OEM se sigue leyendo, pero otra
+columna en su lugar se rechaza, porque el lector va por posición.
+
+**Panel (U6, G3).** `plantillaCompatibilidad.ts`:
+
+- **SKU repetido** — si el archivo trae el mismo código en varias filas, en vez de tratarlo
+  como duplicado (que el backend rechaza) se ofrece publicarlo como un repuesto con varias
+  compatibilidades: la primera fila define el repuesto y el resto va a la hoja
+  `compatibilidades`. Si las filas repetidas difieren en precio o nombre, se dice cuál se usa.
+- **Aplicación en texto libre** — "TOYOTA Corolla 2014-2018" se parte en marca, modelo y años
+  usando el catálogo de marcas de vehículo como ancla. Sin marca reconocida no se toca nada:
+  inventar una compatibilidad es peor que no declarar ninguna. La columna se busca también
+  entre las que el vendedor **no** asignó, que es donde vive una columna "Aplicación", y
+  activar el interruptor la asigna sola.
+- **Interruptor "todo mi inventario es universal"**, para el vendedor cuyo catálogo entero
+  sirve para cualquier vehículo.
+
+**Hallazgo de la verificación con los catálogos reales del backend local:** el panel daba por
+válida la categoría "Suspension" sin tilde, pero el backend busca con `findByNombreIgnoreCase`,
+que ignora mayúsculas y **no** tildes: la fila se habría rechazado igual. Ahora, cuando el
+valor del vendedor identifica sin ambigüedad a uno del catálogo, se escribe el nombre del
+catálogo (categoría, subcategoría, marca de repuesto y marca de vehículo) y el cambio aparece
+entre los arreglos: "Categoría · Suspension → Suspensión · 1 fila".
+
+Verificado de punta a punta con los catálogos reales de la base local: una lista de 5 filas con
+el SKU repetido tres veces, precios con peso y aplicaciones de corrido quedó en 3 repuestos, 2
+compatibilidades extra con su OEM propio, precios limpios y la categoría corregida.
+
+41 tests verdes en el backend y 153 en el panel, 24 de ellos nuevos.
 
 ### Fase 7 — Fotos desde el Excel del vendedor `panel` `backend`
 

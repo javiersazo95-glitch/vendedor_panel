@@ -6,10 +6,10 @@ import XLSX from 'xlsx';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Columnas del contrato unificado (backend InventarioExcelService.COLUMNAS_EXCEL, plantilla v2.0.0).
+// Columnas del contrato unificado (backend InventarioExcelService.COLUMNAS_EXCEL, plantilla v2.1.0).
 // El orden importa: el backend lee la fila por posicion y rechaza cualquier cabecera que no
 // calce exactamente con esta lista (InventarioExcelService.validarEncabezados).
-const VERSION_PLANTILLA = '2.0.0';
+const VERSION_PLANTILLA = '2.1.0';
 
 const HEADERS = [
   'nombre_publicado',
@@ -38,7 +38,9 @@ const COMPAT_HEADERS = [
   'compatibilidad_modelo',
   'anio_desde',
   'anio_hasta',
-  'motor'
+  'motor',
+  // 2.1.0: el OEM vive por compatibilidad, igual que en la carga 1 a 1.
+  'referencia_oem'
 ];
 
 function r(data) {

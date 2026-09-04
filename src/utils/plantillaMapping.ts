@@ -3,6 +3,8 @@ import {
   partirRangoAnios,
   type CambioNormalizacion,
 } from './plantillaNormalizacion';
+import { parsearAplicacion } from './plantillaCompatibilidad';
+import { buscarEnCatalogo } from './plantillaCatalogos';
 
 /**
  * Lógica pura (sin React) para el flujo "Adaptar mi plantilla": leer el Excel propio
@@ -74,7 +76,7 @@ export interface EsquemaPlantilla {
  * y no de la base de datos (tipo de precio, condición) sí se copian.
  */
 export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
-  version: '2.0.0',
+  version: '2.1.0',
   columnas: [...PLANTILLA_COLUMNAS],
   columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor', 'stock'],
   hojaCompatibilidadesColumnas: [
@@ -84,6 +86,7 @@ export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
     'anio_desde',
     'anio_hasta',
     'motor',
+    'referencia_oem',
   ],
   catalogos: {
     categorias: [],
@@ -134,7 +137,7 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
   condicion: { label: 'Condición', synonyms: ['estado', 'tipo repuesto', 'origen', 'original alternativo'] },
   compatibilidad_general: { label: 'Compatibilidad universal', synonyms: ['universal', 'compatibilidad general', 'generico', 'aplica a todos', 'es universal'] },
   compatibilidad_marca: { label: 'Marca del vehículo', group: 'compat', synonyms: ['marca vehiculo', 'marca auto', 'marca compatible', 'vehiculo marca', 'marca del auto'] },
-  compatibilidad_modelo: { label: 'Modelo del vehículo', group: 'compat', synonyms: ['modelo', 'modelo vehiculo', 'modelo auto', 'modelo compatible'] },
+  compatibilidad_modelo: { label: 'Modelo del vehículo', group: 'compat', synonyms: ['modelo', 'modelo vehiculo', 'modelo auto', 'modelo compatible', 'aplicacion', 'aplicaciones', 'aplicacion vehiculo', 'compatibilidad', 'compatible con', 'vehiculo'] },
   anio_desde: { label: 'Año desde', group: 'anio', synonyms: ['anio', 'ano', 'año', 'años', 'anios', 'anos', 'año desde', 'desde', 'year', 'año inicio', 'anio inicial', 'rango de años', 'año modelo'] },
   anio_hasta: { label: 'Año hasta', group: 'anio', synonyms: ['año hasta', 'hasta', 'año fin', 'year to', 'anio final'] },
   motor: { label: 'Motor / versión', group: 'motor', synonyms: ['version', 'cilindrada', 'motorizacion', 'engine', 'motor version'] },
@@ -234,6 +237,17 @@ export interface Mapping {
    * que partirlo en año desde / año hasta. Se propone solo cuando el archivo lo trae.
    */
   dividirAnios?: boolean;
+  /**
+   * La columna de compatibilidad trae marca, modelo y años juntos ("Toyota Corolla
+   * 2014-2020"), como se escribe en las listas de repuestos.
+   */
+  parsearAplicacion?: boolean;
+  /**
+   * El archivo repite el mismo SKU una vez por vehículo. En vez de tratarlos como
+   * duplicados —que el backend rechaza— se convierten en un repuesto con varias
+   * compatibilidades, en la hoja `compatibilidades` de la plantilla.
+   */
+  agruparPorSku?: boolean;
 }
 
 /** Letra de columna estilo Excel (0 -> A, 26 -> AA). */
@@ -504,7 +518,20 @@ export function buildOfficialAoADetallado(
   userCols: UserColumn[],
   mapping: Mapping,
   campos: CampoMeta[] = PLANTILLA_CAMPOS,
+  /** Catálogos reales: para partir la aplicación y para escribir los nombres tal cual. */
+  catalogos: EsquemaPlantilla['catalogos'] = ESQUEMA_FALLBACK.catalogos,
 ): { aoa: (string | number)[][]; cambios: CambioNormalizacion[] } {
+  const marcasVehiculo = catalogos.marcasVehiculo;
+  // El backend busca estos nombres con findByNombreIgnoreCase, que ignora mayusculas
+  // pero NO tildes: "Suspension" no encuentra a "Suspensión" y la fila se rechaza. Si el
+  // valor del vendedor identifica sin ambigüedad a uno del catálogo, se escribe el nombre
+  // del catálogo; es el mismo criterio con el que se armó la taxonomía.
+  const catalogoPorColumna: Record<string, string[]> = {
+    categoria: catalogos.categorias,
+    marca_repuesto: catalogos.marcasRepuesto,
+    compatibilidad_marca: catalogos.marcasVehiculo,
+    subcategoria: Object.values(catalogos.subcategoriasPorCategoria ?? {}).flat(),
+  };
   const cambios: CambioNormalizacion[] = [];
   const columnas = campos.map((c) => c.key);
   // Las columnas que se vacían cuando la fila es universal salen del propio esquema:
@@ -546,6 +573,20 @@ export function buildOfficialAoADetallado(
       cells[key] = applyValueMap(key, readCell(row, mapping.oficial[key] ?? null));
     }
 
+    // Aplicación escrita de corrido: "Toyota Corolla 2014-2020" se reparte en marca,
+    // modelo y años. Si no se reconoce la marca no se toca nada: inventar una
+    // compatibilidad es peor que no declarar ninguna.
+    if (mapping.parsearAplicacion) {
+      const fuente = cells.compatibilidad_modelo || cells.compatibilidad_marca || '';
+      const app = parsearAplicacion(fuente, marcasVehiculo);
+      if (app) {
+        cells.compatibilidad_marca = app.marca;
+        cells.compatibilidad_modelo = app.modelo;
+        if (!cells.anio_desde) cells.anio_desde = app.anioDesde;
+        if (!cells.anio_hasta) cells.anio_hasta = app.anioHasta;
+      }
+    }
+
     // Rango de años en una sola columna: "2014-2020" se reparte en las dos oficiales.
     // Sólo si el vendedor no trajo su propia columna de "año hasta" con dato.
     if (mapping.dividirAnios) {
@@ -562,6 +603,14 @@ export function buildOfficialAoADetallado(
       const { valor, cambio } = normalizarCelda(key, cells[key]);
       cells[key] = valor;
       if (cambio) cambios.push(cambio);
+
+      const catalogo = catalogoPorColumna[key];
+      if (!catalogo?.length || !cells[key]) continue;
+      const canonico = buscarEnCatalogo(cells[key], catalogo);
+      if (canonico && canonico !== cells[key]) {
+        cambios.push({ columna: key, antes: cells[key], despues: canonico });
+        cells[key] = canonico;
+      }
     }
 
     // El valor fijo entra donde el archivo no dice nada, sea porque la columna no está
@@ -597,8 +646,9 @@ export function buildOfficialAoA(
   userCols: UserColumn[],
   mapping: Mapping,
   campos: CampoMeta[] = PLANTILLA_CAMPOS,
+  catalogos: EsquemaPlantilla['catalogos'] = ESQUEMA_FALLBACK.catalogos,
 ): (string | number)[][] {
-  return buildOfficialAoADetallado(rows, userCols, mapping, campos).aoa;
+  return buildOfficialAoADetallado(rows, userCols, mapping, campos, catalogos).aoa;
 }
 
 /**
@@ -614,11 +664,18 @@ export async function buildOfficialXlsxFile(
   aoa: (string | number)[][],
   filename: string,
   version: string = ESQUEMA_FALLBACK.version,
+  /** Hoja opcional con una fila por vehículo, agrupadas por SKU. */
+  compatibilidades?: (string | number)[][],
 ): Promise<File> {
   const XLSX = await import('xlsx');
   const worksheet = XLSX.utils.aoa_to_sheet(aoa);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'inventario');
+  // La hoja va sólo si tiene filas: una hoja vacía haría al backend validar encabezados
+  // de algo que no aporta nada.
+  if (compatibilidades && compatibilidades.length > 1) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(compatibilidades), 'compatibilidades');
+  }
   const instrucciones = XLSX.utils.aoa_to_sheet([
     [`VERSION_PLANTILLA: ${version}`],
     ['Archivo generado por el panel de vendedor de RepuesTop a partir del Excel propio del vendedor.'],

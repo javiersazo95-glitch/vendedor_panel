@@ -11,6 +11,7 @@ const ESQUEMA_CON_CATALOGOS: EsquemaPlantilla = {
   catalogos: {
     ...ESQUEMA_FALLBACK.catalogos,
     categorias: ['Frenos', 'Filtros', 'Suspensión'],
+    marcasVehiculo: ['Toyota', 'Nissan'],
     subcategoriasPorCategoria: { Frenos: ['Pastillas'], Filtros: ['Filtro de aceite'] },
     marcasRepuesto: ['Bosch', 'Brembo'],
   },
@@ -26,6 +27,17 @@ async function readGeneratedFile(file: File): Promise<unknown[][]> {
   });
   const wb = XLSX.read(buffer, { type: 'array' });
   return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+}
+
+/** Lee el .xlsx generado y devuelve el libro completo, para mirar todas sus hojas. */
+async function readGeneratedWorkbook(file: File) {
+  const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as ArrayBuffer);
+    r.onerror = () => reject(r.error);
+    r.readAsArrayBuffer(file);
+  });
+  return XLSX.read(buffer, { type: 'array' });
 }
 
 const CSV = [
@@ -182,7 +194,7 @@ describe('PlantillaMapper', () => {
     ].join('\n'));
 
     // El interruptor viene propuesto porque el archivo trae rangos, con un ejemplo real.
-    const interruptor = screen.getByRole('checkbox');
+    const interruptor = screen.getByLabelText('Separar el rango de años en año desde y año hasta');
     expect(interruptor).toBeChecked();
     expect(screen.getByText(/"2014-2020" queda como 2014 y 2020/)).toBeInTheDocument();
 
@@ -253,6 +265,61 @@ describe('PlantillaMapper', () => {
     await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
     const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
     expect(aoa[1][PLANTILLA_COLUMNAS.indexOf('categoria')]).toBe('Frenos');
+  });
+
+  it('convierte el código repetido en un repuesto con varias compatibilidades', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota Corolla 2014-2016',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota Yaris 2017-2020',
+      'B-2,Disco,Brembo,Frenos,9990,5,Nissan V16 1995-2010',
+    ].join('\n'));
+
+    // El archivo repite A-1: en vez de dos repuestos duplicados, uno con dos aplicaciones.
+    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    // Y la columna "Aplicacion" trae marca, modelo y años juntos.
+    fireEvent.click(screen.getByLabelText('Separar marca, modelo y años de la columna de compatibilidad'));
+
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    expect(screen.getByText(/1 compatibilidad extra/)).toBeInTheDocument();
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
+
+    const wb = await readGeneratedWorkbook(onGenerated.mock.calls[0][0] as File);
+    const inventario = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.inventario, { header: 1, defval: '' });
+    expect(inventario).toHaveLength(3); // títulos + A-1 + B-2
+    expect(inventario[1][PLANTILLA_COLUMNAS.indexOf('compatibilidad_marca')]).toBe('Toyota');
+    expect(inventario[1][PLANTILLA_COLUMNAS.indexOf('compatibilidad_modelo')]).toBe('Corolla');
+    expect(inventario[1][PLANTILLA_COLUMNAS.indexOf('anio_desde')]).toBe('2014');
+
+    const compat = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.compatibilidades, { header: 1, defval: '' });
+    expect(compat[0]).toEqual(['sku_proveedor', 'compatibilidad_marca', 'compatibilidad_modelo',
+      'anio_desde', 'anio_hasta', 'motor', 'referencia_oem']);
+    expect(compat[1]).toEqual(['A-1', 'Toyota', 'Yaris', '2017', '2020', '', '']);
+  });
+
+  it('el interruptor de inventario universal deja todas las filas sin compatibilidad por auto', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion',
+      'A-1,Ampolleta,Bosch,Filtros,990,50,Toyota Corolla 2014-2016',
+    ].join('\n'));
+
+    fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    expect(screen.getByText(/Compatible con todos los vehículos/)).toBeInTheDocument();
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
+    const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
+    expect(aoa[1][PLANTILLA_COLUMNAS.indexOf('compatibilidad_general')]).toBe('SI');
+    expect(aoa[1][PLANTILLA_COLUMNAS.indexOf('compatibilidad_marca')]).toBe('');
   });
 
   it('deja elegir la hoja cuando el libro trae varias', async () => {

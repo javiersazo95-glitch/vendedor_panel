@@ -6,10 +6,10 @@ import XLSX from 'xlsx';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Columnas reales del contrato unico (backend InventarioExcelService.COLUMNAS_EXCEL, plantilla v2.0.0).
+// Columnas reales del contrato unico (backend InventarioExcelService.COLUMNAS_EXCEL, plantilla v2.1.0).
 // El orden importa: el backend lee la fila por posicion y rechaza cualquier cabecera que no
 // calce exactamente con esta lista (InventarioExcelService.validarEncabezados).
-const VERSION_PLANTILLA = '2.0.0';
+const VERSION_PLANTILLA = '2.1.0';
 
 const HEADERS = [
   'nombre_publicado', 'categoria', 'subcategoria', 'marca_repuesto', 'sku_proveedor',
@@ -19,7 +19,7 @@ const HEADERS = [
   'descripcion', 'requiere_chasis'
 ];
 
-const COMPAT_HEADERS = ['sku_proveedor', 'compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'anio_hasta', 'motor'];
+const COMPAT_HEADERS = ['sku_proveedor', 'compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'anio_hasta', 'motor', 'referencia_oem'];
 
 const INSTRUCCIONES = [
   ['PLANTILLA OFICIAL DE CARGA MASIVA DE INVENTARIO - REPUESTOP'],
@@ -154,8 +154,8 @@ const filasPrueba = [
 ];
 
 const filasCompatibilidades = [
-  { sku_proveedor: 'PRUEBA-00011', compatibilidad_marca: 'Toyota', compatibilidad_modelo: 'Corolla', anio_desde: 2017, anio_hasta: 2018, motor: '1.8 16V' },
-  { sku_proveedor: 'PRUEBA-00011', compatibilidad_marca: 'Toyota', compatibilidad_modelo: 'Yaris', anio_desde: 2016, anio_hasta: 2019, motor: '1.5 16V' },
+  { sku_proveedor: 'PRUEBA-00011', compatibilidad_marca: 'Toyota', compatibilidad_modelo: 'Corolla', anio_desde: 2017, anio_hasta: 2018, motor: '1.8 16V', referencia_oem: '04465-02220' },
+  { sku_proveedor: 'PRUEBA-00011', compatibilidad_marca: 'Toyota', compatibilidad_modelo: 'Yaris', anio_desde: 2016, anio_hasta: 2019, motor: '1.5 16V', referencia_oem: '04465-52220' },
   { sku_proveedor: 'PRUEBA-00012', compatibilidad_marca: 'Toyota', compatibilidad_modelo: 'Hilux', anio_desde: 2018, anio_hasta: 2020, motor: '2.4 TDI' }
 ];
 // Nota: la ultima fila de arriba usa a proposito "PRUEBA-00012" en vez de un SKU inexistente

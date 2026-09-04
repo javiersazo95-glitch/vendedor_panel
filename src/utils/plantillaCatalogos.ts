@@ -24,7 +24,12 @@ export function normalizarParaComparar(valor: string): string {
     .trim();
 }
 
-/** El nombre tal como está en el catálogo, o null si no está. Ignora acentos y mayúsculas. */
+/**
+ * El nombre tal como está en el catálogo, o null si no está. Ignora acentos y mayúsculas
+ * a propósito, y por eso devuelve el nombre **del catálogo** y no el del vendedor: el
+ * backend busca con `findByNombreIgnoreCase`, que ignora mayúsculas pero no tildes, así
+ * que "Suspension" tiene que escribirse "Suspensión" o la fila se rechaza.
+ */
 export function buscarEnCatalogo(valor: string, catalogo: string[]): string | null {
   const objetivo = normalizarParaComparar(valor);
   if (!objetivo) return null;

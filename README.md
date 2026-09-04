@@ -64,6 +64,8 @@ npm run preview   # sirve el build de dist/ localmente
   `InventarioExcelService.normalizarNumero`.
 - `src/utils/plantillaCatalogos.ts` — comparación contra los catálogos reales de categorías,
   subcategorías y marcas, con sugerencias del más parecido.
+- `src/utils/plantillaCompatibilidad.ts` — compatibilidad múltiple: SKU repetido a la hoja
+  `compatibilidades` y parseo de la aplicación escrita de corrido.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).
@@ -72,7 +74,7 @@ npm run preview   # sirve el build de dist/ localmente
 ## El contrato de la plantilla de carga masiva
 
 La lista de columnas **no es de este repositorio**. La fuente autoritativa es
-`InventarioExcelService.COLUMNAS_EXCEL` en el backend, hoy en la versión `2.0.0` con 18
+`InventarioExcelService.COLUMNAS_EXCEL` en el backend, hoy en la versión `2.1.0` con 18
 columnas, y el panel la consume por `GET /inventario/excel/esquema` al abrir la carga masiva
 (`src/utils/plantillaEsquema.ts`). De ahí salen las columnas, cuáles son obligatorias, la
 versión de la plantilla y los catálogos de categorías, subcategorías y marcas.
