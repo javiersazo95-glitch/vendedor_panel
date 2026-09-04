@@ -1,3 +1,9 @@
+import {
+  normalizarCelda,
+  partirRangoAnios,
+  type CambioNormalizacion,
+} from './plantillaNormalizacion';
+
 /**
  * Lógica pura (sin React) para el flujo "Adaptar mi plantilla": leer el Excel propio
  * del vendedor, mapear sus columnas a la plantilla oficial de RepuesTop y generar un
@@ -129,7 +135,7 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
   compatibilidad_general: { label: 'Compatibilidad universal', synonyms: ['universal', 'compatibilidad general', 'generico', 'aplica a todos', 'es universal'] },
   compatibilidad_marca: { label: 'Marca del vehículo', group: 'compat', synonyms: ['marca vehiculo', 'marca auto', 'marca compatible', 'vehiculo marca', 'marca del auto'] },
   compatibilidad_modelo: { label: 'Modelo del vehículo', group: 'compat', synonyms: ['modelo', 'modelo vehiculo', 'modelo auto', 'modelo compatible'] },
-  anio_desde: { label: 'Año desde', group: 'anio', synonyms: ['anio', 'ano', 'año', 'año desde', 'desde', 'year', 'año inicio', 'anio inicial'] },
+  anio_desde: { label: 'Año desde', group: 'anio', synonyms: ['anio', 'ano', 'año', 'años', 'anios', 'anos', 'año desde', 'desde', 'year', 'año inicio', 'anio inicial', 'rango de años', 'año modelo'] },
   anio_hasta: { label: 'Año hasta', group: 'anio', synonyms: ['año hasta', 'hasta', 'año fin', 'year to', 'anio final'] },
   motor: { label: 'Motor / versión', group: 'motor', synonyms: ['version', 'cilindrada', 'motorizacion', 'engine', 'motor version'] },
   descripcion: { label: 'Descripción', synonyms: ['detalle', 'observaciones', 'notas', 'comentarios', 'descripcion larga', 'detalles'] },
@@ -223,6 +229,11 @@ export interface Mapping {
    * cuando la celda queda vacía, venga o no de una columna mapeada.
    */
   defaults?: Record<string, string>;
+  /**
+   * La columna de años del vendedor trae un rango en una sola celda ("2014-2020") y hay
+   * que partirlo en año desde / año hasta. Se propone solo cuando el archivo lo trae.
+   */
+  dividirAnios?: boolean;
 }
 
 /** Letra de columna estilo Excel (0 -> A, 26 -> AA). */
@@ -488,12 +499,13 @@ export function mappedEnumColumns(
  * Construye la matriz (arreglo de arreglos) en formato oficial a partir de las filas
  * del vendedor y el mapping. Fila 0 = encabezados oficiales.
  */
-export function buildOfficialAoA(
+export function buildOfficialAoADetallado(
   rows: unknown[][],
   userCols: UserColumn[],
   mapping: Mapping,
   campos: CampoMeta[] = PLANTILLA_CAMPOS,
-): (string | number)[][] {
+): { aoa: (string | number)[][]; cambios: CambioNormalizacion[] } {
+  const cambios: CambioNormalizacion[] = [];
   const columnas = campos.map((c) => c.key);
   const campoByKey = new Map(campos.map((c) => [c.key, c]));
   // Las columnas que se vacían cuando la fila es universal salen del propio esquema:
@@ -531,10 +543,31 @@ export function buildOfficialAoA(
     for (const key of columnas) {
       let value = readCell(row, mapping.oficial[key] ?? null);
       if (campoByKey.get(key)?.enumHint) value = applyValueMap(key, value);
-      // El valor fijo entra donde el archivo no dice nada, sea porque la columna no está
-      // mapeada o porque esa celda venía vacía.
-      if (!value) value = mapping.defaults?.[key] ?? '';
       cells[key] = value;
+    }
+
+    // Rango de años en una sola columna: "2014-2020" se reparte en las dos oficiales.
+    // Sólo si el vendedor no trajo su propia columna de "año hasta" con dato.
+    if (mapping.dividirAnios) {
+      const rango = partirRangoAnios(cells.anio_desde ?? '');
+      if (rango) {
+        cells.anio_desde = rango.desde;
+        if (!cells.anio_hasta) cells.anio_hasta = rango.hasta;
+      }
+    }
+
+    // Limpieza: números al formato que espera el backend, SI/NO desde la X de la planilla,
+    // espacios de más. Lo que no se puede interpretar se deja igual y lo marca el paso 3.
+    for (const key of columnas) {
+      const { valor, cambio } = normalizarCelda(key, cells[key]);
+      cells[key] = valor;
+      if (cambio) cambios.push(cambio);
+    }
+
+    // El valor fijo entra donde el archivo no dice nada, sea porque la columna no está
+    // mapeada o porque esa celda venía vacía.
+    for (const key of columnas) {
+      if (!cells[key]) cells[key] = mapping.defaults?.[key] ?? '';
     }
 
     // Descripción compuesta: valor mapeado + columnas extra marcadas "a la descripción".
@@ -555,7 +588,17 @@ export function buildOfficialAoA(
     out.push(columnas.map((key) => cells[key]));
   }
 
-  return out;
+  return { aoa: out, cambios };
+}
+
+/** Igual que `buildOfficialAoADetallado`, cuando sólo interesa el archivo resultante. */
+export function buildOfficialAoA(
+  rows: unknown[][],
+  userCols: UserColumn[],
+  mapping: Mapping,
+  campos: CampoMeta[] = PLANTILLA_CAMPOS,
+): (string | number)[][] {
+  return buildOfficialAoADetallado(rows, userCols, mapping, campos).aoa;
 }
 
 /**

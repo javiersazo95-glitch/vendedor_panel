@@ -310,7 +310,7 @@ en blanco.
 
 101 tests verdes en el panel, 18 de ellos nuevos sobre la revisión y la ficha.
 
-### Fase 4 — Normalización y valores por defecto `panel`
+### Fase 4 — Normalización y valores por defecto `panel` — COMPLETADA 2026-09-04
 
 Resuelve U4, U5, U10. Es el trabajo sucio que evita los errores en volumen.
 
@@ -321,6 +321,36 @@ Resuelve U4, U5, U10. Es el trabajo sucio que evita los errores en volumen.
 - Valor por defecto por columna: "sin dato → usar este valor en todas las filas", disponible en
   las columnas de lista y en subcategoría/marca.
 - Reglas de texto: recorte de espacios, normalización de SI/NO/X/1/true.
+
+**Resultado.** `plantillaNormalizacion.ts` limpia cada celda según la columna oficial a la que
+va, y `buildOfficialAoADetallado` devuelve, además del archivo, la lista de arreglos hechos.
+Nada se limpia a ciegas: el paso "Revisar" abre con **"Arreglos que hicimos por ti"**, cada uno
+como antes → después con la cantidad de filas ("Precio · $ 4.990 → 4990 · 23 filas"), y el
+archivo original del vendedor no se toca.
+
+- **Números:** misma interpretación que `InventarioExcelService.normalizarNumero`, para que lo
+  que el panel muestra sea lo que el backend guarda. "$ 12.900" → 12900; "1.234,50" → 1234.5;
+  "4.99" se respeta como decimal.
+- **Años:** cuando la columna que quedó en "año desde" trae rangos ("2014-2020", "2014 a 2020",
+  "2014/2020", "2014 al 2020"), el paso 2 ofrece dividirla, ya marcado y con un ejemplo real del
+  archivo. No pisa la columna de "año hasta" si el vendedor sí trajo una con dato.
+- **Sí/no:** la X de la planilla es el caso más común y el backend sólo entiende SI/SÍ/TRUE/1.
+  También V, verdadero, S, Y, y sus contrarios.
+- **Texto:** recorte y colapso de los espacios de copiar y pegar entre planillas.
+- **Valor fijo por columna:** el "mismo valor para todas las filas" que la Fase 2 dejó sólo en
+  los obligatorios ahora está en **toda** columna sin asignar, y en las columnas de lista es un
+  desplegable con los valores válidos en vez de texto libre.
+
+Lo que no se puede interpretar se deja **tal cual**: no se inventa nada, y es la revisión del
+paso 3 la que lo marca. Y "Traducir tus palabras" dejó de preguntar por los valores que la
+limpieza ya resuelve —una X que va a quedar en SI no es una decisión pendiente, y preguntarla
+hacía pensar que faltaba algo.
+
+**Hallazgo:** una columna llamada "Años" (en plural) no se autodetectaba, porque los sinónimos
+sólo tenían las formas en singular. Se agregaron los plurales y "rango de años"/"año modelo".
+
+123 tests verdes en el panel, 22 de ellos nuevos sobre la limpieza, los rangos de años y los
+valores fijos.
 
 ### Fase 5 — Traducción contra los catálogos reales `panel`
 

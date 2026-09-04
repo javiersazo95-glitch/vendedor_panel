@@ -59,6 +59,9 @@ npm run preview   # sirve el build de dist/ localmente
 - `src/utils/plantillaRevision.ts` — revisión previa de las filas ya transformadas y ficha de
   vista previa. Replica a propósito las reglas de validación del backend; si el backend cambia
   las suyas, hay que mover estas en el mismo ciclo.
+- `src/utils/plantillaNormalizacion.ts` — limpieza de los valores del vendedor (precios
+  chilenos, rangos de años, la X como sí, espacios). Misma interpretación de números que
+  `InventarioExcelService.normalizarNumero`.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).

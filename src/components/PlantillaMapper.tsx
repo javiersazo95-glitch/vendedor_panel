@@ -9,6 +9,7 @@ import {
   autoDetectMapping,
   reconcileMapping,
   buildOfficialAoA,
+  buildOfficialAoADetallado,
   buildOfficialXlsxFile,
   leerLibro,
   columnasDeHoja,
@@ -28,6 +29,12 @@ import {
   type EsquemaPlantilla,
 } from '../utils/plantillaMapping';
 import { revisarAoA, fichaDesdeFila, type FilaRevisada } from '../utils/plantillaRevision';
+import {
+  agruparCambios,
+  normalizarCelda,
+  pareceColumnaDeRangos,
+  partirRangoAnios,
+} from '../utils/plantillaNormalizacion';
 
 interface PlantillaMapperProps {
   onGenerated: (file: File) => void;
@@ -48,6 +55,14 @@ const PASOS = [
   { n: 3, titulo: 'Revisa' },
   { n: 4, titulo: 'Genera' },
 ] as const;
+
+/** ¿La columna que quedó en "año desde" trae rangos en una sola celda? */
+function traeRangosDeAnios(mapping: Mapping, cols: UserColumn[], rows: unknown[][]): boolean {
+  const id = mapping.oficial.anio_desde;
+  const col = id ? cols.find((c) => c.id === id) : undefined;
+  if (!col) return false;
+  return pareceColumnaDeRangos(rows.slice(0, 50).map((r) => String((r as unknown[])[col.index] ?? '')));
+}
 
 const plural = (n: number, singular: string, plural_: string) =>
   `${n.toLocaleString('es-CL')} ${n === 1 ? singular : plural_}`;
@@ -85,9 +100,12 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     const hoja = libro[indiceHoja];
     const { cols, rows } = columnasDeHoja(hoja?.aoa ?? [], fila);
     const saved = cols.length ? loadSavedMapping(headerSignature(cols)) : null;
+    const base = saved ? reconcileMapping(saved, cols, campos) : autoDetectMapping(cols, campos);
     setUserCols(cols);
     setUserRows(rows);
-    setMapping(saved ? reconcileMapping(saved, cols, campos) : autoDetectMapping(cols, campos));
+    // Si la columna de años trae rangos ("2014-2020"), se propone dividirla de entrada:
+    // es el formato más común en las listas de repuestos, y el vendedor puede desactivarlo.
+    setMapping({ ...base, dividirAnios: base.dividirAnios ?? traeRangosDeAnios(base, cols, rows) });
     setReused(!!saved);
     setHojaIndex(indiceHoja);
     setFilaEncabezados(fila);
@@ -184,11 +202,17 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    * Revisión del archivo ya transformado. Se calcula sólo en el paso 3 porque transforma
    * todas las filas, y en los pasos anteriores no se muestra.
    */
-  const revision = useMemo(() => {
-    if (paso !== 3 || !mapping) return null;
-    const aoa = buildOfficialAoA(userRows, userCols, mapping, campos);
-    return revisarAoA(aoa, campos, { maxFilas: 20, primeraFilaArchivo: filaEncabezados + 2 });
+  const { revision, cambios } = useMemo(() => {
+    if (paso !== 3 || !mapping) return { revision: null, cambios: [] };
+    const { aoa, cambios: hechos } = buildOfficialAoADetallado(userRows, userCols, mapping, campos);
+    return {
+      revision: revisarAoA(aoa, campos, { maxFilas: 20, primeraFilaArchivo: filaEncabezados + 2 }),
+      cambios: hechos,
+    };
   }, [paso, mapping, userRows, userCols, campos, filaEncabezados]);
+
+  /** Los arreglos automáticos, agrupados para poder mostrarlos como "antes → después". */
+  const arreglos = useMemo(() => agruparCambios(cambios), [cambios]);
 
   /**
    * Columnas que vale la pena mostrar en la tabla: las que traen algo o las que tienen
@@ -237,6 +261,28 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       valueMap[colKey] = table;
       return { ...prev, valueMap };
     });
+  };
+
+  const columnaAniosConRangos = useMemo(
+    () => (mapping ? traeRangosDeAnios(mapping, userCols, userRows) : false),
+    [mapping, userCols, userRows],
+  );
+
+  /** Un ejemplo real del archivo, que dice más que cualquier explicación. */
+  const ejemploRangoAnios = useMemo(() => {
+    const id = mapping?.oficial.anio_desde;
+    const col = id ? userCols.find((c) => c.id === id) : undefined;
+    if (!col) return '';
+    for (const row of userRows.slice(0, 50)) {
+      const bruto = String((row as unknown[])[col.index] ?? '');
+      const rango = partirRangoAnios(bruto);
+      if (rango) return `"${bruto.trim()}" queda como ${rango.desde} y ${rango.hasta}`;
+    }
+    return '';
+  }, [mapping, userCols, userRows]);
+
+  const setDividirAnios = (valor: boolean) => {
+    setMapping((prev) => (prev ? { ...prev, dividirAnios: valor } : prev));
   };
 
   const setDefault = (colKey: string, valor: string) => {
@@ -576,6 +622,20 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           </div>
         )}
 
+        {columnaAniosConRangos && (
+          <label className="mapper-switch">
+            <input
+              type="checkbox"
+              checked={mapping.dividirAnios ?? false}
+              onChange={(e) => setDividirAnios(e.target.checked)}
+            />
+            <span>
+              <b>Tu columna de años trae rangos en una sola celda.</b> Los separamos en "año desde"
+              y "año hasta" por ti{ejemploRangoAnios ? `: ${ejemploRangoAnios}` : ''}.
+            </span>
+          </label>
+        )}
+
         {/* Datos que pide RepuesTop */}
         <section className="mapper-section">
           <span className="bulk-purpose-label">Datos que pide RepuesTop</span>
@@ -608,7 +668,19 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         <option key={c.id} value={c.id}>{c.displayHeader}</option>
                       ))}
                     </select>
-                    {faltante && (
+                    {!value && (campo.enumHint ? (
+                      <select
+                        className="form-control mapper-default-input"
+                        value={mapping.defaults?.[campo.key] ?? ''}
+                        aria-label={`Valor fijo para ${campo.label}`}
+                        onChange={(e) => setDefault(campo.key, e.target.value)}
+                      >
+                        <option value="">o el mismo valor para todas las filas…</option>
+                        {campo.enumHint.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : (
                       <input
                         className="form-control mapper-default-input"
                         type="text"
@@ -617,7 +689,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         aria-label={`Valor fijo para ${campo.label}`}
                         onChange={(e) => setDefault(campo.key, e.target.value)}
                       />
-                    )}
+                    ))}
                   </div>
                 </div>
               );
@@ -713,6 +785,30 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
             o volver atrás, corregirlas en tu Excel y subirlo de nuevo.
           </span>
         </div>
+      )}
+
+      {arreglos.length > 0 && (
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">
+            Arreglos que hicimos por ti ({cambios.length.toLocaleString('es-CL')} en total)
+          </span>
+          <p className="mapper-hint">
+            Dejamos tus datos como los espera RepuesTop. Tu archivo original no se toca.
+          </p>
+          <ul className="mapper-arreglos">
+            {arreglos.map((a) => (
+              <li key={`${a.columna}|${a.antes}|${a.despues}`}>
+                <span className="mapper-arreglo-col">
+                  {campos.find((c) => c.key === a.columna)?.label ?? a.columna}
+                </span>
+                <span className="mapper-arreglo-antes">{a.antes}</span>
+                <ArrowRight size={14} aria-label="queda como" />
+                <span className="mapper-arreglo-despues">{a.despues}</span>
+                <span className="mapper-arreglo-filas">{plural(a.filas, 'fila', 'filas')}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {ficha && (
@@ -815,7 +911,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           {enumColumns.map(({ campo, userColId }: { campo: CampoMeta; userColId: string }) => {
             const col = colById.get(userColId);
             if (!col) return null;
-            const distinct = distinctValuesForColumn(userRows, col.index, VALUE_MAP_CAP);
+            // Los valores que la limpieza ya resuelve no se preguntan: una X que va a
+            // quedar en SI no es una decisión pendiente, y pedirla haría pensar que falta algo.
+            const distinct = distinctValuesForColumn(userRows, col.index, VALUE_MAP_CAP)
+              .filter((val) => {
+                const yaMapeado = mapping.valueMap[campo.key]?.[val];
+                const limpio = (yaMapeado ?? normalizarCelda(campo.key, val).valor).toUpperCase();
+                return !campo.enumHint?.some((opt) => opt.toUpperCase() === limpio);
+              });
+            if (distinct.length === 0) return null;
             const overflow = distinct.length > VALUE_MAP_CAP;
             return (
               <div className="mapper-values-block" key={campo.key}>

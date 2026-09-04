@@ -15,6 +15,9 @@
  *   (el backend normaliza en silencio: una condición que no reconoce queda como ORIGINAL).
  */
 import type { CampoMeta } from './plantillaMapping';
+import { COLUMNAS_NUMERICAS, normalizarNumero } from './plantillaNormalizacion';
+
+export { normalizarNumero };
 
 export type Severidad = 'error' | 'aviso';
 
@@ -44,44 +47,9 @@ export interface RevisionArchivo {
   conAviso: number;
 }
 
-/**
- * Misma normalización que `InventarioExcelService.normalizarNumero`: saca el signo peso,
- * "CLP" y los espacios, y decide si el punto es separador de miles o decimal. Devuelve
- * null si lo que queda no es un número.
- */
-export function normalizarNumero(valor: string): { numero: number | null; comoMiles: boolean } {
-  const texto = String(valor ?? '').trim().replace(/\$/g, '').replace(/clp/gi, '').replace(/\s/g, '');
-  if (!texto) return { numero: null, comoMiles: false };
-
-  const tienePunto = texto.includes('.');
-  const tieneComa = texto.includes(',');
-  let limpio: string;
-  let comoMiles = false;
-
-  if (tienePunto && tieneComa) {
-    limpio = texto.replace(/\./g, '').replace(',', '.');
-  } else if (tienePunto) {
-    const decimales = texto.length - texto.lastIndexOf('.') - 1;
-    if (decimales === 3) {
-      limpio = texto.replace(/\./g, '');
-      comoMiles = true;
-    } else {
-      limpio = texto;
-    }
-  } else {
-    limpio = texto.replace(',', '.');
-  }
-
-  const numero = /^-?\d*\.?\d+$/.test(limpio) ? Number(limpio) : null;
-  return { numero: Number.isFinite(numero as number) ? numero : null, comoMiles };
-}
-
 /** El backend toma como "sí" sólo estos valores; cualquier otra cosa es "no". */
 const SI_NO = new Set(['SI', 'SÍ', 'TRUE', '1']);
 const NO_EXPLICITO = new Set(['NO', 'FALSE', '0', '']);
-
-/** Columnas que el backend lee como número. El esquema todavía no declara tipos. */
-const COLUMNAS_NUMERICAS = new Set(['precio', 'stock', 'anio_desde', 'anio_hasta']);
 
 const etiquetaDe = (campos: CampoMeta[], key: string) =>
   campos.find((c) => c.key === key)?.label ?? key;

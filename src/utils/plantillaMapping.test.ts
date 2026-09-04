@@ -5,6 +5,7 @@ import {
   PLANTILLA_COLUMNAS,
   autoDetectMapping,
   buildOfficialAoA,
+  buildOfficialAoADetallado,
   buildOfficialXlsxFile,
   camposDesdeEsquema,
   columnasDeHoja,
@@ -380,5 +381,75 @@ describe('valores fijos por columna (defaults)', () => {
     const aoa = buildOfficialAoA([['A-1', 'Frenos']], userCols, m);
     const idx = PLANTILLA_COLUMNAS.indexOf('categoria');
     expect(aoa[1][idx]).toBe('Frenos');
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * Fase 4: los datos se limpian al escribir el archivo oficial.
+ * ------------------------------------------------------------------------ */
+
+describe('buildOfficialAoA: limpieza de los datos del vendedor', () => {
+  const idx = (k: string) => PLANTILLA_COLUMNAS.indexOf(k as (typeof PLANTILLA_COLUMNAS)[number]);
+  const mapa = (over: Record<string, string | null>, extra: Partial<Mapping> = {}): Mapping => ({
+    oficial: { ...Object.fromEntries(PLANTILLA_COLUMNAS.map((k) => [k, null])), ...over },
+    extras: {},
+    valueMap: {},
+    ...extra,
+  });
+
+  it('escribe el precio y el stock en el formato que espera el backend', () => {
+    const userCols = cols(['precio', 'cantidad']);
+    const aoa = buildOfficialAoA([['$ 12.900', ' 7 ']], userCols, mapa({ precio: '0', stock: '1' }));
+    expect(aoa[1][idx('precio')]).toBe('12900');
+    expect(aoa[1][idx('stock')]).toBe('7');
+  });
+
+  it('lleva la X de la planilla a SI', () => {
+    const userCols = cols(['chasis']);
+    const aoa = buildOfficialAoA([['x']], userCols, mapa({ requiere_chasis: '0' }));
+    expect(aoa[1][idx('requiere_chasis')]).toBe('SI');
+  });
+
+  it('parte el rango de años cuando el vendedor lo pide', () => {
+    const userCols = cols(['anios']);
+    const con = buildOfficialAoA([['2014-2020']], userCols, mapa({ anio_desde: '0' }, { dividirAnios: true }));
+    expect(con[1][idx('anio_desde')]).toBe('2014');
+    expect(con[1][idx('anio_hasta')]).toBe('2020');
+
+    const sin = buildOfficialAoA([['2014-2020']], userCols, mapa({ anio_desde: '0' }));
+    expect(sin[1][idx('anio_desde')]).toBe('2014-2020');
+    expect(sin[1][idx('anio_hasta')]).toBe('');
+  });
+
+  it('el rango no pisa la columna de "año hasta" que el vendedor sí trajo', () => {
+    const userCols = cols(['anios', 'hasta']);
+    const aoa = buildOfficialAoA(
+      [['2014-2020', '2018']],
+      userCols,
+      mapa({ anio_desde: '0', anio_hasta: '1' }, { dividirAnios: true }),
+    );
+    expect(aoa[1][idx('anio_hasta')]).toBe('2018');
+  });
+
+  it('el valor fijo entra después de limpiar, no antes', () => {
+    const userCols = cols(['precio']);
+    const aoa = buildOfficialAoA(
+      [['  ']],
+      userCols,
+      mapa({ precio: '0' }, { defaults: { precio: '9990', condicion: 'ALTERNATIVO' } }),
+    );
+    expect(aoa[1][idx('precio')]).toBe('9990');
+    expect(aoa[1][idx('condicion')]).toBe('ALTERNATIVO');
+  });
+
+  it('informa los arreglos hechos, para poder mostrarlos antes de generar', () => {
+    const userCols = cols(['precio']);
+    const { cambios } = buildOfficialAoADetallado(
+      [['$ 1.000'], ['$ 1.000'], ['2500']],
+      userCols,
+      mapa({ precio: '0' }),
+    );
+    expect(cambios).toHaveLength(2);
+    expect(cambios[0]).toEqual({ columna: 'precio', antes: '$ 1.000', despues: '1000' });
   });
 });

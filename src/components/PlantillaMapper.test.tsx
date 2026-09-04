@@ -163,6 +163,42 @@ describe('PlantillaMapper', () => {
     expect(screen.getByText(/Falta nombre publicado/)).toBeInTheDocument();
   });
 
+  it('ofrece dividir la columna de años con rangos y muestra los arreglos que hizo', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Años,Chasis',
+      'A-1,Filtro de aceite,Bosch,Filtros,$ 4.990,10,2014-2020,x',
+    ].join('\n'));
+
+    // El interruptor viene propuesto porque el archivo trae rangos, con un ejemplo real.
+    const interruptor = screen.getByRole('checkbox');
+    expect(interruptor).toBeChecked();
+    expect(screen.getByText(/"2014-2020" queda como 2014 y 2020/)).toBeInTheDocument();
+
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // Los arreglos se muestran antes de generar: nadie se entera después de publicar.
+    expect(screen.getByText(/Arreglos que hicimos por ti/)).toBeInTheDocument();
+    expect(screen.getByText('4990', { selector: '.mapper-arreglo-despues' })).toBeInTheDocument();
+    expect(screen.getByText('$ 4.990', { selector: '.mapper-arreglo-antes' })).toBeInTheDocument();
+  });
+
+  it('deja poner el mismo valor para todas las filas en cualquier columna sin asignar', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
+    await subirYRelacionar(['Codigo,Titulo,Marca,Categoria,Precio,Cantidad', 'A-1,Filtro,Bosch,Filtros,4990,10'].join('\n'));
+
+    // Condición no es obligatoria y el archivo no la trae: igual se puede fijar, y como es
+    // una columna de lista se ofrecen los valores válidos en vez de texto libre.
+    const select = screen.getByLabelText('Valor fijo para Condición');
+    expect(select.tagName).toBe('SELECT');
+    fireEvent.change(select, { target: { value: 'ALTERNATIVO' } });
+
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    expect(screen.getByText('Alternativo', { selector: '.mapper-ficha-chip.cond' })).toBeInTheDocument();
+  });
+
   it('deja elegir la hoja cuando el libro trae varias', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Portada de la lista']]), 'Portada');
