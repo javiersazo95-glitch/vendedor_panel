@@ -188,7 +188,7 @@ Nota para la Fase 1: el archivo que genera el mapper del panel sigue sin declara
 ahora pasa por su cabecera, que es correcta. Sumarle la hoja `instrucciones` con la versión que
 entregue `/excel/esquema` es parte de la Fase 1, no un pendiente de ésta.
 
-### Fase 1 — Contrato único desde el backend `panel` `backend`
+### Fase 1 — Contrato único desde el backend `panel` `backend` — COMPLETADA 2026-09-04
 
 - El panel consume `GET /inventario/excel/esquema` al abrir la carga masiva y deriva de ahí
   columnas, obligatorias y catálogos.
@@ -200,6 +200,33 @@ entregue `/excel/esquema` es parte de la Fase 1, no un pendiente de ésta.
 
 **Por qué acá:** sin los catálogos del esquema no se puede hacer la Fase 5, que es la que más
 errores elimina.
+
+**Resultado.** `useEsquemaPlantilla` (`src/utils/plantillaEsquema.ts`) pide el esquema al abrir
+la carga masiva y `FullCreationUpload` se lo pasa al mapper. `camposDesdeEsquema` arma la lista
+de campos combinando lo que manda el backend —columnas, obligatorias, versión, valores de
+`tipo_precio` y `condicion`— con lo único que queda en el panel, `PLANTILLA_TEXTOS`: etiquetas
+en español y sinónimos de autodetección. Las funciones puras (`autoDetectMapping`,
+`reconcileMapping`, `buildOfficialAoA`, `mappedEnumColumns`) reciben los campos como parámetro
+en vez de leer la lista global, así que una columna nueva del backend aparece sola en la
+pantalla y en el archivo generado, con una etiqueta derivada de su nombre. `ESQUEMA_FALLBACK`
+es el contrato copiado que se usa si el endpoint no responde: un backend caído no puede impedir
+preparar el archivo. Sus catálogos de categorías y marcas van vacíos a propósito —una copia
+local desactualizada haría "traducir" a valores que el backend ya no acepta—, y por eso la
+Fase 5 depende de que el esquema sí responda.
+
+`buildOfficialXlsxFile` agrega la hoja `instrucciones` con la versión recibida, con lo que se
+cierra R2: el archivo del mapper ya no entra al backend sin declarar de dónde salió.
+
+Los catálogos de categorías, subcategorías y marcas ya llegan al panel pero todavía no se usan:
+son el insumo de la Fase 5. Meterlos hoy en "Traducir valores" convertiría esa sección en
+cientos de selects, que es justo lo que esa fase resuelve bien.
+
+Un cambio de comportamiento visible: `tipo_precio` dejó de ser obligatorio en la pantalla,
+porque el backend no lo lista como tal. La pantalla ahora dice lo mismo que va a validar el
+backend, que era el punto de la fase.
+
+69 tests verdes en el panel, incluidos nueve nuevos sobre el esquema, el fallback y la hoja
+`instrucciones`.
 
 ### Fase 2 — Wizard de 4 pasos y lectura robusta del archivo `panel`
 

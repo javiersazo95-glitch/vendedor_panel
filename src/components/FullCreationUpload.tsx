@@ -4,6 +4,7 @@ import { apiFetch, SessionExpiredError, RequestTimeoutError } from '../utils/api
 import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
 import { PlantillaMapper } from './PlantillaMapper';
+import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -212,6 +213,11 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   // Evita volver a disparar la descarga automatica del Excel de errores para el mismo
   // resultado (ver efecto mas abajo, junto a exportarErrores).
   const autoErrorDownloadRef = useRef(false);
+
+  // El contrato de la plantilla (columnas, obligatorias, catalogos y version) se pide al
+  // backend al abrir la carga masiva. Si no responde se sigue con el contrato de respaldo
+  // del panel: un endpoint caido no puede dejar al vendedor sin poder preparar su archivo.
+  const { esquema } = useEsquemaPlantilla(isOpen);
 
 
 
@@ -1270,6 +1276,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                 <PlantillaMapper
                   onCancel={() => setShowMapper(false)}
                   onGenerated={handleMappedFileGenerated}
+                  esquema={esquema}
                 />
               ) : !result ? (
                 <div className="bulk-upload-split-layout">

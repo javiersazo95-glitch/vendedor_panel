@@ -4,8 +4,8 @@ import {
   UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck,
 } from 'lucide-react';
 import {
-  PLANTILLA_CAMPOS,
-  PLANTILLA_COLUMNAS,
+  ESQUEMA_FALLBACK,
+  camposDesdeEsquema,
   autoDetectMapping,
   reconcileMapping,
   buildOfficialAoA,
@@ -19,18 +19,24 @@ import {
   getIsoTimestampString,
   type Mapping,
   type UserColumn,
-  type OficialCol,
+  type EsquemaPlantilla,
 } from '../utils/plantillaMapping';
 
 interface PlantillaMapperProps {
   onGenerated: (file: File) => void;
   onCancel: () => void;
+  /** Esquema vigente de la plantilla. Por defecto, el contrato de respaldo del panel. */
+  esquema?: EsquemaPlantilla;
 }
 
 const BIG_FILE_ROWS = 5000;
 const VALUE_MAP_CAP = 20;
 
-export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, onCancel }) => {
+export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
+  onGenerated,
+  onCancel,
+  esquema = ESQUEMA_FALLBACK,
+}) => {
   const [userFile, setUserFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -42,6 +48,10 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, o
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Todo lo que esta pantalla recorre sale del esquema del backend: las columnas, cuáles
+  // son obligatorias y qué valores acepta cada lista.
+  const campos = useMemo(() => camposDesdeEsquema(esquema), [esquema]);
+
   const handleFile = async (file: File | null) => {
     if (!file) return;
     setParsing(true);
@@ -50,7 +60,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, o
       const { cols, rows } = await parseUserFile(file);
       const sig = headerSignature(cols);
       const saved = loadSavedMapping(sig);
-      setMapping(saved ? reconcileMapping(saved, cols) : autoDetectMapping(cols));
+      setMapping(saved ? reconcileMapping(saved, cols, campos) : autoDetectMapping(cols, campos));
       setReused(!!saved);
       setUserCols(cols);
       setUserRows(rows);
@@ -101,7 +111,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, o
 
   const counts = useMemo(() => {
     if (!mapping) return { asignadas: 0, sinAsignar: 0, aDescripcion: 0, ignoradas: 0 };
-    const asignadas = PLANTILLA_COLUMNAS.filter((k) => mapping.oficial[k]).length;
+    const asignadas = campos.filter((c) => mapping.oficial[c.key]).length;
     const ignoradas = unassignedCols.filter((c) => mapping.extras[c.id] === 'ignore').length;
     return {
       asignadas,
@@ -109,16 +119,19 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, o
       aDescripcion: unassignedCols.length - ignoradas,
       ignoradas,
     };
-  }, [mapping, unassignedCols]);
+  }, [mapping, unassignedCols, campos]);
 
   const missingRequired = useMemo(
-    () => (mapping ? PLANTILLA_CAMPOS.filter((c) => c.required && !mapping.oficial[c.key]) : []),
-    [mapping],
+    () => (mapping ? campos.filter((c) => c.required && !mapping.oficial[c.key]) : []),
+    [mapping, campos],
   );
 
-  const enumColumns = useMemo(() => (mapping ? mappedEnumColumns(mapping) : []), [mapping]);
+  const enumColumns = useMemo(
+    () => (mapping ? mappedEnumColumns(mapping, campos) : []),
+    [mapping, campos],
+  );
 
-  const setOficial = (key: OficialCol, valueId: string) => {
+  const setOficial = (key: string, valueId: string) => {
     setMapping((prev) => {
       if (!prev) return prev;
       const oficial = { ...prev.oficial, [key]: valueId || null };
@@ -149,8 +162,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, o
   };
 
   const buildFile = async (): Promise<File> => {
-    const aoa = buildOfficialAoA(userRows, userCols, mapping as Mapping);
-    return buildOfficialXlsxFile(aoa, `plantilla-adaptada_${getIsoTimestampString()}.xlsx`);
+    const aoa = buildOfficialAoA(userRows, userCols, mapping as Mapping, campos);
+    return buildOfficialXlsxFile(aoa, `plantilla-adaptada_${getIsoTimestampString()}.xlsx`, esquema.version);
   };
 
   const handleGenerate = () => {
@@ -324,7 +337,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, o
       )}
 
       <div className="mapper-counts">
-        <span><b>{counts.asignadas}</b>/18 asignadas</span>
+        <span><b>{counts.asignadas}</b>/{campos.length} asignadas</span>
         <span><b>{counts.sinAsignar}</b> sin asignar</span>
         <span><b>{counts.aDescripcion}</b> a la descripción</span>
         <span><b>{counts.ignoradas}</b> ignoradas</span>
@@ -342,7 +355,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({ onGenerated, o
       <section className="mapper-section">
         <span className="bulk-purpose-label">Columnas oficiales de RepuesTop</span>
         <div className="mapper-rows">
-          {PLANTILLA_CAMPOS.map((campo) => {
+          {campos.map((campo) => {
             const value = mapping.oficial[campo.key] ?? '';
             const uses = value ? usageCount.get(value) ?? 0 : 0;
             return (

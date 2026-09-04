@@ -50,8 +50,10 @@ npm run preview   # sirve el build de dist/ localmente
 ## Estructura
 
 - `src/db.ts` — capa de acceso a la API del backend (productos, batch de carga masiva).
-- `src/utils/plantillaMapping.ts` — contrato de columnas de la plantilla y lógica pura del
-  adaptador (autodetección, mapeo de valores, generación del `.xlsx` oficial).
+- `src/utils/plantillaMapping.ts` — lógica pura del adaptador (autodetección, mapeo de
+  valores, generación del `.xlsx` oficial) y contrato de respaldo de la plantilla.
+- `src/utils/plantillaEsquema.ts` — consumo de `GET /inventario/excel/esquema`, la fuente
+  autoritativa del contrato.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).
@@ -61,17 +63,27 @@ npm run preview   # sirve el build de dist/ localmente
 
 La lista de columnas **no es de este repositorio**. La fuente autoritativa es
 `InventarioExcelService.COLUMNAS_EXCEL` en el backend, hoy en la versión `2.0.0` con 18
-columnas, y se expone además por `GET /inventario/excel/esquema`.
+columnas, y el panel la consume por `GET /inventario/excel/esquema` al abrir la carga masiva
+(`src/utils/plantillaEsquema.ts`). De ahí salen las columnas, cuáles son obligatorias, la
+versión de la plantilla y los catálogos de categorías, subcategorías y marcas.
 
 Importa saberlo porque **el backend lee cada fila por posición, no por nombre de columna**, y
 rechaza cualquier archivo cuya cabecera no calce exactamente con esa lista (las columnas
-propias del vendedor al final sí se toleran). Si el backend cambia sus columnas, hay que
-actualizar en el mismo ciclo:
+propias del vendedor al final sí se toleran). El archivo que genera el adaptador declara su
+versión en la hoja `instrucciones`, igual que la plantilla oficial.
 
-1. `PLANTILLA_COLUMNAS` y `PLANTILLA_CAMPOS` en `src/utils/plantillaMapping.ts`.
-2. Los dos generadores de la raíz, y volver a correrlos para regenerar los `.xlsx` de prueba.
-3. `src/components/BulkUpload.columns.test.ts`, que es el test de contrato que avisa antes que
-   el vendedor.
+Lo que queda hardcodeado en el panel es sólo lo que el backend no sabe:
 
-Consumir el esquema del backend en vez de mantener la lista a mano es la Fase 1 de
+1. `PLANTILLA_TEXTOS` en `src/utils/plantillaMapping.ts` — etiquetas en español y sinónimos
+   de autodetección por columna. Una columna nueva del backend igual aparece en la pantalla,
+   con una etiqueta derivada de su nombre; agregarle sinónimos acá sólo mejora la
+   autodetección.
+2. `ESQUEMA_FALLBACK` en el mismo archivo — copia del contrato que se usa **sólo** si
+   `/excel/esquema` no responde, para que un endpoint caído no impida preparar el archivo.
+   Es lo que compara `src/components/BulkUpload.columns.test.ts`, el test de contrato que
+   avisa antes que el vendedor.
+3. Los dos generadores de `.xlsx` de prueba de la raíz, que hay que volver a correr tras
+   cualquier cambio de columnas.
+
+El plan de mejoras del flujo está en
 [PLAN_CARGA_MASIVA_PLANTILLA.md](PLAN_CARGA_MASIVA_PLANTILLA.md).

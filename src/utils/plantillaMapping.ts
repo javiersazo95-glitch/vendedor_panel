@@ -8,9 +8,10 @@
  */
 
 /**
- * Contrato oficial de la plantilla: debe coincidir exactamente con
- * InventarioExcelService.COLUMNAS_EXCEL del backend y con GET /inventario/excel/esquema.
- * Si el backend cambia una columna, el test de contrato falla y avisa antes que el vendedor.
+ * Contrato de respaldo. La fuente autoritativa es GET /inventario/excel/esquema
+ * (ver `ESQUEMA_FALLBACK` y `camposDesdeEsquema`); esta lista es la copia local que se
+ * usa cuando ese endpoint no responde, y la que compara el test de contrato contra
+ * InventarioExcelService.COLUMNAS_EXCEL del backend.
  */
 export const PLANTILLA_COLUMNAS = [
   'nombre_publicado',
@@ -35,8 +36,63 @@ export const PLANTILLA_COLUMNAS = [
 
 export type OficialCol = (typeof PLANTILLA_COLUMNAS)[number];
 
+/**
+ * El esquema tal como lo entrega GET /inventario/excel/esquema. Es la fuente
+ * autoritativa: qué columnas tiene la plantilla, cuáles son obligatorias, qué versión
+ * declara y qué valores acepta el backend. El panel sólo pone encima lo que el backend
+ * no sabe: etiquetas en español y sinónimos de autodetección.
+ */
+export interface EsquemaPlantilla {
+  version: string;
+  columnas: string[];
+  columnasObligatorias: string[];
+  hojaCompatibilidadesColumnas: string[];
+  catalogos: {
+    categorias: string[];
+    subcategoriasPorCategoria: Record<string, string[]>;
+    marcasRepuesto: string[];
+    marcasVehiculo: string[];
+    tiposPrecio: string[];
+    condiciones: string[];
+  };
+}
+
+/**
+ * Esquema de respaldo: el contrato del backend copiado al día de hoy. Se usa cuando
+ * /excel/esquema no responde, porque un endpoint caído no puede dejar al vendedor sin
+ * poder cargar su inventario.
+ *
+ * Los catálogos de categorías y marcas van vacíos a propósito: una copia local que se
+ * desactualiza hace más daño que la ausencia, porque haría "traducir" los valores del
+ * vendedor a nombres que el backend ya no acepta. Los enums que son parte del contrato
+ * y no de la base de datos (tipo de precio, condición) sí se copian.
+ */
+export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
+  version: '2.0.0',
+  columnas: [...PLANTILLA_COLUMNAS],
+  columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor', 'stock'],
+  hojaCompatibilidadesColumnas: [
+    'sku_proveedor',
+    'compatibilidad_marca',
+    'compatibilidad_modelo',
+    'anio_desde',
+    'anio_hasta',
+    'motor',
+  ],
+  catalogos: {
+    categorias: [],
+    subcategoriasPorCategoria: {},
+    marcasRepuesto: [],
+    marcasVehiculo: [],
+    tiposPrecio: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'],
+    condiciones: ['ORIGINAL', 'ALTERNATIVO'],
+  },
+};
+
 export interface CampoMeta {
-  key: OficialCol;
+  /** Nombre de la columna oficial. Es `string` y no `OficialCol` porque las columnas
+   *  llegan del esquema: el backend puede agregar una que el panel todavía no conoce. */
+  key: string;
   label: string;
   required: boolean;
   /** Valores permitidos para columnas de tipo lista. El backend es la fuente autoritativa. */
@@ -47,44 +103,83 @@ export interface CampoMeta {
   group?: 'compat' | 'anio' | 'motor';
 }
 
+interface CampoTexto {
+  label: string;
+  synonyms: string[];
+  group?: 'compat' | 'anio' | 'motor';
+}
+
 /**
- * Metadatos de cada columna oficial. El orden es el mismo que `PLANTILLA_COLUMNAS`.
- * Punto único de cambio si en el futuro se consume GET /inventario/excel/esquema.
+ * Lo único que queda hardcodeado por columna: cómo se le dice al vendedor y con qué
+ * encabezados suyos se la reconoce. Si el backend agrega una columna, el panel la
+ * muestra igual (con una etiqueta derivada del nombre) y sólo pierde la autodetección
+ * hasta que se le agreguen sinónimos acá.
  */
-export const PLANTILLA_CAMPOS: CampoMeta[] = [
-  { key: 'nombre_publicado', label: 'Nombre publicado', required: true, synonyms: ['nombre', 'titulo', 'producto', 'articulo', 'item', 'nombre producto', 'descripcion corta'] },
-  { key: 'categoria', label: 'Categoría', required: true, synonyms: ['rubro', 'familia', 'tipo', 'linea'] },
-  { key: 'subcategoria', label: 'Subcategoría', required: false, synonyms: ['subrubro', 'subfamilia', 'sub categoria'] },
-  { key: 'marca_repuesto', label: 'Marca del repuesto', required: true, synonyms: ['marca', 'fabricante', 'marca pieza', 'marca parte', 'brand'] },
-  { key: 'sku_proveedor', label: 'SKU / Código', required: true, synonyms: ['sku', 'codigo', 'cod', 'referencia', 'ref', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte'] },
-  { key: 'referencia_oem', label: 'Referencia OEM', required: false, synonyms: ['oem', 'codigo oem', 'numero oem', 'ref oem', 'original oem'] },
-  { key: 'tipo_precio', label: 'Tipo de precio', required: true, enumHint: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'], synonyms: ['tipo precio', 'modalidad precio', 'modalidad', 'cotizar'] },
-  { key: 'precio', label: 'Precio', required: false, synonyms: ['valor', 'pvp', 'precio venta', 'price', 'monto', 'precio unitario'] },
-  { key: 'stock', label: 'Stock', required: true, synonyms: ['cantidad', 'existencias', 'unidades', 'disponible', 'inventario', 'qty', 'stock actual'] },
-  { key: 'condicion', label: 'Condición', required: false, enumHint: ['ORIGINAL', 'ALTERNATIVO'], synonyms: ['estado', 'tipo repuesto', 'origen', 'original alternativo'] },
-  { key: 'compatibilidad_general', label: 'Compatibilidad universal', required: false, enumHint: ['SI', 'NO'], synonyms: ['universal', 'compatibilidad general', 'generico', 'aplica a todos', 'es universal'] },
-  { key: 'compatibilidad_marca', label: 'Marca del vehículo', required: false, group: 'compat', synonyms: ['marca vehiculo', 'marca auto', 'marca compatible', 'vehiculo marca', 'marca del auto'] },
-  { key: 'compatibilidad_modelo', label: 'Modelo del vehículo', required: false, group: 'compat', synonyms: ['modelo', 'modelo vehiculo', 'modelo auto', 'modelo compatible'] },
-  { key: 'anio_desde', label: 'Año desde', required: false, group: 'anio', synonyms: ['anio', 'ano', 'año', 'año desde', 'desde', 'year', 'año inicio', 'anio inicial'] },
-  { key: 'anio_hasta', label: 'Año hasta', required: false, group: 'anio', synonyms: ['año hasta', 'hasta', 'año fin', 'year to', 'anio final'] },
-  { key: 'motor', label: 'Motor / versión', required: false, group: 'motor', synonyms: ['version', 'cilindrada', 'motorizacion', 'engine', 'motor version'] },
-  { key: 'descripcion', label: 'Descripción', required: false, synonyms: ['detalle', 'observaciones', 'notas', 'comentarios', 'descripcion larga', 'detalles'] },
-  { key: 'requiere_chasis', label: 'Requiere número de chasis', required: false, enumHint: ['SI', 'NO'], synonyms: ['requiere chasis', 'chasis', 'vin', 'numero chasis', 'pide chasis'] },
-];
+const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
+  nombre_publicado: { label: 'Nombre publicado', synonyms: ['nombre', 'titulo', 'producto', 'articulo', 'item', 'nombre producto', 'descripcion corta'] },
+  categoria: { label: 'Categoría', synonyms: ['rubro', 'familia', 'tipo', 'linea'] },
+  subcategoria: { label: 'Subcategoría', synonyms: ['subrubro', 'subfamilia', 'sub categoria'] },
+  marca_repuesto: { label: 'Marca del repuesto', synonyms: ['marca', 'fabricante', 'marca pieza', 'marca parte', 'brand'] },
+  sku_proveedor: { label: 'SKU / Código', synonyms: ['sku', 'codigo', 'cod', 'referencia', 'ref', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte'] },
+  referencia_oem: { label: 'Referencia OEM', synonyms: ['oem', 'codigo oem', 'numero oem', 'ref oem', 'original oem'] },
+  tipo_precio: { label: 'Tipo de precio', synonyms: ['tipo precio', 'modalidad precio', 'modalidad', 'cotizar'] },
+  precio: { label: 'Precio', synonyms: ['valor', 'pvp', 'precio venta', 'price', 'monto', 'precio unitario'] },
+  stock: { label: 'Stock', synonyms: ['cantidad', 'existencias', 'unidades', 'disponible', 'inventario', 'qty', 'stock actual'] },
+  condicion: { label: 'Condición', synonyms: ['estado', 'tipo repuesto', 'origen', 'original alternativo'] },
+  compatibilidad_general: { label: 'Compatibilidad universal', synonyms: ['universal', 'compatibilidad general', 'generico', 'aplica a todos', 'es universal'] },
+  compatibilidad_marca: { label: 'Marca del vehículo', group: 'compat', synonyms: ['marca vehiculo', 'marca auto', 'marca compatible', 'vehiculo marca', 'marca del auto'] },
+  compatibilidad_modelo: { label: 'Modelo del vehículo', group: 'compat', synonyms: ['modelo', 'modelo vehiculo', 'modelo auto', 'modelo compatible'] },
+  anio_desde: { label: 'Año desde', group: 'anio', synonyms: ['anio', 'ano', 'año', 'año desde', 'desde', 'year', 'año inicio', 'anio inicial'] },
+  anio_hasta: { label: 'Año hasta', group: 'anio', synonyms: ['año hasta', 'hasta', 'año fin', 'year to', 'anio final'] },
+  motor: { label: 'Motor / versión', group: 'motor', synonyms: ['version', 'cilindrada', 'motorizacion', 'engine', 'motor version'] },
+  descripcion: { label: 'Descripción', synonyms: ['detalle', 'observaciones', 'notas', 'comentarios', 'descripcion larga', 'detalles'] },
+  requiere_chasis: { label: 'Requiere número de chasis', synonyms: ['requiere chasis', 'chasis', 'vin', 'numero chasis', 'pide chasis'] },
+};
 
-const CAMPO_BY_KEY: Record<OficialCol, CampoMeta> = PLANTILLA_CAMPOS.reduce((acc, campo) => {
-  acc[campo.key] = campo;
-  return acc;
-}, {} as Record<OficialCol, CampoMeta>);
+/**
+ * Valores de lista que son parte del contrato del Excel y no de la base de datos, así
+ * que no viajan en los catálogos del esquema. Los catálogos de categorías y marcas se
+ * usan recién en la Fase 5: meterlos acá hoy convertiría "Traducir valores" en una
+ * pantalla con cientos de selects, que es justo lo que esa fase resuelve bien.
+ */
+const ENUM_FIJOS: Record<string, string[]> = {
+  compatibilidad_general: ['SI', 'NO'],
+  requiere_chasis: ['SI', 'NO'],
+};
 
-/** Índices de columnas oficiales que se vacían cuando la fila es universal. */
-const UNIVERSAL_BLANK_KEYS: OficialCol[] = [
-  'compatibilidad_marca',
-  'compatibilidad_modelo',
-  'anio_desde',
-  'anio_hasta',
-  'motor',
-];
+/** Etiqueta legible para una columna que el backend agregó y el panel aún no conoce. */
+function labelPorDefecto(key: string): string {
+  const texto = key.replace(/_/g, ' ');
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+/**
+ * Combina el esquema del backend (columnas, obligatorias, catálogos) con los textos del
+ * panel. Todo lo que el flujo de mapeo recorre sale de acá, así que una columna nueva en
+ * el backend aparece sola en la pantalla sin tocar el panel.
+ */
+export function camposDesdeEsquema(esquema: EsquemaPlantilla): CampoMeta[] {
+  const obligatorias = new Set(esquema.columnasObligatorias);
+  return esquema.columnas.map((key) => {
+    const texto = PLANTILLA_TEXTOS[key];
+    const enumHint =
+      key === 'tipo_precio' ? esquema.catalogos?.tiposPrecio
+        : key === 'condicion' ? esquema.catalogos?.condiciones
+          : ENUM_FIJOS[key];
+    const campo: CampoMeta = {
+      key,
+      label: texto?.label ?? labelPorDefecto(key),
+      required: obligatorias.has(key),
+      synonyms: texto?.synonyms ?? [],
+    };
+    if (texto?.group) campo.group = texto.group;
+    if (enumHint?.length) campo.enumHint = enumHint;
+    return campo;
+  });
+}
+
+/** Campos derivados del esquema de respaldo. Default de las funciones de este módulo. */
+export const PLANTILLA_CAMPOS: CampoMeta[] = camposDesdeEsquema(ESQUEMA_FALLBACK);
 
 const UNIVERSAL_TRUTHY = new Set(['si', 'sí', 'true', '1', 'universal', 'x', 'yes']);
 
@@ -117,7 +212,7 @@ export interface UserColumn {
 
 export interface Mapping {
   /** columna oficial -> id de columna del vendedor (o null si "sin dato"). */
-  oficial: Record<OficialCol, string | null>;
+  oficial: Record<string, string | null>;
   /** id de columna del vendedor sin asignar -> política. */
   extras: Record<string, 'descripcion' | 'ignore'>;
   /** columna oficial -> { valor de origen -> valor oficial }. */
@@ -135,9 +230,9 @@ export function columnLetter(index: number): string {
   return out;
 }
 
-function emptyMapping(): Mapping {
-  const oficial = {} as Record<OficialCol, string | null>;
-  PLANTILLA_COLUMNAS.forEach((k) => { oficial[k] = null; });
+function emptyMapping(campos: CampoMeta[]): Mapping {
+  const oficial: Record<string, string | null> = {};
+  campos.forEach((c) => { oficial[c.key] = null; });
   return { oficial, extras: {}, valueMap: {} };
 }
 
@@ -149,13 +244,13 @@ function emptyMapping(): Mapping {
  *      tokens de la columna oficial y el encabezado tiene 2+ tokens.
  * Cada columna del vendedor se asigna a lo sumo a una columna oficial.
  */
-export function autoDetectMapping(userCols: UserColumn[]): Mapping {
-  const mapping = emptyMapping();
+export function autoDetectMapping(userCols: UserColumn[], camposEsquema: CampoMeta[] = PLANTILLA_CAMPOS): Mapping {
+  const mapping = emptyMapping(camposEsquema);
   const usados = new Set<string>();
 
   const normCols = userCols.map((c) => ({ col: c, norm: normalizeForMatch(c.rawHeader) }));
 
-  const campos = PLANTILLA_CAMPOS.map((campo) => ({
+  const campos = camposEsquema.map((campo) => ({
     campo,
     keyNorm: normalizeForMatch(campo.key),
     synSet: new Set(campo.synonyms.map(normalizeForMatch)),
@@ -195,12 +290,16 @@ export function autoDetectMapping(userCols: UserColumn[]): Mapping {
 }
 
 /** Normaliza un mapping recién cargado/guardado a la lista de columnas actual. */
-export function reconcileMapping(saved: Mapping, userCols: UserColumn[]): Mapping {
-  const base = emptyMapping();
+export function reconcileMapping(
+  saved: Mapping,
+  userCols: UserColumn[],
+  campos: CampoMeta[] = PLANTILLA_CAMPOS,
+): Mapping {
+  const base = emptyMapping(campos);
   const validIds = new Set(userCols.map((c) => c.id));
   const usados = new Set<string>();
 
-  PLANTILLA_COLUMNAS.forEach((k) => {
+  campos.forEach(({ key: k }) => {
     const id = saved.oficial?.[k];
     if (id && validIds.has(id) && !usados.has(id)) {
       base.oficial[k] = id;
@@ -286,8 +385,11 @@ export function distinctValuesForColumn(rows: unknown[][], colIndex: number, cap
 }
 
 /** Columnas oficiales de tipo lista que fueron mapeadas — para construir la sección C. */
-export function mappedEnumColumns(mapping: Mapping): { campo: CampoMeta; userColId: string }[] {
-  return PLANTILLA_CAMPOS
+export function mappedEnumColumns(
+  mapping: Mapping,
+  campos: CampoMeta[] = PLANTILLA_CAMPOS,
+): { campo: CampoMeta; userColId: string }[] {
+  return campos
     .filter((c) => c.enumHint && mapping.oficial[c.key])
     .map((campo) => ({ campo, userColId: mapping.oficial[campo.key] as string }));
 }
@@ -296,7 +398,17 @@ export function mappedEnumColumns(mapping: Mapping): { campo: CampoMeta; userCol
  * Construye la matriz (arreglo de arreglos) en formato oficial a partir de las filas
  * del vendedor y el mapping. Fila 0 = encabezados oficiales.
  */
-export function buildOfficialAoA(rows: unknown[][], userCols: UserColumn[], mapping: Mapping): (string | number)[][] {
+export function buildOfficialAoA(
+  rows: unknown[][],
+  userCols: UserColumn[],
+  mapping: Mapping,
+  campos: CampoMeta[] = PLANTILLA_CAMPOS,
+): (string | number)[][] {
+  const columnas = campos.map((c) => c.key);
+  const campoByKey = new Map(campos.map((c) => [c.key, c]));
+  // Las columnas que se vacían cuando la fila es universal salen del propio esquema:
+  // son las que el panel agrupa como compatibilidad, años y motor.
+  const universalBlankKeys = campos.filter((c) => c.group).map((c) => c.key);
   const idToIndex = new Map(userCols.map((c) => [c.id, c.index]));
   const idToCol = new Map(userCols.map((c) => [c.id, c]));
 
@@ -313,23 +425,22 @@ export function buildOfficialAoA(rows: unknown[][], userCols: UserColumn[], mapp
     return v === undefined || v === null ? '' : String(v).trim();
   };
 
-  const applyValueMap = (key: OficialCol, value: string): string => {
+  const applyValueMap = (key: string, value: string): string => {
     const table = mapping.valueMap[key];
     if (!table) return value;
     return table[value] ?? value;
   };
 
-  const header = [...PLANTILLA_COLUMNAS] as string[];
-  const out: (string | number)[][] = [header];
+  const out: (string | number)[][] = [[...columnas]];
 
   for (const raw of rows) {
     const row = raw as unknown[];
 
     // Valor base por columna oficial.
-    const cells: Record<OficialCol, string> = {} as Record<OficialCol, string>;
-    for (const key of PLANTILLA_COLUMNAS) {
-      let value = readCell(row, mapping.oficial[key]);
-      if (CAMPO_BY_KEY[key].enumHint) value = applyValueMap(key, value);
+    const cells: Record<string, string> = {};
+    for (const key of columnas) {
+      let value = readCell(row, mapping.oficial[key] ?? null);
+      if (campoByKey.get(key)?.enumHint) value = applyValueMap(key, value);
       cells[key] = value;
     }
 
@@ -344,21 +455,40 @@ export function buildOfficialAoA(rows: unknown[][], userCols: UserColumn[], mapp
     cells.descripcion = bloques.join('\n\n');
 
     // Blanqueo universal.
-    if (UNIVERSAL_TRUTHY.has(normalizeHeader(cells.compatibilidad_general))) {
-      for (const key of UNIVERSAL_BLANK_KEYS) cells[key] = '';
+    if (UNIVERSAL_TRUTHY.has(normalizeHeader(cells.compatibilidad_general ?? ''))) {
+      for (const key of universalBlankKeys) cells[key] = '';
     }
 
-    out.push(PLANTILLA_COLUMNAS.map((key) => cells[key]));
+    out.push(columnas.map((key) => cells[key]));
   }
 
   return out;
 }
 
-export async function buildOfficialXlsxFile(aoa: (string | number)[][], filename: string): Promise<File> {
+/**
+ * Genera el .xlsx en formato oficial que se entrega al análisis.
+ *
+ * La hoja "instrucciones" con la versión no es decorativa: el backend lee las filas por
+ * posición, y un archivo que no declara de qué plantilla salió sólo se podía validar por
+ * sus encabezados. Declarando la versión, si el archivo se guarda y se vuelve a subir
+ * después de un cambio mayor de plantilla, el rechazo dice exactamente qué pasó en vez de
+ * hablar de una columna suelta.
+ */
+export async function buildOfficialXlsxFile(
+  aoa: (string | number)[][],
+  filename: string,
+  version: string = ESQUEMA_FALLBACK.version,
+): Promise<File> {
   const XLSX = await import('xlsx');
   const worksheet = XLSX.utils.aoa_to_sheet(aoa);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'inventario');
+  const instrucciones = XLSX.utils.aoa_to_sheet([
+    [`VERSION_PLANTILLA: ${version}`],
+    ['Archivo generado por el panel de vendedor de RepuesTop a partir del Excel propio del vendedor.'],
+    ['No cambies los títulos de la hoja "inventario": el sistema los lee tal cual están.'],
+  ]);
+  XLSX.utils.book_append_sheet(workbook, instrucciones, 'instrucciones');
   const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
   return new File([wbout], filename, {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

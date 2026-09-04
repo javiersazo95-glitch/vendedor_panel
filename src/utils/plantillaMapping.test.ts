@@ -1,13 +1,17 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 
 import {
+  ESQUEMA_FALLBACK,
   PLANTILLA_COLUMNAS,
   autoDetectMapping,
   buildOfficialAoA,
+  buildOfficialXlsxFile,
+  camposDesdeEsquema,
   headerSignature,
   loadSavedMapping,
   saveMapping,
   parseUserFile,
+  type EsquemaPlantilla,
   type Mapping,
   type UserColumn,
 } from './plantillaMapping';
@@ -15,7 +19,7 @@ import {
 const cols = (headers: string[]): UserColumn[] =>
   headers.map((h, index) => ({ id: String(index), rawHeader: h, displayHeader: h, index }));
 
-const withOficial = (base: Mapping, over: Partial<Mapping['oficial']>): Mapping => ({
+const withOficial = (base: Mapping, over: Record<string, string | null>): Mapping => ({
   ...base,
   oficial: { ...base.oficial, ...over },
 });
@@ -197,5 +201,80 @@ describe('parseUserFile', () => {
   it('lanza error si no hay filas de datos', async () => {
     const file = new File(['SKU,Precio\n'], 'vacio.csv', { type: 'text/csv' });
     await expect(parseUserFile(file)).rejects.toThrow(/filas de datos/);
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * Fase 1: el contrato lo manda el backend, no el panel.
+ * ------------------------------------------------------------------------ */
+
+const esquemaCon = (over: Partial<EsquemaPlantilla>): EsquemaPlantilla => ({
+  ...ESQUEMA_FALLBACK,
+  ...over,
+  catalogos: { ...ESQUEMA_FALLBACK.catalogos, ...(over.catalogos ?? {}) },
+});
+
+describe('camposDesdeEsquema', () => {
+  it('los obligatorios salen del esquema, no del panel', () => {
+    const campos = camposDesdeEsquema(esquemaCon({ columnasObligatorias: ['precio'] }));
+    expect(campos.find((c) => c.key === 'precio')?.required).toBe(true);
+    expect(campos.find((c) => c.key === 'nombre_publicado')?.required).toBe(false);
+  });
+
+  it('los valores de lista de tipo_precio y condicion salen de los catálogos del backend', () => {
+    const campos = camposDesdeEsquema(esquemaCon({
+      catalogos: { ...ESQUEMA_FALLBACK.catalogos, condiciones: ['ORIGINAL', 'ALTERNATIVO', 'REMANUFACTURADO'] },
+    }));
+    expect(campos.find((c) => c.key === 'condicion')?.enumHint).toEqual(['ORIGINAL', 'ALTERNATIVO', 'REMANUFACTURADO']);
+  });
+
+  it('una columna nueva del backend aparece igual, con etiqueta derivada del nombre', () => {
+    const campos = camposDesdeEsquema(esquemaCon({
+      columnas: [...PLANTILLA_COLUMNAS, 'url_imagen'],
+      columnasObligatorias: [],
+    }));
+    expect(campos).toHaveLength(PLANTILLA_COLUMNAS.length + 1);
+    expect(campos[campos.length - 1]).toMatchObject({ key: 'url_imagen', label: 'Url imagen', synonyms: [] });
+  });
+
+  it('conserva las etiquetas y sinónimos del panel para las columnas conocidas', () => {
+    const campos = camposDesdeEsquema(ESQUEMA_FALLBACK);
+    const sku = campos.find((c) => c.key === 'sku_proveedor');
+    expect(sku?.label).toBe('SKU / Código');
+    expect(sku?.synonyms).toContain('codigo');
+  });
+});
+
+describe('buildOfficialAoA con un esquema del backend', () => {
+  it('genera las columnas del esquema, incluida una que el panel no conoce', () => {
+    const campos = camposDesdeEsquema(esquemaCon({ columnas: [...PLANTILLA_COLUMNAS, 'url_imagen'] }));
+    const userCols = cols(['sku', 'foto']);
+    const mapping: Mapping = {
+      oficial: { ...Object.fromEntries(campos.map((c) => [c.key, null])), sku_proveedor: '0', url_imagen: '1' },
+      extras: {},
+      valueMap: {},
+    };
+    const aoa = buildOfficialAoA([['SKU-1', 'http://foto/1.jpg']], userCols, mapping, campos);
+    expect(aoa[0][aoa[0].length - 1]).toBe('url_imagen');
+    expect(aoa[1][aoa[1].length - 1]).toBe('http://foto/1.jpg');
+  });
+});
+
+describe('buildOfficialXlsxFile', () => {
+  it('declara la versión de la plantilla en la hoja "instrucciones"', async () => {
+    const XLSX = await import('xlsx');
+    const file = await buildOfficialXlsxFile([[...PLANTILLA_COLUMNAS], ['x']], 'adaptada.xlsx', '2.0.0');
+    // jsdom no implementa File.arrayBuffer(), igual que en PlantillaMapper.test.tsx.
+    const buffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as ArrayBuffer);
+      r.onerror = () => reject(r.error);
+      r.readAsArrayBuffer(file);
+    });
+    const wb = XLSX.read(buffer, { type: 'array' });
+    expect(wb.SheetNames[0]).toBe('inventario');
+    expect(wb.SheetNames).toContain('instrucciones');
+    const filas = XLSX.utils.sheet_to_json<string[]>(wb.Sheets.instrucciones, { header: 1 });
+    expect(filas[0][0]).toBe('VERSION_PLANTILLA: 2.0.0');
   });
 });
