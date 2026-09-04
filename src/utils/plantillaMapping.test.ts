@@ -453,3 +453,30 @@ describe('buildOfficialAoA: limpieza de los datos del vendedor', () => {
     expect(cambios[0]).toEqual({ columna: 'precio', antes: '$ 1.000', despues: '1000' });
   });
 });
+
+/* --------------------------------------------------------------------------
+ * Contrato de columnas contra el backend.
+ *
+ * Vivia en BulkUpload.columns.test.ts, junto al parser que la Fase 8 retiro: el
+ * contrato ya no vive ahi. Las posiciones se comprueban una por una a proposito -- el
+ * backend lee las filas por indice, y `compatibilidad_general` en la columna K es
+ * justamente lo que se corrio al pasar de la plantilla 1.x a la 2.0.0.
+ * ------------------------------------------------------------------------ */
+
+describe('contrato de columnas de la plantilla oficial', () => {
+  it('tiene las 18 columnas del backend, en orden', () => {
+    expect(PLANTILLA_COLUMNAS).toHaveLength(18);
+    expect(PLANTILLA_COLUMNAS[0]).toBe('nombre_publicado');
+    expect(PLANTILLA_COLUMNAS[4]).toBe('sku_proveedor');
+    expect(PLANTILLA_COLUMNAS[9]).toBe('condicion');
+    expect(PLANTILLA_COLUMNAS[10]).toBe('compatibilidad_general');
+    expect(PLANTILLA_COLUMNAS[16]).toBe('descripcion');
+    expect(PLANTILLA_COLUMNAS[17]).toBe('requiere_chasis');
+  });
+
+  it('el esquema de respaldo declara la misma lista y la version de la plantilla', () => {
+    expect(ESQUEMA_FALLBACK.columnas).toEqual([...PLANTILLA_COLUMNAS]);
+    expect(ESQUEMA_FALLBACK.version).toBe('2.1.0');
+    expect(ESQUEMA_FALLBACK.hojaCompatibilidadesColumnas).toContain('referencia_oem');
+  });
+});

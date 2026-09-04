@@ -483,7 +483,7 @@ su repuesto, y un tercero inalcanzable reportado con su motivo, sin perder los o
 
 164 tests verdes en el panel, 11 de ellos nuevos.
 
-### Fase 8 — Persistencia por cuenta y limpieza `panel` `backend`
+### Fase 8 — Persistencia por cuenta y limpieza `panel` `backend` — COMPLETADA 2026-09-04
 
 Resuelve U13, U14 y la deuda del §1.
 
@@ -491,6 +491,43 @@ Resuelve U13, U14 y la deuda del §1.
 - "Volver a mapear" desde la pantalla de análisis conservando lo hecho.
 - Eliminar el código muerto de FULL_CREATION en `BulkUpload.tsx` y el test de contrato que ya
   cubre `plantillaMapping.ts`.
+
+**Resultado.**
+
+**Backend.** Tabla `RT_mapeo_plantilla_inventario` con `GET/PUT/DELETE` bajo
+`/inventario/excel/mapeos`. La llave es la firma de los encabezados, así que dos listas con
+los mismos títulos comparten mapeo sin importar el orden ni el nombre del archivo, y guardar
+dos veces la misma firma actualiza en vez de acumular. El contenido va como JSON **sin
+interpretar**: es estado de una pantalla del panel, y darle esquema obligaría a migrar la tabla
+cada vez que el mapeo gana una opción. Lo que el backend sí cuida es de quién es cada mapeo
+(`buscarProveedorAutenticado`, con test), que el JSON no pase de 200 mil caracteres y que un
+proveedor no acumule más de 50 — sin esos límites la tabla queda como almacenamiento libre.
+
+**Panel (U13).** `plantillaMapeos.ts` trae los mapeos de la cuenta al abrir la carga masiva y
+guarda los nuevos. `localStorage` queda como espejo local: es lo que hace que el mapeo siga
+apareciendo si el backend no responde. Perder la comodidad del mapeo recordado es molesto; no
+poder cargar el inventario es otra cosa.
+
+**Panel (U14).** "Volver a relacionar columnas" ahora reabre el wizard **con el Excel del
+vendedor ya cargado** —el mapper devuelve el archivo original junto con el generado—, así que
+volver atrás no cuesta buscar el archivo otra vez ni rehacer el mapeo. El botón está en la
+tarjeta del archivo adaptado y también en la pantalla de análisis, que es de donde el plan
+pedía poder volver.
+
+**Limpieza.** `BulkUpload.tsx` pasó de 2965 a 2438 líneas: se retiró el parser de
+FULL_CREATION (el de la deuda del §1, que no leía `requiere_chasis`), los bloques de JSX del
+modo, la galería de asignación de fotos —inalcanzable desde que nada abre `galleryOpenForSku`—
+y el `columnReader` que ya sólo existía para su test. La prueba de contrato se mudó a
+`plantillaMapping.test.ts`, que es donde vive el contrato, conservando la comprobación de las
+posiciones una por una: el backend lee por índice y `compatibilidad_general` en la columna K es
+justamente lo que se corrió entre la 1.x y la 2.0.0. Quedó **un** error de lint menos en el
+proyecto.
+
+No se tocó lo que sigue entrelazado con el flujo compartido de subida (el gate de imágenes
+faltantes): sacarlo sin poder ejercitar la Actualización Rápida sería arriesgar un camino vivo
+por prolijidad.
+
+171 tests verdes en el panel y 47 en el backend, 16 de ellos nuevos.
 
 ### Fase 9 (opcional) — Corrección inline
 

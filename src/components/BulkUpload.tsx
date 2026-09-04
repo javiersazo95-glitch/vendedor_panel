@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { UploadCloud, FolderOpen, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, ImageUp, Images, Eye, Search, Download, Pencil, Zap, Package } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, AlertTriangle, XCircle, Play, FileSpreadsheet, RefreshCw, Trash2, SearchCheck, Images, Eye, Search, Download, Pencil, Zap, Package } from 'lucide-react';
 import type { Product, BatchResult } from '../db';
 import { saveProductsBatch, savePreciosStockBatch, getAllProducts } from '../db';
 import { useFocusTrap } from '../utils/useFocusTrap';
@@ -68,25 +68,6 @@ const getIsoTimestampString = (date = new Date()): string => {
  * `nombre_publicado`, `compatibilidad_marca`). Al pasar el botón de descarga a la
  * plantilla del servidor, cada fila fallaba con "SKU faltante".
  */
-/**
- * Contrato oficial de la plantilla: vive en `src/utils/plantillaMapping.ts` (lo comparte
- * el flujo "Adaptar mi plantilla") y se re-exporta aquí para no romper imports ni el test
- * de contrato. Debe coincidir exactamente con InventarioExcelService.COLUMNAS_EXCEL del
- * backend y con GET /inventario/excel/esquema.
- */
-export { PLANTILLA_COLUMNAS } from '../utils/plantillaMapping';
-
-export const columnReader = (row: Record<string, unknown>) => {
-  const normalized: Record<string, unknown> = {};
-  Object.entries(row).forEach(([key, value]) => {
-    normalized[key.trim().toLowerCase()] = value;
-  });
-  return (name: string): string | number => {
-    const value = normalized[name];
-    return value === undefined || value === null ? '' : (value as string | number);
-  };
-};
-
 const productHasImage = (product: PreparedProduct) => {
   if (product.image && product.image.trim()) return true;
   if (!product.imageFile) return false;
@@ -122,7 +103,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [imageFolderFiles, setImageFolderFiles] = useState<FileList | null>(null);
   const [imageZipFile, setImageZipFile] = useState<File | null>(null);
-  const [imageSource, setImageSource] = useState<'FOLDER' | 'ZIP'>('FOLDER');
+  const [imageSource] = useState<'FOLDER' | 'ZIP'>('FOLDER');
 
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -146,7 +127,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const [imagesModalOpen, setImagesModalOpen] = useState(false);
   const [availableImages, setAvailableImages] = useState<Record<string, File | Blob>>({});
   const [imageAssignments, setImageAssignments] = useState<Record<string, string[]>>({});
-  const [galleryOpenForSku, setGalleryOpenForSku] = useState<string | null>(null);
   const [uploadSuccessCount, setUploadSuccessCount] = useState<number | null>(null);
   const [missingImageRows, setMissingImageRows] = useState<{ row: number; tableRow: number; sku: string; name: string }[]>([]);
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
@@ -274,7 +254,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     setImagesModalOpen(false);
     setAvailableImages({});
     setImageAssignments({});
-    setGalleryOpenForSku(null);
     setUploadSuccessCount(null);
     setMissingImageRows([]);
     setLogFilter('ALL');
@@ -285,52 +264,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     if (dataFileInputRef.current) dataFileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
     if (zipInputRef.current) zipInputRef.current.value = '';
-  };
-
-  const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-
-  // Selecciona una carpeta local usando la API moderna del navegador (sin el aviso
-  // de "sitio de confianza" que muestra el input clásico webkitdirectory). Si el
-  // navegador no la soporta, cae al input de carpeta tradicional.
-  const handlePickFolder = async () => {
-    if (processing) return;
-
-    const showDirectoryPicker = (
-      window as unknown as {
-        showDirectoryPicker?: () => Promise<{
-          values: () => AsyncIterable<{
-            kind: string;
-            name: string;
-            getFile: () => Promise<File>;
-          }>;
-        }>;
-      }
-    ).showDirectoryPicker;
-    if (typeof showDirectoryPicker !== 'function') {
-      folderInputRef.current?.click();
-      return;
-    }
-
-    try {
-      const dirHandle = await showDirectoryPicker();
-      const files: File[] = [];
-      for await (const entry of dirHandle.values()) {
-        if (entry.kind === 'file') {
-          const ext = entry.name.split('.').pop()?.toLowerCase();
-          if (ext && IMAGE_EXTENSIONS.includes(ext)) {
-            files.push(await entry.getFile());
-          }
-        }
-      }
-
-      if (files.length === 0) return;
-
-      const dt = new DataTransfer();
-      files.forEach((f) => dt.items.add(f));
-      setImageFolderFiles(dt.files);
-    } catch {
-      // El usuario cerró el selector de carpetas sin elegir ninguna.
-    }
   };
 
   // Genera URLs temporales para mostrar las miniaturas de la galería de imágenes
@@ -576,7 +509,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
           // 3. Process rows and reconcile images
           const existingProducts = await getAllProducts();
-          const existingSkus = new Set(existingProducts.map(p => p.sku.trim().toUpperCase()));
           const existingProductMap = new Map(existingProducts.map(p => [p.sku.trim().toUpperCase(), p]));
           const seenSkusInFile = new Set<string>();
 
@@ -586,7 +518,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           let warningCount = 0;
           let errorCount = 0;
 
-          if (uploadMode === 'EXPRESS_STOCK_PRICE') {
+          // Solo queda el camino Express: la publicacion completa la atiende
+          // FullCreationUpload desde el early return de arriba.
+          {
             for (let i = 0; i < rows.length; i++) {
               const row = rows[i];
               const rowNum = i + 2; // Row 1 is header
@@ -655,158 +589,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 status: 'SUCCESS',
                 message: `Listo para actualizar: Precio CLP $${price.toLocaleString('es-CL')} | Stock: ${stock} unid.`
               });
-            }
-          } else {
-            for (let i = 0; i < rows.length; i++) {
-              const row = rows[i];
-              const rowNum = i + 2; // Row 1 is header
-              
-              // Contrato oficial de la plantilla que genera el backend (16 columnas).
-              // Ver InventarioExcelService.COLUMNAS_EXCEL y GET /inventario/excel/esquema.
-              const col = columnReader(row);
-              const rawSku = col('sku_proveedor');
-              const rawName = col('nombre_publicado');
-              const rawCategory = col('categoria');
-              const rawSubcategory = col('subcategoria');
-              const rawPartBrand = col('marca_repuesto');
-              const rawOem = col('referencia_oem');
-              const rawPricingMode = col('tipo_precio');
-              const rawPrice = col('precio');
-              const rawStock = col('stock');
-              const rawCondition = col('condicion');
-              const rawVehicleBrand = col('compatibilidad_marca');
-              const rawVehicleModel = col('compatibilidad_modelo');
-              const rawVehicleYear = col('anio_desde');
-              const rawVehicleYearTo = col('anio_hasta');
-              const rawVehicleVersion = col('motor');
-              const rawDescription = col('descripcion');
-              // Compatibilidad universal: SI publica el repuesto como universal (compatible
-              // con cualquier vehiculo) e ignora las columnas de compatibilidad de la fila.
-              const rawCompatGeneral = col('compatibilidad_general');
-              const isUniversalRow = ['SI', 'SÍ', 'TRUE', '1'].includes(
-                String(rawCompatGeneral).trim().toUpperCase()
-              );
-              // La columna de imagen aún no está en el contrato oficial (llega en la Fase 6);
-              // se lee si el archivo la trae, y si no, las fotos se asignan por SKU más abajo.
-              const rawImageFilename = col('imagen') || col('url_foto');
-
-              const sku = String(rawSku).trim();
-              const name = String(rawName).trim();
-              const pricingMode: 'show_price' | 'quote_only' =
-                String(rawPricingMode).trim().toUpperCase() === 'SOLO_COTIZAR' ? 'quote_only' : 'show_price';
-              const condition: 'ORIGINAL' | 'ALTERNATIVO' =
-                String(rawCondition).trim().toUpperCase() === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL';
-              // En modo cotización el precio va vacío a propósito y no debe validarse.
-              const price = pricingMode === 'quote_only' ? 0 : Number(rawPrice);
-              const stock = Number(rawStock);
-
-              // Detecta problemas de SKU sin abandonar la fila todavía, para poder
-              // construir el producto y dejarlo listo por si el vendedor corrige el SKU.
-              const normalizedSku = sku ? sku.toUpperCase() : '';
-              let skuErrorMessage: string | null = null;
-              if (!sku) {
-                skuErrorMessage = 'Fila omitida: SKU faltante o inválido.';
-              } else if (seenSkusInFile.has(normalizedSku)) {
-                skuErrorMessage = `Fila omitida: El SKU "${sku}" está repetido dentro de la misma plantilla.`;
-              } else if (existingSkus.has(normalizedSku)) {
-                skuErrorMessage = `Fila omitida: El SKU ya existe en el catálogo (registro omitido por SKU duplicado).`;
-              } else {
-                seenSkusInFile.add(normalizedSku);
-              }
-
-              // Validaciones del resto de los campos (se evalúan siempre, para poder
-              // ofrecer un producto ya armado si solo falla el SKU).
-              let fieldErrorMessage: string | null = null;
-              if (!name) {
-                fieldErrorMessage = 'Falta nombre_publicado.';
-              } else if (!String(rawCategory).trim()) {
-                fieldErrorMessage = 'Falta categoria.';
-              } else if (!String(rawPartBrand).trim()) {
-                fieldErrorMessage = 'Falta marca_repuesto.';
-              } else if (pricingMode === 'show_price' && (isNaN(price) || price <= 0)) {
-                fieldErrorMessage = 'precio debe ser un número mayor a 0 (o usa tipo_precio = SOLO_COTIZAR).';
-              } else if (isNaN(stock) || stock < 0) {
-                fieldErrorMessage = 'stock no puede ser un número negativo.';
-              }
-
-              // Image matching engine
-              let imagePath = '';
-              let matchedFile: File | Blob | null = null;
-              const imgFilenameClean = String(rawImageFilename).trim();
-              let imageNotFound = false;
-
-              if (imgFilenameClean) {
-                if (imgFilenameClean.startsWith('http://') || imgFilenameClean.startsWith('https://')) {
-                  imagePath = imgFilenameClean;
-                } else {
-                  const imgKey = imgFilenameClean.toLowerCase();
-                  const matchedBlob = imagesMap[imgKey];
-                  if (matchedBlob) {
-                    matchedFile = matchedBlob;
-                  } else {
-                    imageNotFound = true;
-                  }
-                }
-              }
-
-              const buildProductPayload = () => ({
-                sku: normalizedSku || sku.toUpperCase(),
-                oem: String(rawOem).trim().toUpperCase(),
-                name,
-                category: String(rawCategory).trim(),
-                subcategory: String(rawSubcategory).trim(),
-                partBrand: String(rawPartBrand).trim(),
-                esUniversal: isUniversalRow,
-                vehicleBrand: isUniversalRow ? '' : String(rawVehicleBrand).trim(),
-                vehicleModel: isUniversalRow ? '' : String(rawVehicleModel).trim(),
-                vehicleYear: isUniversalRow ? 0 : (Number(rawVehicleYear) || new Date().getFullYear()),
-                vehicleYearTo: isUniversalRow ? 0 : (Number(rawVehicleYearTo) || Number(rawVehicleYear) || new Date().getFullYear()),
-                vehicleVersion: isUniversalRow ? '' : String(rawVehicleVersion).trim(),
-                pricingMode,
-                condition,
-                price,
-                stock,
-                description: String(rawDescription).trim(),
-                image: imagePath,
-                imageFile: matchedFile,
-                sourceRow: rowNum
-              });
-
-              if (skuErrorMessage) {
-                errorCount++;
-                localLogs.push({
-                  row: rowNum,
-                  sku: sku ? normalizedSku : 'VACÍO',
-                  name,
-                  status: 'ERROR',
-                  message: skuErrorMessage,
-                  // Solo se deja el producto listo para re-encolar si el resto de los datos es válido.
-                  pendingProduct: fieldErrorMessage ? undefined : buildProductPayload()
-                });
-                continue;
-              }
-
-              if (fieldErrorMessage) {
-                localLogs.push({ row: rowNum, sku, name, status: 'ERROR', message: `Fila omitida: ${fieldErrorMessage}` });
-                errorCount++;
-                continue;
-              }
-
-              if (imageNotFound) {
-                localLogs.push({
-                  row: rowNum,
-                  sku: normalizedSku,
-                  name,
-                  status: 'WARNING',
-                  message: `Imagen "${rawImageFilename}" no encontrada en la carpeta. Carga guardada sin foto.`
-                });
-                warningCount++;
-              } else {
-                localLogs.push({ row: rowNum, sku: normalizedSku, name, status: 'SUCCESS', message: 'Fila válida. Lista para cargar.' });
-              }
-              successCount++;
-
-              processedProducts.push(buildProductPayload());
             }
           }
 
@@ -977,20 +759,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   // Abre el popup de asignación de imágenes antes de guardar los productos analizados
   const handleOpenImagesModal = () => {
     if (preparedProducts.length === 0 || stats.errors > 0 || processing || uploadDone) return;
-    setGalleryOpenForSku(null);
     setMissingImageRows([]);
     setImagesModalOpen(true);
-  };
-
-  const toggleImageSelection = (sku: string, filename: string) => {
-    setImageAssignments((prev) => {
-      const current = prev[sku] || [];
-      if (current.includes(filename)) {
-        return { ...prev, [sku]: current.filter((f) => f !== filename) };
-      }
-      if (current.length >= MAX_IMAGES_PER_PRODUCT) return prev;
-      return { ...prev, [sku]: [...current, filename] };
-    });
   };
 
   const handleProceedUpload = async (continueWithGenericImage = false) => {
@@ -1462,26 +1232,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 {preparedProducts.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
                     {/* Leyenda sutil de color amarillo - Solo se muestra en Publicación Completa */}
-                    {uploadMode === 'FULL_CREATION' && (
-                      <div
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.4rem',
-                          background: '#fff8db',
-                          border: '1px solid #facc15',
-                          borderRadius: '8px',
-                          padding: '0.3rem 0.65rem',
-                          fontSize: '0.74rem',
-                          color: '#92400e',
-                          fontWeight: 700
-                        }}
-                        title="Los productos resaltados en amarillo corresponden a aquellos que no tienen una foto real asignada"
-                      >
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
-                        <span>Filas en amarillo = Sin foto asignada</span>
-                      </div>
-                    )}
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Mostrar:</span>
@@ -1538,50 +1288,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               </div>
 
               {/* Banner de ayuda visual para el vendedor */}
-              {uploadMode === 'FULL_CREATION' && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.75rem',
-                    background: 'rgba(27, 100, 218, 0.06)',
-                    border: '1px solid rgba(27, 100, 218, 0.2)',
-                    borderRadius: '12px',
-                    padding: '0.75rem 1rem'
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '32px',
-                      height: '32px',
-                      borderRadius: '8px',
-                      background: 'hsl(var(--primary))',
-                      color: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    <ImageUp size={18} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)', display: 'block' }}>
-                      💡 ¿Cómo asignar fotos a cada producto?
-                    </span>
-                    <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                      Haz clic en el botón azul <strong>"+ Asignar foto"</strong> en la columna <strong>Imágenes</strong> de cada producto para abrir la galería de fotos cargadas. <em>(Nota: Las filas destacadas en 🟡 amarillo indican repuestos sin foto asignada)</em>.
-                    </span>
-                  </div>
-                </div>
-              )}
 
 
-              {uploadMode === 'FULL_CREATION' && Object.keys(availableImages).length === 0 && (
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '1rem 0' }}>
-                  No hay imágenes cargadas en la carpeta. Puedes iniciar la carga sin fotos.
-                </p>
-              )}
 
 
 
@@ -1644,9 +1352,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                         fontWeight: uploadMode === 'EXPRESS_STOCK_PRICE' ? 800 : undefined
                       }}>Stock</th>
                       <th style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Descripción</th>
-                      {uploadMode === 'FULL_CREATION' && (
-                        <th className="sticky-images" style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Imágenes</th>
-                      )}
                       <th className="sticky-action" style={{ padding: '0.5rem 0.75rem', fontSize: '0.7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>Acción</th>
                     </tr>
                   </thead>
@@ -1654,8 +1359,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   <tbody>
                     {paginatedPreparedProducts.map((product, pIndex) => {
                       const actualRowNumber = startIndex + pIndex + 1;
-                      const selected = imageAssignments[product.sku] || [];
-                      const isGalleryOpen = galleryOpenForSku === product.sku;
                       const isMissingImageHighlighted = highlightedMissingImageSkus.has(product.sku);
                       return (
                         <React.Fragment key={product.sku}>
@@ -1711,58 +1414,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                              <td style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={product.description}>
                               {product.description || '—'}
                             </td>
-                            {uploadMode === 'FULL_CREATION' && (
-                              <td className="sticky-images" style={{ padding: '0.5rem 0.75rem' }}>
-                                <button
-                                  type="button"
-                                  onClick={() => setGalleryOpenForSku(isGalleryOpen ? null : product.sku)}
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.35rem',
-                                    padding: '0.3rem 0.6rem',
-                                    borderRadius: '8px',
-                                    fontSize: '0.72rem',
-                                    fontWeight: 700,
-                                    cursor: 'pointer',
-                                    whiteSpace: 'nowrap',
-                                    border: isGalleryOpen
-                                      ? '1px solid hsl(var(--primary))'
-                                      : isMissingImageHighlighted
-                                      ? '1px solid #facc15'
-                                      : selected.length > 0
-                                      ? '1px solid rgba(16, 185, 129, 0.4)'
-                                      : '1px solid hsl(var(--primary) / 0.4)',
-                                    background: isGalleryOpen
-                                      ? 'hsl(var(--primary))'
-                                      : isMissingImageHighlighted
-                                      ? '#fef3c7'
-                                      : selected.length > 0
-                                      ? 'var(--success-bg)'
-                                      : 'rgba(27, 100, 218, 0.08)',
-                                    color: isGalleryOpen
-                                      ? '#ffffff'
-                                      : isMissingImageHighlighted
-                                      ? '#92400e'
-                                      : selected.length > 0
-                                      ? 'hsl(var(--success))'
-                                      : 'hsl(var(--primary))',
-                                    boxShadow: isGalleryOpen ? '0 2px 6px rgba(27, 100, 218, 0.25)' : 'none',
-                                    transition: 'all 0.15s ease'
-                                  }}
-                                  title="Haz clic para abrir la galería de fotos y seleccionar imágenes para este producto"
-                                >
-                                  <ImageUp size={14} />
-                                  <span>
-                                    {isMissingImageHighlighted
-                                      ? 'Asignar foto'
-                                      : selected.length > 0
-                                      ? `${selected.length}/${MAX_IMAGES_PER_PRODUCT} fotos`
-                                      : '+ Asignar foto'}
-                                  </span>
-                                </button>
-                              </td>
-                            )}
 
                             <td className="sticky-action" style={{ padding: '0.5rem 0.75rem' }}>
                               <div style={{ display: 'flex', justifyContent: 'center' }}>
@@ -1789,83 +1440,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                               </div>
                             </td>
                           </tr>
-                          {isGalleryOpen && (
-                            <tr>
-                              <td className="gallery-row-cell" colSpan={15} style={{ paddingTop: '0.75rem', paddingBottom: '1.25rem', paddingLeft: '1rem', background: 'var(--bg-app)' }}>
-                                {Object.keys(availableImages).length === 0 ? (
-                                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No hay imágenes disponibles en la carpeta cargada.</p>
-                                ) : (
-                                  <>
-                                    <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-                                      Selecciona hasta {MAX_IMAGES_PER_PRODUCT} imágenes para <strong>{product.sku}</strong>. Haz clic para marcar o desmarcar.
-                                    </p>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '0.6rem' }}>
-                                      {Object.keys(availableImages).map((filename) => {
-                                        const isSelected = selected.includes(filename);
-                                        const limitReached = !isSelected && selected.length >= MAX_IMAGES_PER_PRODUCT;
-                                        return (
-                                          <div
-                                            key={filename}
-                                            onClick={() => !limitReached && toggleImageSelection(product.sku, filename)}
-                                            title={limitReached ? `Máximo ${MAX_IMAGES_PER_PRODUCT} imágenes por producto` : filename}
-                                            style={{
-                                              position: 'relative',
-                                              border: isSelected ? '2px solid hsl(var(--primary))' : '1px solid var(--border-color)',
-                                              borderRadius: '10px',
-                                              overflow: 'hidden',
-                                              cursor: limitReached ? 'not-allowed' : 'pointer',
-                                              opacity: limitReached ? 0.4 : 1,
-                                              background: 'var(--bg-card)',
-                                              transition: 'all 0.15s ease'
-                                            }}
-                                          >
-                                            <img
-                                              src={imageObjectUrls[filename]}
-                                              alt={filename}
-                                              style={{ width: '100%', height: '72px', objectFit: 'cover', display: 'block' }}
-                                            />
-                                            {isSelected && (
-                                              <div
-                                                style={{
-                                                  position: 'absolute',
-                                                  top: 4,
-                                                  right: 4,
-                                                  background: 'hsl(var(--primary))',
-                                                  color: '#fff',
-                                                  borderRadius: '50%',
-                                                  width: 20,
-                                                  height: 20,
-                                                  display: 'flex',
-                                                  alignItems: 'center',
-                                                  justifyContent: 'center',
-                                                  boxShadow: '0 1px 4px rgba(0,0,0,0.25)'
-                                                }}
-                                              >
-                                                <CheckCircle2 size={14} />
-                                              </div>
-                                            )}
-                                            <span
-                                              style={{
-                                                fontSize: '0.6rem',
-                                                display: 'block',
-                                                padding: '0.2rem 0.3rem',
-                                                whiteSpace: 'nowrap',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                color: 'var(--text-secondary)'
-                                              }}
-                                            >
-                                              {filename}
-                                            </span>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </>
-                                )}
-                              </td>
-                            </tr>
-                          )}
                         </React.Fragment>
                       );
                     })}
@@ -2029,100 +1603,6 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                 </div>
 
                 {/* Input 2: Folder or ZIP files */}
-                {uploadMode === 'FULL_CREATION' && (
-                  <div className="form-group">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', height: '15px' }}>
-                      <label className="form-label" style={{ margin: 0, fontSize: '0.72rem' }}>2. Fotos</label>
-                      <div style={{ display: 'flex', gap: '2px', background: 'var(--border-color)', padding: '1px', borderRadius: '4px' }}>
-                        <button
-                          type="button"
-                          style={{ border: 'none', background: imageSource === 'FOLDER' ? 'var(--bg-sidebar)' : 'transparent', fontSize: '0.6rem', padding: '0.1rem 0.25rem', borderRadius: '3px', cursor: 'pointer', fontWeight: 600 }}
-                          onClick={() => { setImageSource('FOLDER'); setImageZipFile(null); }}
-                          disabled={processing}
-                        >
-                          Carpeta
-                        </button>
-                        <button
-                          type="button"
-                          style={{ border: 'none', background: imageSource === 'ZIP' ? 'var(--bg-sidebar)' : 'transparent', fontSize: '0.6rem', padding: '0.1rem 0.25rem', borderRadius: '3px', cursor: 'pointer', fontWeight: 600 }}
-                          onClick={() => { setImageSource('ZIP'); setImageFolderFiles(null); }}
-                          disabled={processing}
-                        >
-                          ZIP
-                        </button>
-                      </div>
-                    </div>
-
-                    {imageSource === 'FOLDER' ? (
-                      <div
-                        className={`dropzone compact ${imageFolderFiles ? 'active' : ''}`}
-                        role="button"
-                        tabIndex={0}
-                        onClick={handlePickFolder}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handlePickFolder();
-                          }
-                        }}
-                        style={{ cursor: processing ? 'not-allowed' : 'pointer' }}
-                      >
-                        <input
-                          type="file"
-                          ref={folderInputRef}
-                          multiple
-                          style={{ display: 'none' }}
-                          onChange={(e) => {
-                            const files = e.target.files;
-                            if (files && files.length > 0) {
-                              setImageFolderFiles(files);
-                            } else {
-                              setImageFolderFiles(null);
-                            }
-                          }}
-                          disabled={processing}
-                          {...({
-                            webkitdirectory: '',
-                            directory: '',
-                          } as Record<string, string>)}
-                        />
-                        <FolderOpen size={24} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
-                        <span className="dropzone-title">Carpeta Local</span>
-                        <span className="dropzone-desc">Sube carpeta con fotos</span>
-                        {imageFolderFiles && imageFolderFiles.length > 0 && (
-                          <div className="file-selected-badge" style={{ marginTop: '0.25rem', background: 'rgba(6, 182, 212, 0.1)', color: 'hsl(var(--accent))', borderColor: 'rgba(6, 182, 212, 0.2)', maxWidth: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', fontSize: '0.72rem' }}>
-                              {imageFolderFiles.length} imágenes
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <label className={`dropzone compact ${imageZipFile ? 'active' : ''}`}>
-                        <input
-                          type="file"
-                          ref={zipInputRef}
-                          accept=".zip"
-                          style={{ display: 'none' }}
-                          onChange={(e) => setImageZipFile(e.target.files?.[0] || null)}
-                          disabled={processing}
-                        />
-                        <UploadCloud size={24} className="dropzone-icon" style={{ color: 'hsl(var(--accent))' }} />
-                        <span className="dropzone-title">Archivo ZIP</span>
-                        <span className="dropzone-desc">Sube archivo ZIP con fotos</span>
-                        {imageZipFile && (
-                          <div className="file-selected-badge" style={{ marginTop: '0.25rem', background: 'rgba(6, 182, 212, 0.1)', color: 'hsl(var(--accent))', borderColor: 'rgba(6, 182, 212, 0.2)', maxWidth: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <CheckCircle2 size={13} style={{ flexShrink: 0 }} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', fontSize: '0.72rem' }} title={imageZipFile.name}>
-                              {imageZipFile.name}
-                            </span>
-                          </div>
-                        )}
-                      </label>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* Action trigger button */}
@@ -2131,14 +1611,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                   type="button"
                   className="btn btn-primary"
                   style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.75rem' }}
-                  disabled={
-                    !dataFile ||
-                    processing ||
-                    (uploadMode === 'FULL_CREATION' && (
-                      (imageSource === 'FOLDER' && !imageFolderFiles) ||
-                      (imageSource === 'ZIP' && !imageZipFile)
-                    ))
-                  }
+                  disabled={!dataFile || processing}
                   onClick={handleAnalyze}
                 >
                   {processing ? (

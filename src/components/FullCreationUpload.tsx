@@ -6,6 +6,7 @@ import { getStoredSession } from '../utils/session';
 import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 import { descargarFotos, esUrlDeImagen } from '../utils/plantillaFotos';
+import { useMapeosGuardados } from '../utils/plantillaMapeos';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -207,6 +208,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   // Fotos que el vendedor declaro en su propio Excel (URL o nombre de archivo), por SKU.
   // No viajan en el archivo oficial: son el insumo de esta fase B.
   const [fotosDeclaradas, setFotosDeclaradas] = useState<Record<string, string[]> | null>(null);
+  // El Excel propio del vendedor (no el generado), para poder volver al paso de mapeo.
+  const [archivoDelVendedor, setArchivoDelVendedor] = useState<File | null>(null);
   const [descargandoFotos, setDescargandoFotos] = useState<{ hechas: number; total: number } | null>(null);
   const [fotosNoTraidas, setFotosNoTraidas] = useState<{ sku: string; url: string; motivo: string }[]>([]);
   // Evita que la subida automatica de fotos (ver efecto mas abajo) se dispare mas de una
@@ -224,6 +227,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   // backend al abrir la carga masiva. Si no responde se sigue con el contrato de respaldo
   // del panel: un endpoint caido no puede dejar al vendedor sin poder preparar su archivo.
   const { esquema } = useEsquemaPlantilla(isOpen);
+  // Los mapeos guardados en la cuenta del vendedor, para que no dependan del navegador.
+  const { mapeos: mapeosGuardados, guardar: guardarMapeo } = useMapeosGuardados(isOpen);
 
 
 
@@ -408,12 +413,26 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     resetPhotoState();
   };
 
-  const handleMappedFileGenerated = (file: File, fotos?: Record<string, string[]>) => {
+  const handleMappedFileGenerated = (
+    file: File,
+    extras?: { fotos?: Record<string, string[]>; archivoOriginal?: File },
+  ) => {
     onFileSelected(file);
     setDataFromMapper(true);
     setShowMapper(false);
     // onFileSelected limpia el estado de fotos, asi que las declaradas se guardan despues.
-    setFotosDeclaradas(fotos ?? null);
+    setFotosDeclaradas(extras?.fotos ?? null);
+    // Se conserva el Excel propio del vendedor para poder volver a relacionar columnas sin
+    // pedirle que lo busque otra vez en su computador.
+    setArchivoDelVendedor(extras?.archivoOriginal ?? null);
+  };
+
+  /** Vuelve al mapeo con el archivo original y la relacion que el vendedor ya definio. */
+  const volverAMapear = () => {
+    setPreview(null);
+    setResult(null);
+    setErrorMsg(null);
+    setShowMapper(true);
   };
 
   const onFileSelected = (file: File | null) => {
@@ -1352,6 +1371,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                   onCancel={() => setShowMapper(false)}
                   onGenerated={handleMappedFileGenerated}
                   esquema={esquema}
+                  mapeosGuardados={mapeosGuardados}
+                  onGuardarMapeo={guardarMapeo}
+                  archivoInicial={archivoDelVendedor}
                 />
               ) : !result ? (
                 <div className="bulk-upload-split-layout">
@@ -1391,8 +1413,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                           <b> Iniciar Carga</b> para publicar en la plataforma web y en la app.
                         </p>
                         <div className="mapper-generated-actions">
-                          <button type="button" className="btn btn-secondary" onClick={() => setShowMapper(true)} disabled={busy}>
-                            <Wand2 size={13} /> Volver a mapear
+                          <button type="button" className="btn btn-secondary" onClick={volverAMapear} disabled={busy}>
+                            <Wand2 size={13} /> Volver a relacionar columnas
                           </button>
                           <button type="button" className="btn btn-secondary" onClick={() => { onFileSelected(null); setDataFromMapper(false); }} disabled={busy}>
                             Descartar
@@ -1695,6 +1717,17 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                               </span>
                             </div>
                           )
+                        )}
+                        {dataFromMapper && archivoDelVendedor && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ alignSelf: 'flex-start' }}
+                            onClick={volverAMapear}
+                            disabled={busy}
+                          >
+                            <Wand2 size={13} /> Volver a relacionar columnas
+                          </button>
                         )}
                       </div>
                     )}

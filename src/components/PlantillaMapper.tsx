@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
   UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check, Image as ImageIcon,
@@ -54,10 +54,16 @@ interface PlantillaMapperProps {
    * `fotos` son las que el vendedor declaró en su Excel (URL o nombre de archivo), por
    * SKU: no van en el archivo oficial, van al paso de fotos.
    */
-  onGenerated: (file: File, fotos?: Record<string, string[]>) => void;
+  onGenerated: (file: File, extras?: { fotos?: Record<string, string[]>; archivoOriginal?: File }) => void;
   onCancel: () => void;
   /** Esquema vigente de la plantilla. Por defecto, el contrato de respaldo del panel. */
   esquema?: EsquemaPlantilla;
+  /** Mapeos guardados en la cuenta del vendedor, por firma de encabezados. */
+  mapeosGuardados?: Record<string, Mapping>;
+  /** Guarda el mapeo en la cuenta. Sin esto, sólo queda en este navegador. */
+  onGuardarMapeo?: (firma: string, mapping: Mapping, archivoNombre?: string) => void;
+  /** Archivo del vendedor con el que abrir, para volver al mapeo sin re-subirlo. */
+  archivoInicial?: File | null;
 }
 
 const BIG_FILE_ROWS = 5000;
@@ -119,6 +125,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   onGenerated,
   onCancel,
   esquema = ESQUEMA_FALLBACK,
+  mapeosGuardados,
+  onGuardarMapeo,
+  archivoInicial,
 }) => {
   const [userFile, setUserFile] = useState<File | null>(null);
   const [hojas, setHojas] = useState<HojaUsuario[]>([]);
@@ -147,7 +156,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const aplicarSeleccion = (libro: HojaUsuario[], indiceHoja: number, fila: number) => {
     const hoja = libro[indiceHoja];
     const { cols, rows } = columnasDeHoja(hoja?.aoa ?? [], fila);
-    const saved = cols.length ? loadSavedMapping(headerSignature(cols)) : null;
+    const firma = cols.length ? headerSignature(cols) : '';
+    const saved = firma ? (mapeosGuardados?.[firma] ?? loadSavedMapping(firma)) : null;
     const base = saved ? reconcileMapping(saved, cols, campos) : autoDetectMapping(cols, campos);
     setUserCols(cols);
     setUserRows(rows);
@@ -193,6 +203,16 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     setPaso(1);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // Reabrir el mapeo con el archivo que el vendedor ya habia subido: volver atras no
+  // puede costarle buscar el Excel otra vez en su computador.
+  const archivoInicialRef = useRef<File | null>(null);
+  useEffect(() => {
+    if (!archivoInicial || archivoInicialRef.current === archivoInicial) return;
+    archivoInicialRef.current = archivoInicial;
+    void handleFile(archivoInicial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [archivoInicial]);
 
   const colById = useMemo(() => new Map(userCols.map((c) => [c.id, c])), [userCols]);
 
@@ -479,8 +499,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     setTimeout(async () => {
       try {
         const file = await buildFile();
-        saveMapping(headerSignature(userCols), mapping);
-        onGenerated(file, fotosDeclaradas ?? undefined);
+        const firma = headerSignature(userCols);
+        saveMapping(firma, mapping);
+        onGuardarMapeo?.(firma, mapping, userFile?.name);
+        onGenerated(file, {
+          fotos: fotosDeclaradas ?? undefined,
+          // El archivo del vendedor viaja de vuelta para poder volver a relacionar sin
+          // pedirle que lo suba de nuevo.
+          archivoOriginal: userFile ?? undefined,
+        });
       } catch (err) {
         setParseError(err instanceof Error ? err.message : 'No se pudo generar el archivo.');
         setGenerating(false);

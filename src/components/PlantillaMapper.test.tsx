@@ -340,8 +340,8 @@ describe('PlantillaMapper', () => {
     await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
 
     // Las fotos viajan aparte: la plantilla no tiene columna de imagen.
-    const [file, fotos] = onGenerated.mock.calls[0];
-    expect(fotos).toEqual({
+    const [file, extras] = onGenerated.mock.calls[0];
+    expect(extras.fotos).toEqual({
       'A-1': ['https://mitienda.cl/fotos/a1.jpg'],
       'A-2': ['https://mitienda.cl/fotos/a2.jpg'],
     });
@@ -349,6 +349,49 @@ describe('PlantillaMapper', () => {
     expect(aoa[0]).toEqual([...PLANTILLA_COLUMNAS]);
     // Y no se cuela en la descripción, que es donde iba a parar antes.
     expect(String(aoa[1][PLANTILLA_COLUMNAS.indexOf('descripcion')])).not.toContain('mitienda');
+  });
+
+  it('usa el mapeo guardado en la cuenta, aunque este navegador no sepa nada', async () => {
+    const onGuardarMapeo = vi.fn();
+    // Mapeo "de la cuenta": el vendedor ya relacionó estas columnas en otro equipo.
+    const mapeosGuardados = {
+      'codigo|precio|producto': {
+        oficial: { sku_proveedor: '0', nombre_publicado: '1', precio: '2' },
+        extras: {},
+        valueMap: {},
+        defaults: { categoria: 'Filtros', marca_repuesto: 'Bosch', stock: '1' },
+      },
+    };
+    render(
+      <PlantillaMapper
+        onGenerated={vi.fn()}
+        onCancel={vi.fn()}
+        mapeosGuardados={mapeosGuardados}
+        onGuardarMapeo={onGuardarMapeo}
+      />,
+    );
+    await subirYRelacionar(['Codigo,Producto,Precio', 'A-1,Filtro,4990'].join('\n'));
+
+    expect(screen.getByText(/Aplicamos la relación que guardaste antes/)).toBeInTheDocument();
+    expect(screen.getByLabelText('SKU / Código')).toHaveDisplayValue('Codigo');
+    // Y los obligatorios ya venían resueltos con los valores fijos guardados.
+    expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled();
+
+    clic(/Siguiente/);
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGuardarMapeo).toHaveBeenCalledTimes(1));
+    expect(onGuardarMapeo.mock.calls[0][0]).toBe('codigo|precio|producto');
+    expect(onGuardarMapeo.mock.calls[0][2]).toBe('mi-inventario.csv');
+  });
+
+  it('vuelve al mapeo con el archivo que el vendedor ya había subido', async () => {
+    const archivo = new File([CSV], 'mi-inventario.csv', { type: 'text/csv' });
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} archivoInicial={archivo} />);
+
+    // Sin volver a elegir el archivo, el wizard abre directo en el paso 1 con sus datos.
+    expect(await screen.findByRole('heading', { name: /Revisemos que estemos leyendo bien tu archivo/ }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/2 filas · 7 columnas/)).toBeInTheDocument();
   });
 
   it('deja elegir la hoja cuando el libro trae varias', async () => {
