@@ -3,7 +3,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import * as XLSX from 'xlsx';
 import { PlantillaMapper } from './PlantillaMapper';
-import { PLANTILLA_COLUMNAS } from '../utils/plantillaMapping';
+import { ESQUEMA_FALLBACK, PLANTILLA_COLUMNAS, type EsquemaPlantilla } from '../utils/plantillaMapping';
+
+/** Esquema como el que devuelve el backend, con catálogos de verdad. */
+const ESQUEMA_CON_CATALOGOS: EsquemaPlantilla = {
+  ...ESQUEMA_FALLBACK,
+  catalogos: {
+    ...ESQUEMA_FALLBACK.catalogos,
+    categorias: ['Frenos', 'Filtros', 'Suspensión'],
+    subcategoriasPorCategoria: { Frenos: ['Pastillas'], Filtros: ['Filtro de aceite'] },
+    marcasRepuesto: ['Bosch', 'Brembo'],
+  },
+};
 
 /** Lee el .xlsx generado (File) y devuelve la matriz de la primera hoja. */
 async function readGeneratedFile(file: File): Promise<unknown[][]> {
@@ -197,6 +208,51 @@ describe('PlantillaMapper', () => {
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText('Alternativo', { selector: '.mapper-ficha-chip.cond' })).toBeInTheDocument();
+  });
+
+  it('propone la categoría del catálogo que más se parece, ordenada por cuántos repuestos afecta', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla,Brembo,Frenos delanteros,4990,10',
+      'A-2,Pastilla trasera,Brembo,Frenos delanteros,5990,4',
+      'A-3,Filtro,Bosh,Filtros,3990,7',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // "Frenos delanteros" no está en el catálogo: el backend rechazaría esas dos filas.
+    expect(screen.getByText(/Tus palabras y las de RepuesTop \(2 sin responder\)/)).toBeInTheDocument();
+    expect(screen.getByText('2 repuestos')).toBeInTheDocument();
+    const decision = screen.getByLabelText('Categoría: Frenos delanteros');
+    expect(decision).toHaveDisplayValue('dejar como está (no se va a publicar)');
+
+    // Y la marca mal escrita se avisa, pero no bloquea: el backend la crearía.
+    expect(screen.getByLabelText('Marca del repuesto: Bosh')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Usar todas las sugerencias/ }));
+    await waitFor(() => expect(decision).toHaveDisplayValue('Frenos — parecido'));
+    expect(screen.getByLabelText('Marca del repuesto: Bosh')).toHaveDisplayValue('Bosch — parecido');
+  });
+
+  it('con la traducción aplicada, las filas pasan a ser publicables', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla,Brembo,Frenos delanteros,4990,10',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    expect(screen.getByText('1', { selector: '.mapper-counts .mal b' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Usar todas las sugerencias/ }));
+    await waitFor(() => expect(screen.getByText('1', { selector: '.mapper-counts .ok b' })).toBeInTheDocument());
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
+    const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
+    expect(aoa[1][PLANTILLA_COLUMNAS.indexOf('categoria')]).toBe('Frenos');
   });
 
   it('deja elegir la hoja cuando el libro trae varias', async () => {

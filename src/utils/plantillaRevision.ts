@@ -16,6 +16,8 @@
  */
 import type { CampoMeta } from './plantillaMapping';
 import { COLUMNAS_NUMERICAS, normalizarNumero } from './plantillaNormalizacion';
+import { buscarEnCatalogo, sugerirDelCatalogo } from './plantillaCatalogos';
+import type { EsquemaPlantilla } from './plantillaMapping';
 
 export { normalizarNumero };
 
@@ -62,9 +64,19 @@ const etiquetaDe = (campos: CampoMeta[], key: string) =>
 export function revisarAoA(
   aoa: (string | number)[][],
   campos: CampoMeta[],
-  opciones: { maxFilas?: number; primeraFilaArchivo?: number } = {},
+  opciones: { maxFilas?: number; primeraFilaArchivo?: number; catalogos?: EsquemaPlantilla['catalogos'] } = {},
 ): RevisionArchivo {
-  const { maxFilas = 20, primeraFilaArchivo = 2 } = opciones;
+  const { maxFilas = 20, primeraFilaArchivo = 2, catalogos } = opciones;
+  // Sin catálogos —porque el esquema no respondió— no se revisa nada contra ellos: es
+  // preferible no decir nada a inventar un error con una copia local desactualizada.
+  const categorias = catalogos?.categorias ?? [];
+  const marcas = catalogos?.marcasRepuesto ?? [];
+  const subcategoriasPorCategoria = catalogos?.subcategoriasPorCategoria ?? {};
+  // Una sugerencia sólo se nombra si existe; el mensaje ya sirve sin ella.
+  const conSugerencia = (valor: string, catalogo: string[]) => {
+    const [mejor] = sugerirDelCatalogo(valor, catalogo, 1);
+    return mejor ? ` ¿Querías decir "${mejor}"?` : '';
+  };
   const columnas = (aoa[0] ?? []).map(String);
   const indice = new Map(columnas.map((c, i) => [c, i]));
   const obligatorias = campos.filter((c) => c.required).map((c) => c.key);
@@ -121,6 +133,30 @@ export function revisarAoA(
       if (bruto && !SI_NO.has(upper) && !NO_EXPLICITO.has(upper)) {
         agregar(key, 'aviso', `No reconocemos "${bruto}": se va a tomar como NO.`);
       }
+    }
+
+    // Catálogos: cada columna tiene su propia consecuencia en el backend.
+    const categoria = leer('categoria');
+    const categoriaOficial = categoria ? buscarEnCatalogo(categoria, categorias) : null;
+    if (categoria && categorias.length > 0 && !categoriaOficial) {
+      agregar('categoria', 'error',
+        `La categoría "${categoria}" no existe en RepuesTop.${conSugerencia(categoria, categorias)}`);
+    }
+
+    const subcategoria = leer('subcategoria');
+    if (subcategoria && categoriaOficial) {
+      const deLaCategoria = subcategoriasPorCategoria[categoriaOficial] ?? [];
+      if (deLaCategoria.length > 0 && !buscarEnCatalogo(subcategoria, deLaCategoria)) {
+        agregar('subcategoria', 'aviso',
+          `"${subcategoria}" no es una subcategoría de ${categoriaOficial}: el repuesto se va a `
+          + `publicar sin subcategoría.${conSugerencia(subcategoria, deLaCategoria)}`);
+      }
+    }
+
+    const marca = leer('marca_repuesto');
+    if (marca && marcas.length > 0 && !buscarEnCatalogo(marca, marcas)) {
+      agregar('marca_repuesto', 'aviso',
+        `"${marca}" no está en el catálogo: se va a crear como marca nueva.${conSugerencia(marca, marcas)}`);
     }
 
     const desde = normalizarNumero(leer('anio_desde')).numero;

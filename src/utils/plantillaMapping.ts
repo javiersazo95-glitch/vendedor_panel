@@ -507,7 +507,6 @@ export function buildOfficialAoADetallado(
 ): { aoa: (string | number)[][]; cambios: CambioNormalizacion[] } {
   const cambios: CambioNormalizacion[] = [];
   const columnas = campos.map((c) => c.key);
-  const campoByKey = new Map(campos.map((c) => [c.key, c]));
   // Las columnas que se vacían cuando la fila es universal salen del propio esquema:
   // son las que el panel agrupa como compatibilidad, años y motor.
   const universalBlankKeys = campos.filter((c) => c.group).map((c) => c.key);
@@ -541,9 +540,10 @@ export function buildOfficialAoADetallado(
     // Valor base por columna oficial.
     const cells: Record<string, string> = {};
     for (const key of columnas) {
-      let value = readCell(row, mapping.oficial[key] ?? null);
-      if (campoByKey.get(key)?.enumHint) value = applyValueMap(key, value);
-      cells[key] = value;
+      // La traducción de valores vale para cualquier columna, no sólo para las de lista:
+      // desde la Fase 5 también se traducen categorías, subcategorías y marcas contra el
+      // catálogo real. Sólo hay tabla donde el vendedor decidió algo.
+      cells[key] = applyValueMap(key, readCell(row, mapping.oficial[key] ?? null));
     }
 
     // Rango de años en una sola columna: "2014-2020" se reparte en las dos oficiales.

@@ -163,3 +163,57 @@ describe('fichaDesdeFila', () => {
     expect(fichaDesdeFila(columnas, filaBase({ condicion: 'ALTERNATIVO' })).condicion).toBe('Alternativo');
   });
 });
+
+/* --------------------------------------------------------------------------
+ * Fase 5: revisión contra los catálogos reales, con la consecuencia de cada columna.
+ * ------------------------------------------------------------------------ */
+
+const CATALOGOS = {
+  categorias: ['Frenos', 'Filtros'],
+  subcategoriasPorCategoria: { Frenos: ['Pastillas', 'Discos'], Filtros: ['Filtro de aceite'] },
+  marcasRepuesto: ['Bosch', 'Brembo'],
+  marcasVehiculo: [],
+  tiposPrecio: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'],
+  condiciones: ['ORIGINAL', 'ALTERNATIVO'],
+};
+
+const revisarConCatalogos = (over: Record<string, string>) =>
+  revisarAoA([columnas, filaBase(over)], PLANTILLA_CAMPOS, { catalogos: CATALOGOS });
+
+describe('revisarAoA contra los catálogos', () => {
+  it('una categoría que no existe es error: el backend no la crea y la fila no se publica', () => {
+    const r = revisarConCatalogos({ categoria: 'Frenos delanteros' });
+    expect(r.conError).toBe(1);
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'categoria');
+    expect(problema?.severidad).toBe('error');
+    expect(problema?.mensaje).toContain('¿Querías decir "Frenos"?');
+  });
+
+  it('una subcategoría ajena a la categoría es aviso: el repuesto se publica sin ella', () => {
+    const r = revisarConCatalogos({ categoria: 'Frenos', subcategoria: 'Filtro de aceite' });
+    expect(r.conError).toBe(0);
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'subcategoria');
+    expect(problema?.severidad).toBe('aviso');
+    expect(problema?.mensaje).toContain('sin subcategoría');
+  });
+
+  it('una marca fuera del catálogo es aviso: el backend la crea, pero conviene revisarla', () => {
+    const r = revisarConCatalogos({ categoria: 'Frenos', marca_repuesto: 'Bosh' });
+    expect(r.conError).toBe(0);
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'marca_repuesto');
+    expect(problema?.severidad).toBe('aviso');
+    expect(problema?.mensaje).toContain('marca nueva');
+    expect(problema?.mensaje).toContain('"Bosch"');
+  });
+
+  it('lo que sí está en el catálogo no molesta, aunque cambien acentos o mayúsculas', () => {
+    const r = revisarConCatalogos({ categoria: 'FRENOS', subcategoria: 'pastillas', marca_repuesto: 'bosch' });
+    expect(r.filas[0].problemas).toEqual([]);
+  });
+
+  it('sin catálogos no se revisa nada contra ellos: el esquema pudo no responder', () => {
+    const r = revisar([filaBase({ categoria: 'Cualquier cosa', marca_repuesto: 'Marca X' })]);
+    expect(r.conError).toBe(0);
+    expect(r.filas[0].problemas).toEqual([]);
+  });
+});

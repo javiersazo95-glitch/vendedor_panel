@@ -62,6 +62,8 @@ npm run preview   # sirve el build de dist/ localmente
 - `src/utils/plantillaNormalizacion.ts` — limpieza de los valores del vendedor (precios
   chilenos, rangos de años, la X como sí, espacios). Misma interpretación de números que
   `InventarioExcelService.normalizarNumero`.
+- `src/utils/plantillaCatalogos.ts` — comparación contra los catálogos reales de categorías,
+  subcategorías y marcas, con sugerencias del más parecido.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).

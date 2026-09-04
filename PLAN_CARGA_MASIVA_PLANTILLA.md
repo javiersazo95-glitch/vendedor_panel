@@ -352,7 +352,7 @@ sólo tenían las formas en singular. Se agregaron los plurales y "rango de año
 123 tests verdes en el panel, 22 de ellos nuevos sobre la limpieza, los rangos de años y los
 valores fijos.
 
-### Fase 5 — Traducción contra los catálogos reales `panel`
+### Fase 5 — Traducción contra los catálogos reales `panel` — COMPLETADA 2026-09-04
 
 Resuelve U3. Es la fase que más errores elimina.
 
@@ -364,6 +364,34 @@ Resuelve U3. Es la fase que más errores elimina.
 - Presentarlo como lista de decisiones pendientes ordenada por frecuencia ("aparece en 43
   filas"), no como 200 selects.
 - Guardar las traducciones junto al mapeo.
+
+**Resultado.** `plantillaCatalogos.ts` compara los valores del vendedor contra los catálogos
+reales que ya entrega el esquema desde la Fase 1. Lo primero fue mirar qué hace el backend con
+cada columna, porque la consecuencia es distinta y la severidad tenía que seguirla:
+
+- **categoría** — `buscarCategoria` la busca y **no la crea**: si no está, la fila no se
+  publica. Es el error masivo más caro del flujo, y ahora se ve antes de subir.
+- **subcategoría** — tiene que pertenecer a la categoría del producto; si no, el repuesto se
+  publica **sin subcategoría** y el backend deja una advertencia. Es aviso, no error.
+- **marca de repuesto** — `buscarOCrearMarca` la crea si no existe. Un "Bosh" mal escrito no
+  rompe nada, pero deja una marca nueva en el catálogo: así se llegó a las 45 categorías
+  duplicadas que hubo que consolidar a mano. Es aviso, con la sugerencia al lado.
+
+La sugerencia combina palabras compartidas ("Frenos delanteros" → Frenos), inclusión y
+distancia de edición ("Bosh" → Bosch), y se queda con la mejor de las tres; bajo 0,55 no se
+sugiere nada, porque una sugerencia mala es ruido. Las decisiones se muestran **ordenadas por
+frecuencia** ("aparece en 8 repuestos"), con un botón **"Usar todas las sugerencias"** que las
+aplica de una vez. Las traducciones viven en el `valueMap` que ya se guardaba con el mapeo, así
+que la próxima lista del mismo vendedor llega traducida.
+
+`buildOfficialAoA` aplica ahora el `valueMap` a **todas** las columnas y no sólo a las de lista,
+que es lo que hace falta para traducir categorías y marcas.
+
+En la prueba del navegador, una lista de 12 repuestos con "Frenos delanteros" en 8 filas y
+"Bosh" en 3 pasó de **3 publicables a 11 con un clic**. La única que queda es la que de verdad
+necesita decisión humana ("Amortiguacion" no se parece lo suficiente a "Suspensión").
+
+140 tests verdes en el panel, 17 de ellos nuevos.
 
 ### Fase 6 — Compatibilidad múltiple y texto libre `panel` `backend`
 

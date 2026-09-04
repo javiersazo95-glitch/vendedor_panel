@@ -35,6 +35,12 @@ import {
   pareceColumnaDeRangos,
   partirRangoAnios,
 } from '../utils/plantillaNormalizacion';
+import {
+  contarValoresDeColumna,
+  decisionesDeCatalogo,
+  todasLasSubcategorias,
+  type DecisionCatalogo,
+} from '../utils/plantillaCatalogos';
 
 interface PlantillaMapperProps {
   onGenerated: (file: File) => void;
@@ -206,10 +212,14 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     if (paso !== 3 || !mapping) return { revision: null, cambios: [] };
     const { aoa, cambios: hechos } = buildOfficialAoADetallado(userRows, userCols, mapping, campos);
     return {
-      revision: revisarAoA(aoa, campos, { maxFilas: 20, primeraFilaArchivo: filaEncabezados + 2 }),
+      revision: revisarAoA(aoa, campos, {
+        maxFilas: 20,
+        primeraFilaArchivo: filaEncabezados + 2,
+        catalogos: esquema.catalogos,
+      }),
       cambios: hechos,
     };
-  }, [paso, mapping, userRows, userCols, campos, filaEncabezados]);
+  }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema]);
 
   /** Los arreglos automáticos, agrupados para poder mostrarlos como "antes → después". */
   const arreglos = useMemo(() => agruparCambios(cambios), [cambios]);
@@ -225,6 +235,45 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       revision.filas.some((f) => (f.valores[i] ?? '').trim() !== '' || f.problemas.some((p) => p.columna === col)),
     );
   }, [revision]);
+
+  /** El catálogo real que le corresponde a una columna, o vacío si no tiene. */
+  const catalogoDe = useMemo(() => {
+    const subcategorias = todasLasSubcategorias(esquema.catalogos.subcategoriasPorCategoria);
+    return (key: string): string[] => {
+      if (key === 'categoria') return esquema.catalogos.categorias;
+      if (key === 'marca_repuesto') return esquema.catalogos.marcasRepuesto;
+      if (key === 'subcategoria') return subcategorias;
+      return [];
+    };
+  }, [esquema]);
+
+  /**
+   * Los valores del vendedor que no están en el catálogo, por columna y ordenados por
+   * frecuencia: arreglar el que aparece en 43 filas vale 43 veces más que el de una sola.
+   * El cálculo es pesado, así que depende de qué columna se mapeó y no del mapeo entero.
+   */
+  const bloquesCatalogo = useMemo(() => {
+    if (paso !== 3 || !mapping) return [];
+    return ['categoria', 'subcategoria', 'marca_repuesto']
+      .map((key) => {
+        const campo = campos.find((c) => c.key === key);
+        const id = mapping.oficial[key];
+        const col = id ? userCols.find((c) => c.id === id) : undefined;
+        const catalogo = catalogoDe(key);
+        if (!campo || !col || catalogo.length === 0) return null;
+        const decisiones = decisionesDeCatalogo(contarValoresDeColumna(userRows, col.index), catalogo);
+        return decisiones.length ? { campo, columna: col, catalogo, decisiones } : null;
+      })
+      .filter((b): b is { campo: CampoMeta; columna: UserColumn; catalogo: string[]; decisiones: DecisionCatalogo[] } => !!b);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paso, userRows, userCols, campos, catalogoDe,
+    mapping?.oficial.categoria, mapping?.oficial.subcategoria, mapping?.oficial.marca_repuesto]);
+
+  /** Cuántas decisiones de catálogo siguen sin responder. */
+  const pendientesCatalogo = useMemo(() => bloquesCatalogo.reduce(
+    (total, b) => total + b.decisiones.filter((d) => !mapping?.valueMap[b.campo.key]?.[d.valor]).length,
+    0,
+  ), [bloquesCatalogo, mapping]);
 
   /** El primer repuesto que sí se puede publicar: es el que vale la pena mostrar armado. */
   const ficha = useMemo(() => {
@@ -280,6 +329,22 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     }
     return '';
   }, [mapping, userCols, userRows]);
+
+  /** Aplica de una vez la mejor sugerencia de cada decisión que siga sin responder. */
+  const aceptarSugerencias = () => {
+    setMapping((prev) => {
+      if (!prev) return prev;
+      const valueMap = { ...prev.valueMap };
+      for (const bloque of bloquesCatalogo) {
+        const tabla = { ...(valueMap[bloque.campo.key] ?? {}) };
+        for (const d of bloque.decisiones) {
+          if (!tabla[d.valor] && d.sugerencias[0]) tabla[d.valor] = d.sugerencias[0];
+        }
+        valueMap[bloque.campo.key] = tabla;
+      }
+      return { ...prev, valueMap };
+    });
+  };
 
   const setDividirAnios = (valor: boolean) => {
     setMapping((prev) => (prev ? { ...prev, dividirAnios: valor } : prev));
@@ -668,7 +733,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         <option key={c.id} value={c.id}>{c.displayHeader}</option>
                       ))}
                     </select>
-                    {!value && (campo.enumHint ? (
+                    {!value && (campo.enumHint || catalogoDe(campo.key).length > 0 ? (
                       <select
                         className="form-control mapper-default-input"
                         value={mapping.defaults?.[campo.key] ?? ''}
@@ -676,7 +741,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         onChange={(e) => setDefault(campo.key, e.target.value)}
                       >
                         <option value="">o el mismo valor para todas las filas…</option>
-                        {campo.enumHint.map((opt) => (
+                        {(campo.enumHint ?? catalogoDe(campo.key)).map((opt) => (
                           <option key={opt} value={opt}>{opt}</option>
                         ))}
                       </select>
@@ -899,6 +964,61 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           <li><b>Repuestos a preparar:</b> {filasListas.toLocaleString('es-CL')}</li>
         </ul>
       </section>
+
+      {/* Decisiones contra el catálogo real de RepuesTop */}
+      {bloquesCatalogo.length > 0 && (
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">
+            Tus palabras y las de RepuesTop ({pendientesCatalogo} sin responder)
+          </span>
+          <p className="mapper-hint">
+            Estos nombres no están en el catálogo de RepuesTop. Elige a cuál corresponde cada uno;
+            empieza por los de arriba, que son los que aparecen en más repuestos.
+          </p>
+          {pendientesCatalogo > 0 && (
+            <button type="button" className="btn btn-secondary mapper-btn mapper-btn-sugerencias" onClick={aceptarSugerencias}>
+              <Wand2 size={16} /> Usar todas las sugerencias
+            </button>
+          )}
+          {bloquesCatalogo.map((bloque) => (
+            <div className="mapper-values-block" key={bloque.campo.key}>
+              <div className="mapper-values-title">
+                {bloque.campo.label} <span>← {bloque.columna.displayHeader}</span>
+              </div>
+              <div className="mapper-rows">
+                {bloque.decisiones.map((d) => {
+                  const elegido = mapping.valueMap[bloque.campo.key]?.[d.valor] ?? '';
+                  return (
+                    <div className={`mapper-row ${elegido ? 'resuelta' : ''}`} key={d.valor}>
+                      <div className="mapper-row-label">
+                        {elegido && <Check size={15} className="mapper-row-check" />}
+                        <span>{d.valor}</span>
+                        <span className="mapper-sample">{plural(d.filas, 'repuesto', 'repuestos')}</span>
+                      </div>
+                      <select
+                        className="form-control"
+                        value={elegido}
+                        aria-label={`${bloque.campo.label}: ${d.valor}`}
+                        onChange={(e) => setValue(bloque.campo.key, d.valor, e.target.value)}
+                      >
+                        <option value="">
+                          {bloque.campo.key === 'categoria' ? 'dejar como está (no se va a publicar)' : 'dejar como está'}
+                        </option>
+                        {d.sugerencias.map((sug) => (
+                          <option key={sug} value={sug}>{sug} — parecido</option>
+                        ))}
+                        {bloque.catalogo
+                          .filter((c) => !d.sugerencias.includes(c))
+                          .map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       {/* Traducir valores */}
       {enumColumns.length > 0 && (
