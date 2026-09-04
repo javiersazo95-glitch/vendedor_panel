@@ -50,7 +50,9 @@ export function normalizarEsquema(data: unknown): EsquemaPlantilla | null {
       categorias: listaDeTextos(catalogos.categorias),
       subcategoriasPorCategoria,
       marcasRepuesto: listaDeTextos(catalogos.marcasRepuesto),
-      marcasVehiculo: listaDeTextos(catalogos.marcasVehiculo),
+      marcasVehiculo: listaDeTextos(catalogos.marcasVehiculo).length
+        ? listaDeTextos(catalogos.marcasVehiculo)
+        : ESQUEMA_FALLBACK.catalogos.marcasVehiculo,
       // Estos dos son parte del contrato del Excel, no de la base de datos: si el
       // backend no los manda, los del respaldo siguen siendo correctos.
       tiposPrecio: tiposPrecio.length ? tiposPrecio : ESQUEMA_FALLBACK.catalogos.tiposPrecio,

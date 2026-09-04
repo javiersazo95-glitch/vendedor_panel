@@ -884,6 +884,330 @@ h1, h2, h3, h4, h5, h6 {
 .mapper-row.falta .mapper-row-label > span:first-child { color: hsl(var(--danger)); font-weight: 700; }
 .mapper-default-input { width: 100%; }
 
+/* Guía visual explicativa en el Paso 2 */
+.mapper-guide-box {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(79, 70, 229, 0.04) 100%);
+  border: 1.5px solid rgba(37, 99, 235, 0.25);
+  border-radius: 12px;
+  padding: 1.1rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+.mapper-guide-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #1d4ed8;
+}
+.mapper-guide-header h4 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+.mapper-guide-box p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.mapper-guide-columns-legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px dashed rgba(37, 99, 235, 0.35);
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  margin-top: 0.25rem;
+  font-size: 0.92rem;
+}
+.legend-item.repuestop {
+  color: #1d4ed8;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.legend-arrow {
+  font-weight: 700;
+  color: #334155;
+  font-size: 0.88rem;
+  background: #e2e8f0;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.legend-item.excel {
+  color: #047857;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Grupos de secciones en el Paso 2 */
+.mapper-section-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.mapper-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 2px solid rgba(226, 232, 240, 0.9);
+}
+.mapper-section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.mapper-section-title-wrap h5 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.mapper-section-badge {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  color: #475569;
+}
+.mapper-section-desc {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+/* Card por cada campo a relacionar */
+.mapper-card-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto minmax(280px, 1.15fr);
+  align-items: center;
+  gap: 1.25rem;
+  background: var(--bg-card, #ffffff);
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.1rem 1.35rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.mapper-card-row:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.07);
+}
+.mapper-card-row.falta {
+  border-color: #fca5a5;
+  background: #fffafa;
+}
+.mapper-card-row.listo {
+  border-color: #cbd5e1;
+}
+
+@media (max-width: 860px) {
+  .mapper-card-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .mapper-card-connector {
+    display: none;
+  }
+}
+
+/* Lado izquierdo: Dato RepuesTop */
+.mapper-card-dest {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.mapper-card-header-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+.mapper-card-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.mapper-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.mapper-pill-req {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+.mapper-pill-opt {
+  color: #64748b;
+  background: #f1f5f9;
+}
+.mapper-pill-done {
+  color: #15803d;
+  background: #dcfce7;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.mapper-card-desc {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #475569;
+  line-height: 1.45;
+}
+.mapper-card-hint {
+  margin-top: 0.15rem;
+  font-size: 0.82rem;
+  color: #64748b;
+  background: #f8fafc;
+  border-left: 3px solid #3b82f6;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0 6px 6px 0;
+}
+.mapper-hint-tag {
+  font-style: italic;
+  color: #1e40af;
+}
+.mapper-hint-label {
+  font-weight: 600;
+  color: #475569;
+}
+.mapper-hint-values {
+  font-family: monospace;
+  font-weight: 600;
+  color: #1e40af;
+}
+
+/* Conector central */
+.mapper-card-connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.25rem;
+}
+.mapper-connector-badge {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* Lado derecho: Selector Excel y vista previa */
+.mapper-card-origin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+.mapper-origin-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 0.1rem;
+}
+.mapper-select-main {
+  width: 100%;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: 1.5px solid #cbd5e1;
+  background: #fff;
+}
+.mapper-select-main:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.mapper-preview-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  font-size: 0.86rem;
+  line-height: 1.4;
+  color: #166534;
+}
+.mapper-preview-icon {
+  flex-shrink: 0;
+}
+.mapper-preview-label {
+  font-weight: 600;
+  color: #15803d;
+  flex-shrink: 0;
+}
+.mapper-preview-text {
+  color: #14532d;
+  word-break: break-word;
+}
+.mapper-preview-empty {
+  color: #86efac;
+}
+
+/* Caja informativa cuando el dato se completa automáticamente */
+.mapper-auto-info {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  font-size: 0.86rem;
+  color: #166534;
+  line-height: 1.4;
+}
+.mapper-auto-desc {
+  font-weight: 600;
+}
+
+/* Caja de valor fijo cuando no tiene la columna */
+.mapper-default-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.mapper-default-card.default-urgente {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+.mapper-default-title {
+  font-size: 0.82rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.mapper-default-title strong {
+  color: #c2410c;
+}
+
 /* --- Fase 4: normalizacion y valores por defecto --- */
 .mapper-switch {
   display: flex;

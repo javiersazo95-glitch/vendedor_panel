@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
   UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check, Image as ImageIcon,
 } from 'lucide-react';
 import {
   ESQUEMA_FALLBACK,
+  SECCIONES_MAPPER,
   camposDesdeEsquema,
   autoDetectMapping,
   reconcileMapping,
@@ -42,6 +43,7 @@ import {
   parsearAplicacion,
   separarPorSku,
 } from '../utils/plantillaCompatibilidad';
+import { MARCAS_VEHICULO_BASE } from '../utils/marcasVehiculoBase';
 import {
   contarValoresDeColumna,
   decisionesDeCatalogo,
@@ -99,7 +101,8 @@ function buscarColumnaAplicacion(
   userRows: unknown[][],
   marcas: string[],
 ): { col: UserColumn; ejemplo?: string; partes: ReturnType<typeof parsearAplicacion>; necesitaAsignar: boolean } | null {
-  if (marcas.length === 0) return null;
+  const marcasEfectivas = marcas && marcas.length ? marcas : MARCAS_VEHICULO_BASE;
+  if (marcasEfectivas.length === 0) return null;
   const asignadas = new Set(Object.values(mapping.oficial).filter(Boolean) as string[]);
   const candidatas = [
     ...['compatibilidad_modelo', 'compatibilidad_marca']
@@ -111,9 +114,9 @@ function buscarColumnaAplicacion(
 
   for (const { col, necesitaAsignar } of candidatas) {
     const muestra = userRows.slice(0, 50).map((r) => String((r as unknown[])[col.index] ?? '')).filter(Boolean);
-    if (!pareceColumnaDeAplicacion(muestra, marcas)) continue;
-    const ejemplo = muestra.find((v) => parsearAplicacion(v, marcas));
-    return { col, ejemplo, partes: ejemplo ? parsearAplicacion(ejemplo, marcas) : null, necesitaAsignar };
+    if (!pareceColumnaDeAplicacion(muestra, marcasEfectivas)) continue;
+    const ejemplo = muestra.find((v) => parsearAplicacion(v, marcasEfectivas));
+    return { col, ejemplo, partes: ejemplo ? parsearAplicacion(ejemplo, marcasEfectivas) : null, necesitaAsignar };
   }
   return null;
 }
@@ -237,29 +240,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     return counts;
   }, [mapping]);
 
-  const counts = useMemo(() => {
-    if (!mapping) return { asignadas: 0, sinAsignar: 0, aDescripcion: 0, ignoradas: 0 };
-    const asignadas = campos.filter((c) => mapping.oficial[c.key]).length;
-    const ignoradas = unassignedCols.filter((c) => mapping.extras[c.id] === 'ignore').length;
-    return {
-      asignadas,
-      sinAsignar: unassignedCols.length,
-      aDescripcion: unassignedCols.length - ignoradas,
-      ignoradas,
-    };
-  }, [mapping, unassignedCols, campos]);
 
-  /**
-   * Obligatorios que siguen sin resolver. Un valor fijo para todas las filas cuenta como
-   * resuelto: hay vendedores cuyo Excel simplemente no trae esa columna porque para ellos
-   * es siempre la misma.
-   */
-  const missingRequired = useMemo(
-    () => (mapping
-      ? campos.filter((c) => c.required && !mapping.oficial[c.key] && !(mapping.defaults?.[c.key] ?? '').trim())
-      : []),
-    [mapping, campos],
-  );
 
   const enumColumns = useMemo(
     () => (mapping ? mappedEnumColumns(mapping, campos) : []),
@@ -468,6 +449,106 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       return { ...prev, defaults };
     });
   };
+
+  /** Detecta si un campo se completará automáticamente por un interruptor (ej. rangos de años o aplicación) */
+  const getAutoDerivado = useCallback((key: string): { activo: boolean; descripcion: string; ejemplo?: string } => {
+    if (!mapping) return { activo: false, descripcion: '' };
+
+    // Año hasta derivado por división de rango en año_desde
+    if (key === 'anio_hasta') {
+      if (mapping.dividirAnios && mapping.oficial.anio_desde) {
+        const col = userCols.find((c) => c.id === mapping.oficial.anio_desde);
+        let ejHasta = '';
+        if (col) {
+          for (const r of userRows.slice(0, 30)) {
+            const p = partirRangoAnios(String((r as unknown[])[col.index] ?? ''));
+            if (p?.hasta) { ejHasta = p.hasta; break; }
+          }
+        }
+        return {
+          activo: true,
+          descripcion: `Se completa automáticamente dividiendo el rango de tu columna "${col?.displayHeader ?? 'años'}"`,
+          ejemplo: ejHasta ? `ej: ${ejHasta}` : undefined,
+        };
+      }
+      if (mapping.parsearAplicacion && columnaAplicacion?.partes?.anioHasta) {
+        return {
+          activo: true,
+          descripcion: `Se completa automáticamente extrayendo el año de tu columna "${columnaAplicacion.col.displayHeader}"`,
+          ejemplo: `ej: ${columnaAplicacion.partes.anioHasta}`,
+        };
+      }
+    }
+
+    // Año desde derivado de columna aplicación
+    if (key === 'anio_desde' && !mapping.oficial.anio_desde) {
+      if (mapping.parsearAplicacion && columnaAplicacion?.partes?.anioDesde) {
+        return {
+          activo: true,
+          descripcion: `Se completa automáticamente extrayendo el año de tu columna "${columnaAplicacion.col.displayHeader}"`,
+          ejemplo: `ej: ${columnaAplicacion.partes.anioDesde}`,
+        };
+      }
+    }
+
+    // Marca del vehículo derivada de columna aplicación
+    if (key === 'compatibilidad_marca' && !mapping.oficial.compatibilidad_marca) {
+      if (mapping.parsearAplicacion && columnaAplicacion?.partes?.marca) {
+        return {
+          activo: true,
+          descripcion: `Se completa automáticamente extrayendo la marca de tu columna "${columnaAplicacion.col.displayHeader}"`,
+          ejemplo: `ej: ${columnaAplicacion.partes.marca}`,
+        };
+      }
+    }
+
+    // Modelo del vehículo derivado de columna aplicación
+    if (key === 'compatibilidad_modelo' && !mapping.oficial.compatibilidad_modelo) {
+      if (mapping.parsearAplicacion && columnaAplicacion?.partes?.modelo) {
+        return {
+          activo: true,
+          descripcion: `Se completa automáticamente extrayendo el modelo de tu columna "${columnaAplicacion.col.displayHeader}"`,
+          ejemplo: `ej: ${columnaAplicacion.partes.modelo}`,
+        };
+      }
+    }
+
+    return { activo: false, descripcion: '' };
+  }, [mapping, userCols, userRows, columnaAplicacion]);
+
+  const counts = useMemo(() => {
+    if (!mapping) return { asignadas: 0, sinAsignar: 0, aDescripcion: 0, ignoradas: 0 };
+    const asignadas = campos.filter((c) => {
+      if (mapping.oficial[c.key]) return true;
+      if ((mapping.defaults?.[c.key] ?? '').trim()) return true;
+      if (getAutoDerivado(c.key).activo) return true;
+      return false;
+    }).length;
+    const ignoradas = unassignedCols.filter((c) => mapping.extras[c.id] === 'ignore').length;
+    return {
+      asignadas,
+      sinAsignar: unassignedCols.length,
+      aDescripcion: unassignedCols.length - ignoradas,
+      ignoradas,
+    };
+  }, [mapping, unassignedCols, campos, getAutoDerivado]);
+
+  /**
+   * Obligatorios que siguen sin resolver. Un valor fijo para todas las filas o una
+   * derivación automática cuenta como resuelto.
+   */
+  const missingRequired = useMemo(
+    () => (mapping
+      ? campos.filter((c) => {
+        if (!c.required) return false;
+        if (mapping.oficial[c.key]) return false;
+        if ((mapping.defaults?.[c.key] ?? '').trim()) return false;
+        if (getAutoDerivado(c.key).activo) return false;
+        return true;
+      })
+      : []),
+    [mapping, campos, getAutoDerivado],
+  );
 
   const buildFile = async (): Promise<File> => {
     const aoa = buildOfficialAoA(
@@ -911,91 +992,295 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           </label>
         )}
 
-        {/* Datos que pide RepuesTop */}
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">Datos que pide RepuesTop</span>
-          <div className="mapper-rows">
-            {campos.map((campo) => {
-              const value = mapping.oficial[campo.key] ?? '';
-              const uses = value ? usageCount.get(value) ?? 0 : 0;
-              const faltante = campo.required && !value;
-              return (
-                <div className={`mapper-row ${faltante ? 'falta' : ''}`} key={campo.key}>
-                  <div className="mapper-row-label">
-                    <span>
-                      {campo.label}
-                      {campo.required && <b className="req">*</b>}
-                    </span>
-                    {campo.enumHint && (
-                      <span className="mapper-enum-chip">{campo.enumHint.join(' / ')}</span>
-                    )}
-                    {uses > 1 && <span className="mapper-enum-chip alt">usada {uses} veces</span>}
-                  </div>
-                  <div className="mapper-row-control">
-                    <select
-                      className="form-control"
-                      value={value}
-                      aria-label={campo.label}
-                      onChange={(e) => setOficial(campo.key, e.target.value)}
-                    >
-                      <option value="">— no tengo esta columna —</option>
-                      {userCols.map((c) => (
-                        <option key={c.id} value={c.id}>{c.displayHeader}</option>
-                      ))}
-                    </select>
-                    {!value && (campo.enumHint || catalogoDe(campo.key).length > 0 ? (
-                      <select
-                        className="form-control mapper-default-input"
-                        value={mapping.defaults?.[campo.key] ?? ''}
-                        aria-label={`Valor fijo para ${campo.label}`}
-                        onChange={(e) => setDefault(campo.key, e.target.value)}
-                      >
-                        <option value="">o el mismo valor para todas las filas…</option>
-                        {(campo.enumHint ?? catalogoDe(campo.key)).map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        className="form-control mapper-default-input"
-                        type="text"
-                        value={mapping.defaults?.[campo.key] ?? ''}
-                        placeholder="o el mismo valor para todas las filas"
-                        aria-label={`Valor fijo para ${campo.label}`}
-                        onChange={(e) => setDefault(campo.key, e.target.value)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+        {/* Guía visual explicativa */}
+        <div className="mapper-guide-box">
+          <div className="mapper-guide-header">
+            <h4>¿Cómo relacionar tus columnas con las de RepuesTop?</h4>
           </div>
-        </section>
+          <p>
+            A la <strong>izquierda</strong> ves el dato que pide RepuesTop y su significado. A la{' '}
+            <strong>derecha</strong> eliges cuál columna de tu archivo contiene ese dato. Debajo de cada selector
+            aparece un <strong>ejemplo real de tu archivo</strong> para que verifiques que coincida.
+          </p>
+          <div className="mapper-guide-columns-legend">
+            <span className="legend-item repuestop">
+              <strong>1. Dato en RepuesTop</strong> (Destino)
+            </span>
+            <span className="legend-arrow">se completa con</span>
+            <span className="legend-item excel">
+              <strong>2. Tu Columna de Excel</strong> (Origen)
+            </span>
+          </div>
+        </div>
+
+        {/* Grupos de campos por sección */}
+        {SECCIONES_MAPPER.map((sec) => {
+          const camposGrupo = campos.filter((c) => (c.seccion ?? 'opcionales') === sec.id);
+          if (camposGrupo.length === 0) return null;
+          const asignadosCount = camposGrupo.filter(
+            (c) => Boolean(mapping.oficial[c.key] || mapping.defaults?.[c.key] || getAutoDerivado(c.key).activo)
+          ).length;
+
+          return (
+            <section className="mapper-section-group" key={sec.id}>
+              <div className="mapper-section-header">
+                <div className="mapper-section-title-wrap">
+                  <h5>{sec.titulo}</h5>
+                  <span className="mapper-section-badge">
+                    {asignadosCount}/{camposGrupo.length} asignados
+                  </span>
+                </div>
+                <p className="mapper-section-desc">{sec.descripcion}</p>
+              </div>
+
+              <div className="mapper-rows">
+                {camposGrupo.map((campo) => {
+                  const value = mapping.oficial[campo.key] ?? '';
+                  const uses = value ? usageCount.get(value) ?? 0 : 0;
+                  const colElegida = value ? userCols.find((c) => c.id === value) : undefined;
+                  const ejemploExcel = colElegida ? sampleValue(colElegida) : '';
+                  const tieneDefault = Boolean(mapping.defaults?.[campo.key]);
+                  const autoDerivado = getAutoDerivado(campo.key);
+                  const esAuto = autoDerivado.activo && !value && !tieneDefault;
+                  const listo = Boolean(value || tieneDefault || esAuto);
+                  const faltante = campo.required && !listo;
+
+                  return (
+                    <div
+                      className={`mapper-card-row mapper-row ${faltante ? 'falta' : ''} ${listo ? 'listo' : ''}`}
+                      key={campo.key}
+                    >
+                      {/* Lado izquierdo: Dato RepuesTop */}
+                      <div className="mapper-card-dest">
+                        <div className="mapper-card-header-line mapper-row-label">
+                          <span className="mapper-card-title">
+                            {campo.label}
+                            {campo.required && <b className="req">*</b>}
+                          </span>
+                          {campo.required ? (
+                            <span className="mapper-pill mapper-pill-req">Requerido</span>
+                          ) : (
+                            <span className="mapper-pill mapper-pill-opt">Opcional</span>
+                          )}
+                          {listo && (
+                            <span
+                              className="mapper-pill mapper-pill-done"
+                              title={esAuto ? autoDerivado.descripcion : 'Dato completado'}
+                            >
+                              {esAuto ? 'Automático' : 'Listo'}
+                            </span>
+                          )}
+                          {uses > 1 && (
+                            <span className="mapper-enum-chip alt">
+                              columna usada {uses} veces
+                            </span>
+                          )}
+                        </div>
+
+                        {campo.descripcion && (
+                          <p className="mapper-card-desc">{campo.descripcion}</p>
+                        )}
+
+                        {campo.ejemplo && (
+                          <div className="mapper-card-hint">
+                            <span className="mapper-hint-tag">{campo.ejemplo}</span>
+                          </div>
+                        )}
+
+                        {campo.enumHint && !campo.ejemplo && (
+                          <div className="mapper-card-hint">
+                            <span className="mapper-hint-label">Valores válidos:</span>{' '}
+                            <span className="mapper-hint-values">{campo.enumHint.join(' · ')}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Conector central */}
+                      <div className="mapper-card-connector" aria-hidden>
+                        <span className="mapper-connector-badge">se toma de</span>
+                      </div>
+
+                      {/* Lado derecho: Selector de columna del Excel */}
+                      <div className="mapper-card-origin mapper-row-control">
+                        {esAuto && (
+                          <div className="mapper-auto-info">
+                            <span className="mapper-auto-desc">
+                              {autoDerivado.descripcion} {autoDerivado.ejemplo ? `(${autoDerivado.ejemplo})` : ''}
+                            </span>
+                          </div>
+                        )}
+
+                        <label className="mapper-origin-label" htmlFor={`select-col-${campo.key}`}>
+                          {esAuto ? 'O asigna una columna propia si la tienes:' : 'Columna en tu archivo Excel:'}
+                        </label>
+                        <select
+                          id={`select-col-${campo.key}`}
+                          className="form-control mapper-select-main"
+                          value={value}
+                          aria-label={campo.label}
+                          onChange={(e) => setOficial(campo.key, e.target.value)}
+                        >
+                          <option value="">
+                            {esAuto ? '— Se completará automáticamente desde tu columna —' : '— no tengo esta columna —'}
+                          </option>
+                          {userCols.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.displayHeader}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Vista previa con dato real de la fila 1 */}
+                        {colElegida && (
+                          <div className="mapper-preview-pill">
+                            <span className="mapper-preview-label">Ejemplo en tu archivo:</span>
+                            {ejemploExcel ? (
+                              <strong className="mapper-preview-text">"{ejemploExcel}"</strong>
+                            ) : (
+                              <span className="mapper-preview-empty">(celda vacía en las primeras filas)</span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Si no tiene columna ni es auto: asignación de valor fijo */}
+                        {!value && !esAuto && (
+                          <div className={`mapper-default-card ${faltante ? 'default-urgente' : ''}`}>
+                            <span className="mapper-default-title">
+                              {campo.required ? (
+                                <strong>Dato obligatorio: asigna un valor común para todas las filas:</strong>
+                              ) : (
+                                'O asigna el mismo valor fijo para todas las filas:'
+                              )}
+                            </span>
+                            {campo.enumHint || catalogoDe(campo.key).length > 0 ? (
+                              <select
+                                className="form-control mapper-default-input"
+                                value={mapping.defaults?.[campo.key] ?? ''}
+                                aria-label={`Valor fijo para ${campo.label}`}
+                                onChange={(e) => setDefault(campo.key, e.target.value)}
+                              >
+                                <option value="">o el mismo valor para todas las filas…</option>
+                                {(campo.enumHint ?? catalogoDe(campo.key)).map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                className="form-control mapper-default-input"
+                                type="text"
+                                value={mapping.defaults?.[campo.key] ?? ''}
+                                placeholder="o el mismo valor para todas las filas"
+                                aria-label={`Valor fijo para ${campo.label}`}
+                                onChange={(e) => setDefault(campo.key, e.target.value)}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+
+        {/* Campos extras si el backend agrega alguno que no esté en las 4 secciones */}
+        {(() => {
+          const secIds = new Set<string>(SECCIONES_MAPPER.map((s) => s.id));
+          const otros = campos.filter((c) => c.seccion && !secIds.has(c.seccion));
+          if (otros.length === 0) return null;
+          return (
+            <section className="mapper-section-group" key="otros">
+              <div className="mapper-section-header">
+                <div className="mapper-section-title-wrap">
+                  <h5>Otros Datos</h5>
+                </div>
+              </div>
+              <div className="mapper-rows">
+                {otros.map((campo) => {
+                  const value = mapping.oficial[campo.key] ?? '';
+                  const colElegida = value ? userCols.find((c) => c.id === value) : undefined;
+                  const ejemploExcel = colElegida ? sampleValue(colElegida) : '';
+                  return (
+                    <div className="mapper-card-row mapper-row" key={campo.key}>
+                      <div className="mapper-card-dest">
+                        <div className="mapper-card-header-line mapper-row-label">
+                          <span className="mapper-card-title">{campo.label}</span>
+                        </div>
+                      </div>
+                      <div className="mapper-card-origin mapper-row-control">
+                        <select
+                          className="form-control mapper-select-main"
+                          value={value}
+                          aria-label={campo.label}
+                          onChange={(e) => setOficial(campo.key, e.target.value)}
+                        >
+                          <option value="">— no tengo esta columna —</option>
+                          {userCols.map((c) => (
+                            <option key={c.id} value={c.id}>{c.displayHeader}</option>
+                          ))}
+                        </select>
+                        {colElegida && (
+                          <div className="mapper-preview-pill">
+                            <span className="mapper-preview-label">Ejemplo:</span>
+                            <strong>"{ejemploExcel}"</strong>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
 
         {/* Columnas que te sobran */}
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">
-            Columnas de tu Excel sin asignar ({unassignedCols.length})
-          </span>
+        <section className="mapper-section-group">
+          <div className="mapper-section-header">
+            <div className="mapper-section-title-wrap">
+              <h5>Columnas de tu Excel sin asignar ({unassignedCols.length})</h5>
+            </div>
+            <p className="mapper-section-desc">
+              Columnas de tu planilla que no corresponden a un dato directo de RepuesTop. Puedes sumarlas a la descripción o dejarlas fuera.
+            </p>
+          </div>
           {unassignedCols.length === 0 ? (
             <p className="mapper-empty">Todas las columnas de tu archivo están relacionadas con un dato de RepuesTop.</p>
           ) : (
             <div className="mapper-rows">
               {unassignedCols.map((c) => (
-                <div className="mapper-row" key={c.id}>
-                  <div className="mapper-row-label">
-                    <span>{c.displayHeader}</span>
-                    {sampleValue(c) && <span className="mapper-sample">ej: {sampleValue(c)}</span>}
+                <div className="mapper-card-row mapper-row" key={c.id}>
+                  <div className="mapper-card-dest">
+                    <div className="mapper-card-header-line mapper-row-label">
+                      <span className="mapper-card-title">{c.displayHeader}</span>
+                      <span className="mapper-pill mapper-pill-opt">Sin asignar</span>
+                    </div>
+                    {sampleValue(c) && (
+                      <div className="mapper-preview-pill">
+                        <span className="mapper-preview-label">Ejemplo en tu archivo:</span>
+                        <strong className="mapper-preview-text">"{sampleValue(c)}"</strong>
+                      </div>
+                    )}
                   </div>
-                  <select
-                    className="form-control"
-                    value={mapping.extras[c.id] ?? 'descripcion'}
-                    aria-label={`Qué hacer con ${c.displayHeader}`}
-                    onChange={(e) => setExtra(c.id, e.target.value as 'descripcion' | 'ignore')}
-                  >
-                    <option value="descripcion">Añadir a la descripción</option>
-                    <option value="ignore">Dejar fuera</option>
-                  </select>
+                  <div className="mapper-card-connector" aria-hidden>
+                    <span className="mapper-connector-badge">va a</span>
+                  </div>
+                  <div className="mapper-card-origin mapper-row-control">
+                    <label className="mapper-origin-label">¿Qué hacer con esta columna?</label>
+                    <select
+                      className="form-control mapper-select-main"
+                      value={mapping.extras[c.id] ?? 'descripcion'}
+                      aria-label={`Qué hacer con ${c.displayHeader}`}
+                      onChange={(e) => setExtra(c.id, e.target.value as 'descripcion' | 'ignore')}
+                    >
+                      <option value="descripcion">Añadir a la descripción</option>
+                      <option value="ignore">Dejar fuera</option>
+                    </select>
+                  </div>
                 </div>
               ))}
             </div>

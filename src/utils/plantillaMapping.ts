@@ -5,6 +5,7 @@ import {
 } from './plantillaNormalizacion';
 import { parsearAplicacion } from './plantillaCompatibilidad';
 import { buscarEnCatalogo } from './plantillaCatalogos';
+import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
 
 /**
  * Lógica pura (sin React) para el flujo "Adaptar mi plantilla": leer el Excel propio
@@ -92,7 +93,7 @@ export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
     categorias: [],
     subcategoriasPorCategoria: {},
     marcasRepuesto: [],
-    marcasVehiculo: [],
+    marcasVehiculo: MARCAS_VEHICULO_BASE,
     tiposPrecio: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'],
     condiciones: ['ORIGINAL', 'ALTERNATIVO'],
   },
@@ -110,13 +111,51 @@ export interface CampoMeta {
   synonyms: string[];
   /** Columnas que se vacían cuando la fila es universal. */
   group?: 'compat' | 'anio' | 'motor';
+  /** Explicación en lenguaje sencillo para el vendedor sobre qué significa este dato. */
+  descripcion?: string;
+  /** Ejemplo representativo para que el vendedor identifique el dato de inmediato. */
+  ejemplo?: string;
+  /** Sección temática para agrupar visualmente en la interfaz. */
+  seccion?: 'obligatorios' | 'precio_condicion' | 'compatibilidad' | 'opcionales';
 }
 
 interface CampoTexto {
   label: string;
   synonyms: string[];
   group?: 'compat' | 'anio' | 'motor';
+  descripcion?: string;
+  ejemplo?: string;
+  seccion?: 'obligatorios' | 'precio_condicion' | 'compatibilidad' | 'opcionales';
 }
+
+export interface SeccionMapper {
+  id: 'obligatorios' | 'precio_condicion' | 'compatibilidad' | 'opcionales';
+  titulo: string;
+  descripcion: string;
+}
+
+export const SECCIONES_MAPPER: SeccionMapper[] = [
+  {
+    id: 'obligatorios',
+    titulo: '1. Datos Principales del Repuesto (Obligatorios)',
+    descripcion: 'RepuesTop necesita estos datos para poder crear y catalogar el repuesto en tu inventario.',
+  },
+  {
+    id: 'precio_condicion',
+    titulo: '2. Precio y Condición de Venta',
+    descripcion: 'Indica el valor de venta y si el repuesto es original o alternativo homologado.',
+  },
+  {
+    id: 'compatibilidad',
+    titulo: '3. Compatibilidad con Vehículos',
+    descripcion: 'Indica a qué automóviles le sirve el repuesto (o márcalo como universal si aplica a todos).',
+  },
+  {
+    id: 'opcionales',
+    titulo: '4. Datos Adicionales (Opcionales)',
+    descripcion: 'Información complementaria que ayuda al comprador a encontrar tu producto con mayor rapidez.',
+  },
+];
 
 /**
  * Lo único que queda hardcodeado por columna: cómo se le dice al vendedor y con qué
@@ -125,24 +164,139 @@ interface CampoTexto {
  * hasta que se le agreguen sinónimos acá.
  */
 const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
-  nombre_publicado: { label: 'Nombre publicado', synonyms: ['nombre', 'titulo', 'producto', 'articulo', 'item', 'nombre producto', 'descripcion corta'] },
-  categoria: { label: 'Categoría', synonyms: ['rubro', 'familia', 'tipo', 'linea'] },
-  subcategoria: { label: 'Subcategoría', synonyms: ['subrubro', 'subfamilia', 'sub categoria'] },
-  marca_repuesto: { label: 'Marca del repuesto', synonyms: ['marca', 'fabricante', 'marca pieza', 'marca parte', 'brand'] },
-  sku_proveedor: { label: 'SKU / Código', synonyms: ['sku', 'codigo', 'cod', 'referencia', 'ref', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte'] },
-  referencia_oem: { label: 'Referencia OEM', synonyms: ['oem', 'codigo oem', 'numero oem', 'ref oem', 'original oem'] },
-  tipo_precio: { label: 'Tipo de precio', synonyms: ['tipo precio', 'modalidad precio', 'modalidad', 'cotizar'] },
-  precio: { label: 'Precio', synonyms: ['valor', 'pvp', 'precio venta', 'price', 'monto', 'precio unitario'] },
-  stock: { label: 'Stock', synonyms: ['cantidad', 'existencias', 'unidades', 'disponible', 'inventario', 'qty', 'stock actual'] },
-  condicion: { label: 'Condición', synonyms: ['estado', 'tipo repuesto', 'origen', 'original alternativo'] },
-  compatibilidad_general: { label: 'Compatibilidad universal', synonyms: ['universal', 'compatibilidad general', 'generico', 'aplica a todos', 'es universal'] },
-  compatibilidad_marca: { label: 'Marca del vehículo', group: 'compat', synonyms: ['marca vehiculo', 'marca auto', 'marca compatible', 'vehiculo marca', 'marca del auto'] },
-  compatibilidad_modelo: { label: 'Modelo del vehículo', group: 'compat', synonyms: ['modelo', 'modelo vehiculo', 'modelo auto', 'modelo compatible', 'aplicacion', 'aplicaciones', 'aplicacion vehiculo', 'compatibilidad', 'compatible con', 'vehiculo'] },
-  anio_desde: { label: 'Año desde', group: 'anio', synonyms: ['anio', 'ano', 'año', 'años', 'anios', 'anos', 'año desde', 'desde', 'year', 'año inicio', 'anio inicial', 'rango de años', 'año modelo'] },
-  anio_hasta: { label: 'Año hasta', group: 'anio', synonyms: ['año hasta', 'hasta', 'año fin', 'year to', 'anio final'] },
-  motor: { label: 'Motor / versión', group: 'motor', synonyms: ['version', 'cilindrada', 'motorizacion', 'engine', 'motor version'] },
-  descripcion: { label: 'Descripción', synonyms: ['detalle', 'observaciones', 'notas', 'comentarios', 'descripcion larga', 'detalles'] },
-  requiere_chasis: { label: 'Requiere número de chasis', synonyms: ['requiere chasis', 'chasis', 'vin', 'numero chasis', 'pide chasis'] },
+  nombre_publicado: {
+    label: 'Nombre publicado',
+    seccion: 'obligatorios',
+    descripcion: 'Título principal del repuesto con el que aparecerá en el catálogo y en las búsquedas de clientes.',
+    ejemplo: 'Ej: Pastilla de freno delantera Yaris 1.5',
+    synonyms: ['nombre', 'titulo', 'producto', 'articulo', 'item', 'nombre producto', 'descripcion corta'],
+  },
+  sku_proveedor: {
+    label: 'SKU / Código',
+    seccion: 'obligatorios',
+    descripcion: 'Tu código interno de producto o número de parte con el que identificas el repuesto en bodega.',
+    ejemplo: 'Ej: PF-100, 0986AB01',
+    synonyms: ['sku', 'codigo', 'cod', 'referencia', 'ref', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte'],
+  },
+  marca_repuesto: {
+    label: 'Marca del repuesto',
+    seccion: 'obligatorios',
+    descripcion: 'Fabricante de la pieza o repuesto (por ejemplo Bosch, Valeo, Brembo, o la marca del auto si es genuino).',
+    ejemplo: 'Ej: Bosch, Brembo, Valeo, Toyota, Mann',
+    synonyms: ['marca', 'fabricante', 'marca pieza', 'marca parte', 'brand'],
+  },
+  categoria: {
+    label: 'Categoría',
+    seccion: 'obligatorios',
+    descripcion: 'Familia o sistema del auto al que pertenece el repuesto dentro del catálogo de RepuesTop.',
+    ejemplo: 'Ej: Frenos, Motor, Suspensión, Filtros',
+    synonyms: ['rubro', 'familia', 'tipo', 'linea'],
+  },
+  stock: {
+    label: 'Stock',
+    seccion: 'obligatorios',
+    descripcion: 'Cantidad de unidades físicas disponibles para la venta inmediata.',
+    ejemplo: 'Ej: 10',
+    synonyms: ['cantidad', 'existencias', 'unidades', 'disponible', 'inventario', 'qty', 'stock actual'],
+  },
+
+  precio: {
+    label: 'Precio',
+    seccion: 'precio_condicion',
+    descripcion: 'Precio de venta al público en pesos (CLP) sin puntos ni símbolos.',
+    ejemplo: 'Ej: 24990',
+    synonyms: ['valor', 'pvp', 'precio venta', 'price', 'monto', 'precio unitario'],
+  },
+  tipo_precio: {
+    label: 'Tipo de precio',
+    seccion: 'precio_condicion',
+    descripcion: 'Indica si el precio se muestra públicamente o si el cliente debe cotizarlo.',
+    ejemplo: 'MOSTRAR_PRECIO (precio visible) · SOLO_COTIZAR (a cotizar)',
+    synonyms: ['tipo precio', 'modalidad precio', 'modalidad', 'cotizar'],
+  },
+  condicion: {
+    label: 'Condición',
+    seccion: 'precio_condicion',
+    descripcion: 'Indica si el repuesto es original de fábrica (genuino) o alternativo homologado.',
+    ejemplo: 'ORIGINAL (genuino de fábrica) · ALTERNATIVO (homologado)',
+    synonyms: ['estado', 'tipo repuesto', 'origen', 'original alternativo'],
+  },
+
+  compatibilidad_general: {
+    label: 'Compatibilidad universal',
+    seccion: 'compatibilidad',
+    descripcion: 'Marca "SI" si la pieza sirve para cualquier auto (como aceites, ampolletas o fusibles) o "NO" si es para modelos específicos.',
+    ejemplo: 'SI (para cualquier auto) · NO (para modelos específicos)',
+    synonyms: ['universal', 'compatibilidad general', 'generico', 'aplica a todos', 'es universal'],
+  },
+  compatibilidad_marca: {
+    label: 'Marca del vehículo',
+    group: 'compat',
+    seccion: 'compatibilidad',
+    descripcion: 'Marca del automóvil al que le sirve este repuesto.',
+    ejemplo: 'Ej: Toyota, Chevrolet, Hyundai, Nissan',
+    synonyms: ['marca vehiculo', 'marca auto', 'marca compatible', 'vehiculo marca', 'marca del auto'],
+  },
+  compatibilidad_modelo: {
+    label: 'Modelo del vehículo',
+    group: 'compat',
+    seccion: 'compatibilidad',
+    descripcion: 'Modelo del automóvil compatible con el repuesto.',
+    ejemplo: 'Ej: Yaris, Sail, Accent, Hilux',
+    synonyms: ['modelo', 'modelo vehiculo', 'modelo auto', 'modelo compatible', 'aplicacion', 'aplicaciones', 'aplicacion vehiculo', 'compatibilidad', 'compatible con', 'vehiculo'],
+  },
+  anio_desde: {
+    label: 'Año desde',
+    group: 'anio',
+    seccion: 'compatibilidad',
+    descripcion: 'Año inicial en que se fabricó el automóvil compatible.',
+    ejemplo: 'Ej: 2014',
+    synonyms: ['anio', 'ano', 'año', 'años', 'anios', 'anos', 'año desde', 'desde', 'year', 'año inicio', 'anio inicial', 'rango de años', 'año modelo'],
+  },
+  anio_hasta: {
+    label: 'Año hasta',
+    group: 'anio',
+    seccion: 'compatibilidad',
+    descripcion: 'Año final en que se fabricó el automóvil compatible.',
+    ejemplo: 'Ej: 2020',
+    synonyms: ['año hasta', 'hasta', 'año fin', 'year to', 'anio final'],
+  },
+  motor: {
+    label: 'Motor / versión',
+    group: 'motor',
+    seccion: 'compatibilidad',
+    descripcion: 'Cilindrada, tipo de combustible o versión de motor compatible.',
+    ejemplo: 'Ej: 1.5cc, 1.6 DOHC, 2.0 Diésel',
+    synonyms: ['version', 'cilindrada', 'motorizacion', 'engine', 'motor version'],
+  },
+
+  subcategoria: {
+    label: 'Subcategoría',
+    seccion: 'opcionales',
+    descripcion: 'Clasificación más específica dentro de la categoría principal.',
+    ejemplo: 'Ej: Pastillas de freno, Discos de freno',
+    synonyms: ['subrubro', 'subfamilia', 'sub categoria'],
+  },
+  referencia_oem: {
+    label: 'Referencia OEM',
+    seccion: 'opcionales',
+    descripcion: 'Código original asignado por la fábrica automotriz del vehículo.',
+    ejemplo: 'Ej: 04465-02220',
+    synonyms: ['oem', 'codigo oem', 'numero oem', 'ref oem', 'original oem'],
+  },
+  descripcion: {
+    label: 'Descripción',
+    seccion: 'opcionales',
+    descripcion: 'Información extra sobre especificaciones técnicas, procedencia o recomendaciones.',
+    synonyms: ['detalle', 'observaciones', 'notas', 'comentarios', 'descripcion larga', 'detalles'],
+  },
+  requiere_chasis: {
+    label: 'Requiere número de chasis',
+    seccion: 'opcionales',
+    descripcion: 'Solicita al cliente que ingrese el número de chasis (VIN) de su auto antes de comprar para validar compatibilidad.',
+    ejemplo: 'SI (solicitar chasis) · NO (no solicitar)',
+    synonyms: ['requiere chasis', 'chasis', 'vin', 'numero chasis', 'pide chasis'],
+  },
 };
 
 /**
@@ -180,6 +334,9 @@ export function camposDesdeEsquema(esquema: EsquemaPlantilla): CampoMeta[] {
       label: texto?.label ?? labelPorDefecto(key),
       required: obligatorias.has(key),
       synonyms: texto?.synonyms ?? [],
+      descripcion: texto?.descripcion,
+      ejemplo: texto?.ejemplo,
+      seccion: texto?.seccion ?? (obligatorias.has(key) ? 'obligatorios' : 'opcionales'),
     };
     if (texto?.group) campo.group = texto.group;
     if (enumHint?.length) campo.enumHint = enumHint;
@@ -441,8 +598,13 @@ export function detectarFilaEncabezados(aoa: unknown[][], limite = 30): number {
   for (let i = 0; i < hasta; i++) {
     if ((aoa[i] ?? []).filter(pareceTitulo).length >= 3) return i;
   }
-  // Ninguna fila convence: la primera que tenga algo, y que el vendedor corrija a mano.
   for (let i = 0; i < hasta; i++) {
+    if ((aoa[i] ?? []).filter(pareceTitulo).length >= 2) return i;
+  }
+  // Ninguna fila parece cabecera de tabla (típico de una portada con textos sueltos):
+  // se elige la última fila con datos para no inventar filas de datos falsas debajo
+  // y que el sistema advierta "debajo de esa fila no hay datos".
+  for (let i = hasta - 1; i >= 0; i--) {
     if (filaTieneAlgo(aoa[i])) return i;
   }
   return 0;
@@ -450,6 +612,24 @@ export function detectarFilaEncabezados(aoa: unknown[][], limite = 30): number {
 
 /** Hoja con la que conviene abrir: la primera que tenga datos suficientes para mapear. */
 export function elegirHojaInicial(hojas: HojaUsuario[]): number {
+  // 1. Preferir la primera hoja que tenga una tabla real (fila con 3+ títulos y filas de datos debajo).
+  const conTablaReal = hojas.findIndex((h) => {
+    const fila = detectarFilaEncabezados(h.aoa);
+    const { cols, rows } = columnasDeHoja(h.aoa, fila);
+    const conTexto = cols.filter((c) => c.rawHeader.trim() !== '').length;
+    return conTexto >= 3 && rows.length > 0;
+  });
+  if (conTablaReal >= 0) return conTablaReal;
+
+  // 2. Si no hay con 3+, buscar al menos con 2 títulos y filas debajo.
+  const conColumnas = hojas.findIndex((h) => {
+    const fila = detectarFilaEncabezados(h.aoa);
+    const { cols, rows } = columnasDeHoja(h.aoa, fila);
+    const conTexto = cols.filter((c) => c.rawHeader.trim() !== '').length;
+    return conTexto >= 2 && rows.length > 0;
+  });
+  if (conColumnas >= 0) return conColumnas;
+
   const conDatos = hojas.findIndex((h) => h.filasConDatos >= 2);
   return conDatos >= 0 ? conDatos : 0;
 }
