@@ -228,7 +228,7 @@ backend, que era el punto de la fase.
 69 tests verdes en el panel, incluidos nueve nuevos sobre el esquema, el fallback y la hoja
 `instrucciones`.
 
-### Fase 2 — Wizard de 4 pasos y lectura robusta del archivo `panel`
+### Fase 2 — Wizard de 4 pasos y lectura robusta del archivo `panel` — COMPLETADA 2026-09-04
 
 Resuelve U1, U2, U7, U9, U12. Es la fase de mayor impacto en usabilidad.
 
@@ -243,6 +243,35 @@ Resuelve U1, U2, U7, U9, U12. Es la fase de mayor impacto en usabilidad.
 - Tipografía de trabajo a 15–16px mínimo, objetivos de click ≥44px.
 - Reescritura de textos: "columna oficial" → "dato que pide RepuesTop"; "extras" → "columnas
   que te sobran"; "mapeo" → "relación entre columnas".
+
+**Resultado.** La lectura del archivo se separó en tres piezas puras: `leerLibro` (todas las
+hojas, sin interpretar), `detectarFilaEncabezados` (primera fila con 3+ celdas que parezcan
+títulos) y `columnasDeHoja` (columnas y filas a partir de la hoja y la fila elegidas).
+`columnasDeHoja` no lanza a propósito: el wizard necesita poder mostrar "esta hoja no tiene
+datos" y dejar elegir otra, en vez de cortar con un error.
+
+El mapper pasó a ser un wizard real de cuatro pasos con barra de progreso —**1 Subir · 2
+Relacionar · 3 Revisar · 4 Generar**— y botones Atrás/Siguiente de 48px. El paso 1 muestra las
+primeras filas crudas con la fila de títulos marcada, y se corrige haciendo clic en la fila
+correcta; si el libro trae varias hojas, se abre en la primera con datos (no en la portada) y
+las demás se ofrecen con su cantidad de filas. El paso 3 concentra el resumen, los contadores
+en lenguaje llano y la traducción de valores, que antes vivían en la misma pantalla larga.
+
+Los obligatorios ahora **bloquean** el avance. Para que el bloqueo no encierre a nadie, una
+columna obligatoria sin asignar ofrece escribir el mismo valor para todas las filas
+(`Mapping.defaults`, que también se guarda con el mapeo). La Fase 4 extiende ese valor por
+defecto a todas las columnas y lo conecta con los catálogos.
+
+Dentro de `.mapper` el texto de trabajo no baja de 15px y los controles no bajan de 44px de
+alto; fuera del wizard el panel queda igual.
+
+**Hallazgo durante la verificación en el navegador:** al leer un CSV, `xlsx` interpretaba
+`$ 4.990` —el formato normal de una lista chilena— como el número 4,99, y el vendedor publicaba
+el precio mal sin que nada avisara. `leerLibro` ahora lee los CSV con `raw: true`, así que el
+valor llega tal como lo escribió el vendedor y la Fase 4 lo normaliza a la vista.
+
+83 tests verdes en el panel, incluidos los del wizard por pasos, la detección de títulos con
+encabezado de planilla arriba, la elección de hoja y el bloqueo de obligatorios.
 
 ### Fase 3 — Vista previa del resultado `panel`
 

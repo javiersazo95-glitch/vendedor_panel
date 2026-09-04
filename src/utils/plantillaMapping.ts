@@ -217,6 +217,12 @@ export interface Mapping {
   extras: Record<string, 'descripcion' | 'ignore'>;
   /** columna oficial -> { valor de origen -> valor oficial }. */
   valueMap: Record<string, Record<string, string>>;
+  /**
+   * columna oficial -> valor fijo para todas las filas. La salida del vendedor cuando su
+   * Excel simplemente no tiene esa columna ("todo mi inventario es alternativo"). Se usa
+   * cuando la celda queda vacía, venga o no de una columna mapeada.
+   */
+  defaults?: Record<string, string>;
 }
 
 /** Letra de columna estilo Excel (0 -> A, 26 -> AA). */
@@ -233,7 +239,7 @@ export function columnLetter(index: number): string {
 function emptyMapping(campos: CampoMeta[]): Mapping {
   const oficial: Record<string, string | null> = {};
   campos.forEach((c) => { oficial[c.key] = null; });
-  return { oficial, extras: {}, valueMap: {} };
+  return { oficial, extras: {}, valueMap: {}, defaults: {} };
 }
 
 /**
@@ -307,6 +313,7 @@ export function reconcileMapping(
     }
   });
   base.valueMap = saved.valueMap && typeof saved.valueMap === 'object' ? { ...saved.valueMap } : {};
+  base.defaults = saved.defaults && typeof saved.defaults === 'object' ? { ...saved.defaults } : {};
   for (const col of userCols) {
     if (usados.has(col.id)) continue;
     const pol = saved.extras?.[col.id];
@@ -332,7 +339,21 @@ function readFile(file: File, as: 'text' | 'array'): Promise<string | ArrayBuffe
   });
 }
 
-export async function parseUserFile(file: File): Promise<ParsedUserFile> {
+/**
+ * Una hoja del libro del vendedor, leída completa y sin interpretar. La interpretación
+ * (dónde están los títulos) se decide después y se puede cambiar sin volver a leer el
+ * archivo.
+ */
+export interface HojaUsuario {
+  nombre: string;
+  /** Todas las filas de la hoja tal cual vienen, incluida la de títulos. */
+  aoa: unknown[][];
+  /** Filas con al menos una celda no vacía. Es lo que se le muestra al vendedor. */
+  filasConDatos: number;
+}
+
+/** Lee el libro completo. Un CSV se comporta como un libro de una sola hoja. */
+export async function leerLibro(file: File): Promise<HojaUsuario[]> {
   const XLSX = await import('xlsx');
   const isCsv = /\.csv$/i.test(file.name);
 
@@ -340,21 +361,76 @@ export async function parseUserFile(file: File): Promise<ParsedUserFile> {
   if (isCsv) {
     let text = (await readFile(file, 'text')) as string;
     if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // BOM
-    workbook = XLSX.read(text, { type: 'string' });
+    // raw: no interpretar los valores del CSV. Sin esto, "$ 4.990" -entera normal en una
+    // lista chilena- se lee como el numero 4,99 y el vendedor publica el precio mal sin
+    // que nada avise. Como texto llega tal cual lo escribio, y la Fase 4 lo normaliza.
+    workbook = XLSX.read(text, { type: 'string', raw: true });
   } else {
     const buffer = (await readFile(file, 'array')) as ArrayBuffer;
     workbook = XLSX.read(buffer, { type: 'array' });
   }
 
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) throw new Error('No pudimos leer la primera hoja del archivo.');
+  const hojas: HojaUsuario[] = [];
+  for (const nombre of workbook.SheetNames) {
+    const sheet = workbook.Sheets[nombre];
+    if (!sheet) continue;
+    const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+    hojas.push({ nombre, aoa, filasConDatos: aoa.filter(filaTieneAlgo).length });
+  }
+  if (hojas.length === 0) throw new Error('No pudimos leer ninguna hoja del archivo.');
+  return hojas;
+}
 
-  const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
-  const headerRow = (aoa[0] as unknown[]) ?? [];
-  if (headerRow.length === 0) throw new Error('La primera fila del archivo no tiene títulos de columna.');
+function filaTieneAlgo(fila: unknown[] | undefined): boolean {
+  return !!fila && fila.some((c) => String(c ?? '').trim() !== '');
+}
 
-  const rows = aoa.slice(1).filter((r) => (r as unknown[]).some((c) => String(c ?? '').trim() !== ''));
-  if (rows.length === 0) throw new Error('No encontramos filas de datos debajo de los títulos.');
+/**
+ * ¿Esta celda parece un título de columna? Texto que no sea un número, un precio ni una
+ * fecha. Se usa para distinguir la fila de títulos de las filas de datos.
+ */
+function pareceTitulo(valor: unknown): boolean {
+  if (typeof valor !== 'string') return false;
+  const texto = valor.trim();
+  if (!texto) return false;
+  return !/^[-$\s]*[\d.,/%\s]+$/.test(texto);
+}
+
+/**
+ * Encuentra la fila de títulos: la primera con 3 o más celdas que parezcan títulos.
+ *
+ * Los Excel de tienda casi nunca empiezan en la fila 1: traen el nombre del negocio, un
+ * logo, la fecha de la lista o filas en blanco. Asumir la fila 1 era el error nº1
+ * esperable del flujo — el vendedor veía "(columna A — sin título)" y se quedaba ahí.
+ * Tres celdas de texto es suficiente para no confundirse con un título de planilla, que
+ * ocupa una sola celda.
+ */
+export function detectarFilaEncabezados(aoa: unknown[][], limite = 30): number {
+  const hasta = Math.min(aoa.length, limite);
+  for (let i = 0; i < hasta; i++) {
+    if ((aoa[i] ?? []).filter(pareceTitulo).length >= 3) return i;
+  }
+  // Ninguna fila convence: la primera que tenga algo, y que el vendedor corrija a mano.
+  for (let i = 0; i < hasta; i++) {
+    if (filaTieneAlgo(aoa[i])) return i;
+  }
+  return 0;
+}
+
+/** Hoja con la que conviene abrir: la primera que tenga datos suficientes para mapear. */
+export function elegirHojaInicial(hojas: HojaUsuario[]): number {
+  const conDatos = hojas.findIndex((h) => h.filasConDatos >= 2);
+  return conDatos >= 0 ? conDatos : 0;
+}
+
+/**
+ * Arma las columnas y las filas de datos a partir de una hoja y de la fila de títulos
+ * elegida. No lanza: el wizard necesita poder mostrar una hoja vacía y dejar que el
+ * vendedor elija otra en vez de cortarle el paso con un error.
+ */
+export function columnasDeHoja(aoa: unknown[][], filaEncabezados: number): ParsedUserFile {
+  const headerRow = (aoa[filaEncabezados] as unknown[]) ?? [];
+  const rows = aoa.slice(filaEncabezados + 1).filter((r) => filaTieneAlgo(r as unknown[]));
 
   const seen = new Map<string, number>();
   const cols: UserColumn[] = headerRow.map((raw, index) => {
@@ -370,6 +446,20 @@ export async function parseUserFile(file: File): Promise<ParsedUserFile> {
     return { id: String(index), rawHeader, displayHeader, index };
   });
 
+  return { cols, rows };
+}
+
+/**
+ * Lectura automática de punta a punta: primera hoja con datos, títulos donde parezca que
+ * están. Es el camino que usan los tests y el que el wizard toma como punto de partida
+ * antes de que el vendedor corrija hoja o fila.
+ */
+export async function parseUserFile(file: File): Promise<ParsedUserFile> {
+  const hojas = await leerLibro(file);
+  const hoja = hojas[elegirHojaInicial(hojas)];
+  const { cols, rows } = columnasDeHoja(hoja.aoa, detectarFilaEncabezados(hoja.aoa));
+  if (cols.length === 0) throw new Error('La primera fila del archivo no tiene títulos de columna.');
+  if (rows.length === 0) throw new Error('No encontramos filas de datos debajo de los títulos.');
   return { cols, rows };
 }
 
@@ -441,6 +531,9 @@ export function buildOfficialAoA(
     for (const key of columnas) {
       let value = readCell(row, mapping.oficial[key] ?? null);
       if (campoByKey.get(key)?.enumHint) value = applyValueMap(key, value);
+      // El valor fijo entra donde el archivo no dice nada, sea porque la columna no está
+      // mapeada o porque esa celda venía vacía.
+      if (!value) value = mapping.defaults?.[key] ?? '';
       cells[key] = value;
     }
 

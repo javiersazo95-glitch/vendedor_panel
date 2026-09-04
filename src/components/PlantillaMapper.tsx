@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, Download, X,
-  UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck,
+  FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
+  UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check,
 } from 'lucide-react';
 import {
   ESQUEMA_FALLBACK,
@@ -10,13 +10,19 @@ import {
   reconcileMapping,
   buildOfficialAoA,
   buildOfficialXlsxFile,
-  parseUserFile,
+  leerLibro,
+  columnasDeHoja,
+  detectarFilaEncabezados,
+  elegirHojaInicial,
+  columnLetter,
   headerSignature,
   loadSavedMapping,
   saveMapping,
   distinctValuesForColumn,
   mappedEnumColumns,
   getIsoTimestampString,
+  type CampoMeta,
+  type HojaUsuario,
   type Mapping,
   type UserColumn,
   type EsquemaPlantilla,
@@ -31,6 +37,19 @@ interface PlantillaMapperProps {
 
 const BIG_FILE_ROWS = 5000;
 const VALUE_MAP_CAP = 20;
+/** Filas crudas que se muestran para que el vendedor confirme dónde están sus títulos. */
+const PREVIEW_ROWS = 6;
+
+/** Los cuatro pasos del flujo. El 4 es la acción final, no una pantalla más. */
+const PASOS = [
+  { n: 1, titulo: 'Sube tu archivo' },
+  { n: 2, titulo: 'Relaciona' },
+  { n: 3, titulo: 'Revisa' },
+  { n: 4, titulo: 'Genera' },
+] as const;
+
+const plural = (n: number, singular: string, plural_: string) =>
+  `${n.toLocaleString('es-CL')} ${n === 1 ? singular : plural_}`;
 
 export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   onGenerated,
@@ -38,6 +57,10 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   esquema = ESQUEMA_FALLBACK,
 }) => {
   const [userFile, setUserFile] = useState<File | null>(null);
+  const [hojas, setHojas] = useState<HojaUsuario[]>([]);
+  const [hojaIndex, setHojaIndex] = useState(0);
+  const [filaEncabezados, setFilaEncabezados] = useState(0);
+  const [paso, setPaso] = useState<1 | 2 | 3>(1);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [userCols, setUserCols] = useState<UserColumn[]>([]);
@@ -52,25 +75,39 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   // son obligatorias y qué valores acepta cada lista.
   const campos = useMemo(() => camposDesdeEsquema(esquema), [esquema]);
 
+  /**
+   * Aplica una elección de hoja + fila de títulos: recalcula columnas y filas, y vuelve a
+   * proponer la relación entre columnas. Se llama desde los handlers y no desde un efecto
+   * para que el vendedor vea el resultado en el mismo clic.
+   */
+  const aplicarSeleccion = (libro: HojaUsuario[], indiceHoja: number, fila: number) => {
+    const hoja = libro[indiceHoja];
+    const { cols, rows } = columnasDeHoja(hoja?.aoa ?? [], fila);
+    const saved = cols.length ? loadSavedMapping(headerSignature(cols)) : null;
+    setUserCols(cols);
+    setUserRows(rows);
+    setMapping(saved ? reconcileMapping(saved, cols, campos) : autoDetectMapping(cols, campos));
+    setReused(!!saved);
+    setHojaIndex(indiceHoja);
+    setFilaEncabezados(fila);
+  };
+
   const handleFile = async (file: File | null) => {
     if (!file) return;
     setParsing(true);
     setParseError(null);
     try {
-      const { cols, rows } = await parseUserFile(file);
-      const sig = headerSignature(cols);
-      const saved = loadSavedMapping(sig);
-      setMapping(saved ? reconcileMapping(saved, cols, campos) : autoDetectMapping(cols, campos));
-      setReused(!!saved);
-      setUserCols(cols);
-      setUserRows(rows);
+      const libro = await leerLibro(file);
+      const indiceHoja = elegirHojaInicial(libro);
+      const fila = detectarFilaEncabezados(libro[indiceHoja].aoa);
+      setHojas(libro);
+      aplicarSeleccion(libro, indiceHoja, fila);
       setUserFile(file);
+      setPaso(1);
     } catch (err) {
-      setParseError(err instanceof Error ? err.message : 'No se pudo leer el archivo.');
-      setUserFile(null);
-      setUserCols([]);
-      setUserRows([]);
-      setMapping(null);
+      const mensaje = err instanceof Error ? err.message : 'No se pudo leer el archivo.';
+      resetFile();
+      setParseError(mensaje);
     } finally {
       setParsing(false);
     }
@@ -78,11 +115,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   const resetFile = () => {
     setUserFile(null);
+    setHojas([]);
+    setHojaIndex(0);
+    setFilaEncabezados(0);
     setUserCols([]);
     setUserRows([]);
     setMapping(null);
-    setParseError(null);
     setReused(false);
+    setParseError(null);
+    setPaso(1);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -121,8 +162,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     };
   }, [mapping, unassignedCols, campos]);
 
+  /**
+   * Obligatorios que siguen sin resolver. Un valor fijo para todas las filas cuenta como
+   * resuelto: hay vendedores cuyo Excel simplemente no trae esa columna porque para ellos
+   * es siempre la misma.
+   */
   const missingRequired = useMemo(
-    () => (mapping ? campos.filter((c) => c.required && !mapping.oficial[c.key]) : []),
+    () => (mapping
+      ? campos.filter((c) => c.required && !mapping.oficial[c.key] && !(mapping.defaults?.[c.key] ?? '').trim())
+      : []),
     [mapping, campos],
   );
 
@@ -158,6 +206,16 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       else delete table[sourceValue];
       valueMap[colKey] = table;
       return { ...prev, valueMap };
+    });
+  };
+
+  const setDefault = (colKey: string, valor: string) => {
+    setMapping((prev) => {
+      if (!prev) return prev;
+      const defaults = { ...(prev.defaults ?? {}) };
+      if (valor.trim()) defaults[colKey] = valor;
+      else delete defaults[colKey];
+      return { ...prev, defaults };
     });
   };
 
@@ -213,13 +271,28 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     if (!parsing) handleFile(e.dataTransfer.files?.[0] ?? null);
   };
 
-  /* --------------------------- Paso 1: subir archivo --------------------------- */
+  /** Barra de pasos: dónde estoy, qué falta. Visible en todo el flujo. */
+  const renderPasos = (actual: number) => (
+    <ol className="mapper-progress" aria-label="Pasos para adaptar tu plantilla">
+      {PASOS.map((p) => {
+        const estado = p.n < actual ? 'listo' : p.n === actual ? 'actual' : 'pendiente';
+        return (
+          <li key={p.n} className={`mapper-progress-step ${estado}`} aria-current={estado === 'actual' ? 'step' : undefined}>
+            <span className="mapper-progress-num">{estado === 'listo' ? <Check size={16} /> : p.n}</span>
+            <span className="mapper-progress-label">{p.titulo}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+
+  /* --------------------------- Antes de subir nada --------------------------- */
   if (!userFile || !mapping) {
-    const pasos = [
-      { icon: <UploadCloud size={16} />, t: 'Sube tu Excel', d: 'Tu archivo .xlsx, .xls o .csv con los encabezados que ya usas.' },
-      { icon: <ArrowLeftRight size={16} />, t: 'Empareja tus columnas', d: 'Indica qué columna tuya corresponde a cada campo oficial. Te proponemos coincidencias automáticas.' },
-      { icon: <ListChecks size={16} />, t: 'Ajusta lo que sobra', d: 'Lo que no calce lo mandas a la descripción o lo ignoras. También traduces valores como “Nuevo → ORIGINAL”.' },
-      { icon: <Rocket size={16} />, t: 'Genera y continúa', d: 'Creamos el Excel oficial y sigues con el análisis y la carga normal.' },
+    const explicacion = [
+      { icon: <UploadCloud size={18} />, t: 'Sube tu archivo', d: 'Tu Excel o CSV tal como lo tienes hoy. Si trae varias hojas, tú eliges cuál.' },
+      { icon: <ArrowLeftRight size={18} />, t: 'Relaciona tus columnas', d: 'Nos dices qué columna tuya corresponde a cada dato que pide RepuesTop. Te proponemos la relación y tú la corriges.' },
+      { icon: <ListChecks size={18} />, t: 'Revisa', d: 'Miras cómo quedó antes de generar nada. Las columnas que te sobran las mandas a la descripción o las dejas fuera.' },
+      { icon: <Rocket size={18} />, t: 'Genera', d: 'Creamos el Excel con el formato de RepuesTop y sigues con la carga normal.' },
     ];
     return (
       <div className="mapper mapper-intro">
@@ -238,8 +311,10 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           </div>
         </div>
 
+        {renderPasos(1)}
+
         <ol className="mapper-steps">
-          {pasos.map((p, i) => (
+          {explicacion.map((p, i) => (
             <li key={p.t}>
               <span className="mapper-step-num">{i + 1}</span>
               <div className="mapper-step-body">
@@ -289,141 +364,332 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         </p>
 
         <div className="mapper-footer">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>
-            <ArrowLeft size={14} /> Volver
+          <button type="button" className="btn btn-secondary mapper-btn" onClick={onCancel}>
+            <ArrowLeft size={16} /> Volver
           </button>
         </div>
       </div>
     );
   }
 
-  /* --------------------------- Paso 2 y 3: mapear ---------------------------- */
+  const hoja = hojas[hojaIndex];
   const bigFile = userRows.length > BIG_FILE_ROWS;
+  const sinTitulos = userCols.length === 0;
+  const sinFilas = userRows.length === 0;
+  const puedeAvanzarDelPaso1 = !sinTitulos && !sinFilas;
+
+  const chipArchivo = (
+    <div className="mapper-file-chip">
+      <FileSpreadsheet size={15} />
+      <strong>{userFile.name}</strong>
+      <span>
+        {hojas.length > 1 ? `hoja "${hoja?.nombre}" · ` : ''}
+        {`${plural(userRows.length, 'fila', 'filas')} · ${plural(userCols.length, 'columna', 'columnas')}`}
+      </span>
+      <button type="button" onClick={resetFile} title="Cambiar archivo"><X size={14} /></button>
+    </div>
+  );
+
+  /* ------------------- Paso 1: qué hoja y dónde están los títulos ------------------ */
+  if (paso === 1) {
+    const filasPreview = (hoja?.aoa ?? []).slice(0, Math.max(PREVIEW_ROWS, filaEncabezados + 2));
+    const anchoPreview = Math.min(
+      8,
+      filasPreview.reduce((max, f) => Math.max(max, (f as unknown[]).length), 0),
+    );
+
+    return (
+      <div className="mapper">
+        <div className="mapper-hero compact">
+          <span className="mapper-hero-grid" aria-hidden />
+          <div className="mapper-hero-icon"><UploadCloud size={20} /></div>
+          <div className="mapper-hero-text">
+            <span className="mapper-kicker">Paso 1 de 4 · Tu archivo</span>
+            <h4>Revisemos que estemos leyendo bien tu archivo</h4>
+            <p>
+              Marcamos en azul la fila donde creemos que están los títulos de tus columnas.
+              Si nos equivocamos, haz clic en la fila correcta.
+            </p>
+          </div>
+        </div>
+
+        {renderPasos(1)}
+        {chipArchivo}
+        {parseError && <div className="mapper-alert error"><AlertTriangle size={15} /> {parseError}</div>}
+
+        {hojas.length > 1 && (
+          <section className="mapper-section">
+            <span className="bulk-purpose-label">¿Qué hoja de tu Excel quieres cargar?</span>
+            <div className="mapper-sheet-list">
+              {hojas.map((h, i) => (
+                <button
+                  type="button"
+                  key={h.nombre}
+                  className={`mapper-sheet ${i === hojaIndex ? 'sel' : ''}`}
+                  onClick={() => aplicarSeleccion(hojas, i, detectarFilaEncabezados(h.aoa))}
+                >
+                  <b>{h.nombre}</b>
+                  <span>{plural(Math.max(h.filasConDatos - 1, 0), 'fila con datos', 'filas con datos')}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">¿En qué fila están los títulos de tus columnas?</span>
+          <div className="mapper-preview-wrap">
+            <table className="mapper-preview">
+              <tbody>
+                {filasPreview.map((fila, i) => (
+                  <tr
+                    key={i}
+                    className={i === filaEncabezados ? 'titulos' : ''}
+                    onClick={() => aplicarSeleccion(hojas, hojaIndex, i)}
+                    title={`Usar la fila ${i + 1} como títulos`}
+                  >
+                    <th scope="row">
+                      {i + 1}
+                      {i === filaEncabezados && <span className="mapper-preview-tag">títulos</span>}
+                    </th>
+                    {Array.from({ length: anchoPreview }, (_, c) => (
+                      <td key={c}>{String((fila as unknown[])[c] ?? '')}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mapper-hint">
+            Haz clic en la fila que contiene los títulos ({columnLetter(0)}, {columnLetter(1)}, … son las
+            columnas de tu Excel). Todo lo que esté encima de esa fila se ignora.
+          </p>
+        </section>
+
+        {sinTitulos && (
+          <div className="mapper-alert warn">
+            <AlertTriangle size={15} /> Esa fila no tiene títulos. Elige otra fila, u otra hoja.
+          </div>
+        )}
+        {!sinTitulos && sinFilas && (
+          <div className="mapper-alert warn">
+            <AlertTriangle size={15} /> Debajo de esa fila no hay datos. Elige otra fila, u otra hoja.
+          </div>
+        )}
+
+        <div className="mapper-footer">
+          <button type="button" className="btn btn-secondary mapper-btn" onClick={onCancel}>
+            <ArrowLeft size={16} /> Cancelar
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-primary-blue mapper-btn"
+            onClick={() => setPaso(2)}
+            disabled={!puedeAvanzarDelPaso1}
+          >
+            Siguiente <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* --------------------------- Paso 2: relacionar --------------------------- */
+  if (paso === 2) {
+    return (
+      <div className="mapper">
+        <div className="mapper-hero compact">
+          <span className="mapper-hero-grid" aria-hidden />
+          <div className="mapper-hero-icon"><ArrowLeftRight size={20} /></div>
+          <div className="mapper-hero-text">
+            <span className="mapper-kicker">Paso 2 de 4 · Relacionar columnas</span>
+            <h4>Relaciona tus columnas con las de RepuesTop</h4>
+            <p>
+              Por cada dato que pide RepuesTop, elige la columna de tu archivo que lo contiene.
+              Lo que quede sin usar decides si va a la descripción del producto o se deja fuera.
+            </p>
+          </div>
+        </div>
+
+        {renderPasos(2)}
+        {chipArchivo}
+
+        {reused && (
+          <div className="mapper-alert info">
+            Aplicamos la relación que guardaste antes para un Excel con estas mismas columnas.
+            Revísala y ajústala si hace falta.
+          </div>
+        )}
+        {parseError && <div className="mapper-alert error"><AlertTriangle size={15} /> {parseError}</div>}
+        {bigFile && (
+          <div className="mapper-alert info">
+            Archivo grande ({plural(userRows.length, 'fila', 'filas')}): generar el Excel puede
+            tardar unos segundos.
+          </div>
+        )}
+
+        <div className="mapper-counts">
+          <span><b>{counts.asignadas}</b>/{campos.length} datos relacionados</span>
+          <span><b>{counts.sinAsignar}</b> columnas tuyas sin usar</span>
+          <span><b>{counts.aDescripcion}</b> van a la descripción</span>
+          <span><b>{counts.ignoradas}</b> quedan fuera</span>
+        </div>
+
+        {missingRequired.length > 0 && (
+          <div className="mapper-alert warn">
+            <AlertTriangle size={15} />
+            <span>
+              Todavía falta indicar: <b>{missingRequired.map((c) => c.label).join(', ')}</b>. Son
+              datos que RepuesTop necesita para publicar. Elige la columna de tu archivo, o escribe
+              al lado el mismo valor para todas las filas.
+            </span>
+          </div>
+        )}
+
+        {/* Datos que pide RepuesTop */}
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">Datos que pide RepuesTop</span>
+          <div className="mapper-rows">
+            {campos.map((campo) => {
+              const value = mapping.oficial[campo.key] ?? '';
+              const uses = value ? usageCount.get(value) ?? 0 : 0;
+              const faltante = campo.required && !value;
+              return (
+                <div className={`mapper-row ${faltante ? 'falta' : ''}`} key={campo.key}>
+                  <div className="mapper-row-label">
+                    <span>
+                      {campo.label}
+                      {campo.required && <b className="req">*</b>}
+                    </span>
+                    {campo.enumHint && (
+                      <span className="mapper-enum-chip">{campo.enumHint.join(' / ')}</span>
+                    )}
+                    {uses > 1 && <span className="mapper-enum-chip alt">usada {uses} veces</span>}
+                  </div>
+                  <div className="mapper-row-control">
+                    <select
+                      className="form-control"
+                      value={value}
+                      aria-label={campo.label}
+                      onChange={(e) => setOficial(campo.key, e.target.value)}
+                    >
+                      <option value="">— no tengo esta columna —</option>
+                      {userCols.map((c) => (
+                        <option key={c.id} value={c.id}>{c.displayHeader}</option>
+                      ))}
+                    </select>
+                    {faltante && (
+                      <input
+                        className="form-control mapper-default-input"
+                        type="text"
+                        value={mapping.defaults?.[campo.key] ?? ''}
+                        placeholder="o el mismo valor para todas las filas"
+                        aria-label={`Valor fijo para ${campo.label}`}
+                        onChange={(e) => setDefault(campo.key, e.target.value)}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Columnas que te sobran */}
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">
+            Columnas de tu Excel sin asignar ({unassignedCols.length})
+          </span>
+          {unassignedCols.length === 0 ? (
+            <p className="mapper-empty">Todas las columnas de tu archivo están relacionadas con un dato de RepuesTop.</p>
+          ) : (
+            <div className="mapper-rows">
+              {unassignedCols.map((c) => (
+                <div className="mapper-row" key={c.id}>
+                  <div className="mapper-row-label">
+                    <span>{c.displayHeader}</span>
+                    {sampleValue(c) && <span className="mapper-sample">ej: {sampleValue(c)}</span>}
+                  </div>
+                  <select
+                    className="form-control"
+                    value={mapping.extras[c.id] ?? 'descripcion'}
+                    aria-label={`Qué hacer con ${c.displayHeader}`}
+                    onChange={(e) => setExtra(c.id, e.target.value as 'descripcion' | 'ignore')}
+                  >
+                    <option value="descripcion">Añadir a la descripción</option>
+                    <option value="ignore">Dejar fuera</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <div className="mapper-footer">
+          <button type="button" className="btn btn-secondary mapper-btn" onClick={() => setPaso(1)}>
+            <ArrowLeft size={16} /> Atrás
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-primary-blue mapper-btn"
+            onClick={() => setPaso(3)}
+            disabled={missingRequired.length > 0}
+            title={missingRequired.length > 0 ? 'Falta indicar datos obligatorios' : undefined}
+          >
+            Siguiente <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------------------------- Paso 3: revisar ---------------------------- */
+  const filasListas = userRows.length;
 
   return (
     <div className="mapper">
       <div className="mapper-hero compact">
         <span className="mapper-hero-grid" aria-hidden />
-        <div className="mapper-hero-icon"><ArrowLeftRight size={20} /></div>
+        <div className="mapper-hero-icon"><ListChecks size={20} /></div>
         <div className="mapper-hero-text">
-          <span className="mapper-kicker">Paso 2 · Relacionar columnas</span>
-          <h4>Relaciona tus columnas con las de RepuesTop</h4>
+          <span className="mapper-kicker">Paso 3 de 4 · Revisar</span>
+          <h4>Revisa antes de generar</h4>
           <p>
-            Por cada columna oficial elige la columna equivalente de tu archivo. Lo que quede sin
-            asignar decides si va a la descripción del producto o se ignora.
+            Esto es lo que vamos a preparar con tu archivo. Todavía no se publica nada.
           </p>
         </div>
       </div>
 
-      <div className="mapper-file-chip">
-        <FileSpreadsheet size={15} />
-        <strong>{userFile.name}</strong>
-        <span>{`${userRows.length.toLocaleString('es-CL')} ${userRows.length === 1 ? 'fila' : 'filas'} · ${userCols.length} ${userCols.length === 1 ? 'columna' : 'columnas'}`}</span>
-        <button type="button" onClick={resetFile} title="Cambiar archivo"><X size={13} /></button>
-      </div>
-
-      {reused && (
-        <div className="mapper-alert info">
-          Aplicamos un mapeo que guardaste antes para un Excel con estas mismas columnas. Revísalo y
-          ajústalo si hace falta.
-        </div>
-      )}
+      {renderPasos(generating ? 4 : 3)}
+      {chipArchivo}
       {parseError && <div className="mapper-alert error"><AlertTriangle size={15} /> {parseError}</div>}
-      {bigFile && (
-        <div className="mapper-alert info">
-          Archivo grande ({userRows.length.toLocaleString('es-CL')} filas): generar el Excel puede
-          tardar unos segundos.
-        </div>
-      )}
 
       <div className="mapper-counts">
-        <span><b>{counts.asignadas}</b>/{campos.length} asignadas</span>
-        <span><b>{counts.sinAsignar}</b> sin asignar</span>
-        <span><b>{counts.aDescripcion}</b> a la descripción</span>
-        <span><b>{counts.ignoradas}</b> ignoradas</span>
+        <span><b>{filasListas.toLocaleString('es-CL')}</b> repuestos en tu archivo</span>
+        <span><b>{counts.asignadas}</b> datos relacionados</span>
+        <span><b>{counts.aDescripcion}</b> columnas tuyas van a la descripción</span>
+        <span><b>{counts.ignoradas}</b> quedan fuera</span>
       </div>
 
-      {missingRequired.length > 0 && (
-        <div className="mapper-alert warn">
-          <AlertTriangle size={15} />
-          Falta asignar columnas obligatorias: {missingRequired.map((c) => c.label).join(', ')}. Puedes
-          continuar igual; el análisis marcará las filas afectadas.
-        </div>
-      )}
-
-      {/* Sección A */}
       <section className="mapper-section">
-        <span className="bulk-purpose-label">Columnas oficiales de RepuesTop</span>
-        <div className="mapper-rows">
-          {campos.map((campo) => {
-            const value = mapping.oficial[campo.key] ?? '';
-            const uses = value ? usageCount.get(value) ?? 0 : 0;
-            return (
-              <div className="mapper-row" key={campo.key}>
-                <div className="mapper-row-label">
-                  <span>
-                    {campo.label}
-                    {campo.required && <b className="req">*</b>}
-                  </span>
-                  {campo.enumHint && (
-                    <span className="mapper-enum-chip">{campo.enumHint.join(' / ')}</span>
-                  )}
-                  {uses > 1 && <span className="mapper-enum-chip alt">usada {uses} veces</span>}
-                </div>
-                <select
-                  className="form-control"
-                  value={value}
-                  onChange={(e) => setOficial(campo.key, e.target.value)}
-                >
-                  <option value="">— sin dato —</option>
-                  {userCols.map((c) => (
-                    <option key={c.id} value={c.id}>{c.displayHeader}</option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
-        </div>
+        <span className="bulk-purpose-label">Así estamos leyendo tu archivo</span>
+        <ul className="mapper-resumen">
+          <li><b>Archivo:</b> {userFile.name}</li>
+          {hojas.length > 1 && <li><b>Hoja:</b> {hoja?.nombre}</li>}
+          <li><b>Títulos:</b> fila {filaEncabezados + 1} de tu Excel</li>
+          <li><b>Repuestos a preparar:</b> {filasListas.toLocaleString('es-CL')}</li>
+        </ul>
       </section>
 
-      {/* Sección B */}
-      <section className="mapper-section">
-        <span className="bulk-purpose-label">
-          Columnas de tu Excel sin asignar ({unassignedCols.length})
-        </span>
-        {unassignedCols.length === 0 ? (
-          <p className="mapper-empty">Todas las columnas de tu archivo están asignadas a una columna oficial.</p>
-        ) : (
-          <div className="mapper-rows">
-            {unassignedCols.map((c) => (
-              <div className="mapper-row" key={c.id}>
-                <div className="mapper-row-label">
-                  <span>{c.displayHeader}</span>
-                  {sampleValue(c) && <span className="mapper-sample">ej: {sampleValue(c)}</span>}
-                </div>
-                <select
-                  className="form-control"
-                  value={mapping.extras[c.id] ?? 'descripcion'}
-                  onChange={(e) => setExtra(c.id, e.target.value as 'descripcion' | 'ignore')}
-                >
-                  <option value="descripcion">Añadir a la descripción</option>
-                  <option value="ignore">Ignorar</option>
-                </select>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Sección C */}
+      {/* Traducir valores */}
       {enumColumns.length > 0 && (
         <section className="mapper-section">
-          <span className="bulk-purpose-label">Traducir valores</span>
+          <span className="bulk-purpose-label">Traducir tus palabras a las de RepuesTop</span>
           <p className="mapper-hint">
-            Tus valores para estas columnas se enviarán como los tengas, salvo que aquí los traduzcas
-            al valor oficial.
+            Estos datos se envían tal como los tienes, salvo que aquí elijas a qué valor de
+            RepuesTop corresponde cada uno.
           </p>
-          {enumColumns.map(({ campo, userColId }) => {
+          {enumColumns.map(({ campo, userColId }: { campo: CampoMeta; userColId: string }) => {
             const col = colById.get(userColId);
             if (!col) return null;
             const distinct = distinctValuesForColumn(userRows, col.index, VALUE_MAP_CAP);
@@ -446,6 +712,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         <select
                           className="form-control"
                           value={mapping.valueMap[campo.key]?.[val] ?? ''}
+                          aria-label={`${campo.label}: ${val}`}
                           onChange={(e) => setValue(campo.key, val, e.target.value)}
                         >
                           <option value="">dejar como está</option>
@@ -464,20 +731,25 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       )}
 
       <div className="mapper-footer">
-        <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={generating}>
-          <ArrowLeft size={14} /> Cancelar
+        <button
+          type="button"
+          className="btn btn-secondary mapper-btn"
+          onClick={() => setPaso(2)}
+          disabled={generating}
+        >
+          <ArrowLeft size={16} /> Atrás
         </button>
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-secondary mapper-btn"
           onClick={handleDownloadGenerated}
           disabled={generating}
         >
-          <Download size={14} /> Descargar Excel generado
+          <Download size={16} /> Descargar Excel generado
         </button>
         <button
           type="button"
-          className="btn btn-primary btn-primary-blue"
+          className="btn btn-primary btn-primary-blue mapper-btn"
           onClick={handleGenerate}
           disabled={generating}
         >

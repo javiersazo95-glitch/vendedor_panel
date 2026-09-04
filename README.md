@@ -41,9 +41,10 @@ npm run preview   # sirve el build de dist/ localmente
   ya solo atiende **Actualización Rápida** (plantilla de 3 columnas: sku, precio, stock) y
   deriva la publicación completa al componente de arriba.
 - **Adaptar mi plantilla** (`src/components/PlantillaMapper.tsx`, `src/utils/plantillaMapping.ts`):
-  para el vendedor que ya lleva su inventario en su propio Excel. Relaciona sus columnas con
-  las oficiales, manda las que sobran a la descripción y genera el archivo en formato oficial,
-  todo en el navegador. El plan de mejoras de este flujo está en
+  para el vendedor que ya lleva su inventario en su propio Excel. Wizard de cuatro pasos
+  (subir · relacionar · revisar · generar): elige la hoja y la fila de títulos de su archivo,
+  relaciona sus columnas con las oficiales, manda las que sobran a la descripción y genera el
+  archivo en formato oficial, todo en el navegador. El plan de mejoras de este flujo está en
   [PLAN_CARGA_MASIVA_PLANTILLA.md](PLAN_CARGA_MASIVA_PLANTILLA.md).
 - **Inventario** (`src/components/InventoryTable.tsx`, `src/components/Dashboard.tsx`): listado, filtros, pausar/reanudar y eliminar productos.
 

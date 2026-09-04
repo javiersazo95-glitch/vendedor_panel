@@ -7,6 +7,10 @@ import {
   buildOfficialAoA,
   buildOfficialXlsxFile,
   camposDesdeEsquema,
+  columnasDeHoja,
+  detectarFilaEncabezados,
+  elegirHojaInicial,
+  leerLibro,
   headerSignature,
   loadSavedMapping,
   saveMapping,
@@ -276,5 +280,105 @@ describe('buildOfficialXlsxFile', () => {
     expect(wb.SheetNames).toContain('instrucciones');
     const filas = XLSX.utils.sheet_to_json<string[]>(wb.Sheets.instrucciones, { header: 1 });
     expect(filas[0][0]).toBe('VERSION_PLANTILLA: 2.0.0');
+  });
+});
+
+/* --------------------------------------------------------------------------
+ * Fase 2: leer el archivo del vendedor como viene, no como nos gustaría.
+ * ------------------------------------------------------------------------ */
+
+describe('detectarFilaEncabezados', () => {
+  it('salta el nombre de la tienda y las filas en blanco de arriba', () => {
+    const aoa = [
+      ['REPUESTOS DON JOSE'],
+      [],
+      ['Lista actualizada al 01/05'],
+      ['Codigo', 'Nombre', 'Marca', 'Precio'],
+      ['A-1', 'Filtro', 'Bosch', 4990],
+    ];
+    expect(detectarFilaEncabezados(aoa)).toBe(3);
+  });
+
+  it('la primera fila también puede ser la de títulos', () => {
+    expect(detectarFilaEncabezados([['Codigo', 'Nombre', 'Marca'], ['A-1', 'Filtro', 'Bosch']])).toBe(0);
+  });
+
+  it('no confunde una fila de datos con los títulos', () => {
+    const aoa = [
+      ['A-1', 'Filtro', 'Bosch'],
+      ['Codigo', 'Nombre', 'Marca'],
+    ];
+    // La primera fila también son tres textos: se toma la primera, que es lo esperable,
+    // y para eso existe el control manual del wizard.
+    expect(detectarFilaEncabezados(aoa)).toBe(0);
+  });
+
+  it('sin ninguna fila que convenza, cae en la primera con algo', () => {
+    expect(detectarFilaEncabezados([[], ['', ''], ['Total', 1000]])).toBe(2);
+  });
+});
+
+describe('columnasDeHoja', () => {
+  const aoa = [
+    ['Lista mayo'],
+    ['Codigo', 'Nombre', 'Marca'],
+    ['A-1', 'Filtro', 'Bosch'],
+    ['', '', ''],
+    ['A-2', 'Correa', 'Gates'],
+  ];
+
+  it('toma los títulos de la fila indicada y descarta lo de arriba', () => {
+    const { cols, rows } = columnasDeHoja(aoa, 1);
+    expect(cols.map((c) => c.rawHeader)).toEqual(['Codigo', 'Nombre', 'Marca']);
+    expect(rows).toHaveLength(2);
+    expect(rows[1][0]).toBe('A-2');
+  });
+
+  it('no lanza cuando la fila elegida no sirve: el wizard necesita poder mostrarlo', () => {
+    const { cols, rows } = columnasDeHoja(aoa, 4);
+    expect(cols.map((c) => c.rawHeader)).toEqual(['A-2', 'Correa', 'Gates']);
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe('leerLibro y elegirHojaInicial', () => {
+  it('un CSV es un libro de una hoja', async () => {
+    const file = new File([['SKU,Precio', 'A-1,100', ''].join('\n')], 'mio.csv', { type: 'text/csv' });
+    const hojas = await leerLibro(file);
+    expect(hojas).toHaveLength(1);
+    expect(hojas[0].filasConDatos).toBe(2);
+  });
+
+  it('abre en la primera hoja con datos, no en la portada', () => {
+    const hojas = [
+      { nombre: 'Portada', aoa: [['Lista de precios']], filasConDatos: 1 },
+      { nombre: 'Toyota', aoa: [['Codigo'], ['A-1']], filasConDatos: 2 },
+    ];
+    expect(elegirHojaInicial(hojas)).toBe(1);
+  });
+});
+
+describe('valores fijos por columna (defaults)', () => {
+  const userCols = cols(['sku', 'nombre']);
+  const mappingConDefault = (): Mapping => ({
+    oficial: { ...Object.fromEntries(PLANTILLA_COLUMNAS.map((k) => [k, null])), sku_proveedor: '0', nombre_publicado: '1' },
+    extras: {},
+    valueMap: {},
+    defaults: { categoria: 'Filtros', condicion: 'ALTERNATIVO' },
+  });
+
+  it('rellena la columna que el archivo del vendedor no trae', () => {
+    const aoa = buildOfficialAoA([['A-1', 'Filtro'], ['A-2', 'Correa']], userCols, mappingConDefault());
+    const idx = (k: string) => PLANTILLA_COLUMNAS.indexOf(k as (typeof PLANTILLA_COLUMNAS)[number]);
+    expect(aoa[1][idx('categoria')]).toBe('Filtros');
+    expect(aoa[2][idx('condicion')]).toBe('ALTERNATIVO');
+  });
+
+  it('no pisa lo que sí trae el archivo', () => {
+    const m = mappingConDefault();
+    m.oficial.categoria = '1';
+    const aoa = buildOfficialAoA([['A-1', 'Frenos']], userCols, m);
+    const idx = PLANTILLA_COLUMNAS.indexOf('categoria');
+    expect(aoa[1][idx]).toBe('Frenos');
   });
 });
