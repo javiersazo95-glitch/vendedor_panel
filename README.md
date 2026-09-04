@@ -66,6 +66,8 @@ npm run preview   # sirve el build de dist/ localmente
   subcategorías y marcas, con sugerencias del más parecido.
 - `src/utils/plantillaCompatibilidad.ts` — compatibilidad múltiple: SKU repetido a la hoja
   `compatibilidades` y parseo de la aplicación escrita de corrido.
+- `src/utils/plantillaFotos.ts` — fotos declaradas en el Excel del vendedor (enlace o nombre de
+  archivo). Se descargan desde el navegador, nunca desde el backend.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).

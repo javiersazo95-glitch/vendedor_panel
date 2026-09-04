@@ -248,6 +248,12 @@ export interface Mapping {
    * compatibilidades, en la hoja `compatibilidades` de la plantilla.
    */
   agruparPorSku?: boolean;
+  /**
+   * Columna del vendedor que trae la foto de cada repuesto (URL o nombre de archivo). No
+   * es una columna oficial: la plantilla no tiene columna de imagen. Se usa para el paso
+   * de fotos, después de publicar.
+   */
+  columnaFotos?: string | null;
 }
 
 /** Letra de columna estilo Excel (0 -> A, 26 -> AA). */

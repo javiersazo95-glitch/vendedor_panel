@@ -322,6 +322,35 @@ describe('PlantillaMapper', () => {
     expect(aoa[1][PLANTILLA_COLUMNAS.indexOf('compatibilidad_marca')]).toBe('');
   });
 
+  it('entrega al paso de fotos la columna de fotos del Excel, sin meterla en el archivo oficial', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Foto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,https://mitienda.cl/fotos/a1.jpg',
+      'A-2,Disco,Brembo,Frenos,9990,5,https://mitienda.cl/fotos/a2.jpg',
+    ].join('\n'));
+
+    fireEvent.click(screen.getByLabelText('Usar la columna de fotos de mi Excel'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    expect(screen.getByText(/con foto en tu Excel/)).toBeInTheDocument();
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(1));
+
+    // Las fotos viajan aparte: la plantilla no tiene columna de imagen.
+    const [file, fotos] = onGenerated.mock.calls[0];
+    expect(fotos).toEqual({
+      'A-1': ['https://mitienda.cl/fotos/a1.jpg'],
+      'A-2': ['https://mitienda.cl/fotos/a2.jpg'],
+    });
+    const aoa = await readGeneratedFile(file as File);
+    expect(aoa[0]).toEqual([...PLANTILLA_COLUMNAS]);
+    // Y no se cuela en la descripción, que es donde iba a parar antes.
+    expect(String(aoa[1][PLANTILLA_COLUMNAS.indexOf('descripcion')])).not.toContain('mitienda');
+  });
+
   it('deja elegir la hoja cuando el libro trae varias', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Portada de la lista']]), 'Portada');

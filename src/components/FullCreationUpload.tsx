@@ -5,6 +5,7 @@ import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
 import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
+import { descargarFotos, esUrlDeImagen } from '../utils/plantillaFotos';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -203,6 +204,11 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const photoFolderInputRef = useRef<HTMLInputElement>(null);
   const photoZipInputRef = useRef<HTMLInputElement>(null);
   const [productInfoBySku, setProductInfoBySku] = useState<Record<string, { nombre: string; categoria: string }>>({});
+  // Fotos que el vendedor declaro en su propio Excel (URL o nombre de archivo), por SKU.
+  // No viajan en el archivo oficial: son el insumo de esta fase B.
+  const [fotosDeclaradas, setFotosDeclaradas] = useState<Record<string, string[]> | null>(null);
+  const [descargandoFotos, setDescargandoFotos] = useState<{ hechas: number; total: number } | null>(null);
+  const [fotosNoTraidas, setFotosNoTraidas] = useState<{ sku: string; url: string; motivo: string }[]>([]);
   // Evita que la subida automatica de fotos (ver efecto mas abajo) se dispare mas de una
   // vez para el mismo resultado de carga.
   const autoPhotoUploadRef = useRef(false);
@@ -285,11 +291,30 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     return base.startsWith(skuLower + '_') || base.startsWith(skuLower + '-') || base.startsWith(skuLower + ' ');
   };
 
+  /**
+   * Nombres de archivo que el vendedor declaro en su Excel para este SKU, cuando existen
+   * de verdad entre las fotos que subio. Manda sobre el emparejamiento por nombre = SKU:
+   * si el vendedor se tomo el trabajo de decir cual es la foto, esa es.
+   */
+  const declaradasParaSku = (sku: string, filenames: string[]): string[] => {
+    const declaradas = fotosDeclaradas?.[sku] ?? [];
+    return declaradas
+      .filter((d) => !esUrlDeImagen(d))
+      .map((d) => {
+        const nombre = d.split(/[\\/]/).pop()?.trim().toLowerCase() ?? '';
+        return filenames.find((f) => f.toLowerCase() === nombre);
+      })
+      .filter((f): f is string => !!f);
+  };
+
   const computeAutoMatches = (skus: string[]): Record<string, string[]> => {
     const filenames = Object.keys(availableImages);
     const assignments: Record<string, string[]> = {};
     skus.forEach((sku) => {
-      const matches = filenames.filter((f) => matchesSku(f, sku)).sort().slice(0, MAX_IMAGES_PER_PRODUCT);
+      const declaradas = declaradasParaSku(sku, filenames);
+      const matches = (declaradas.length > 0 ? declaradas : filenames.filter((f) => matchesSku(f, sku)))
+        .sort()
+        .slice(0, MAX_IMAGES_PER_PRODUCT);
       if (matches.length > 0) {
         assignments[sku] = matches;
       }
@@ -383,10 +408,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     resetPhotoState();
   };
 
-  const handleMappedFileGenerated = (file: File) => {
+  const handleMappedFileGenerated = (file: File, fotos?: Record<string, string[]>) => {
     onFileSelected(file);
     setDataFromMapper(true);
     setShowMapper(false);
+    // onFileSelected limpia el estado de fotos, asi que las declaradas se guardan despues.
+    setFotosDeclaradas(fotos ?? null);
   };
 
   const onFileSelected = (file: File | null) => {
@@ -702,8 +729,56 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setImageAssignments({});
     setPhotoUploadResults(null);
     setPhotoErrorMsg(null);
+    setDescargandoFotos(null);
+    setFotosNoTraidas([]);
     if (photoFolderInputRef.current) photoFolderInputRef.current.value = '';
     if (photoZipInputRef.current) photoZipInputRef.current.value = '';
+  };
+
+  /** URLs de foto declaradas en el Excel para los productos que si se cargaron. */
+  const urlsDeclaradasPendientes = useMemo(() => {
+    if (!fotosDeclaradas || !result) return {} as Record<string, string[]>;
+    const pendientes: Record<string, string[]> = {};
+    for (const fila of filasConProducto) {
+      const urls = (fotosDeclaradas[fila.sku] ?? []).filter(esUrlDeImagen);
+      if (urls.length > 0 && (imageAssignments[fila.sku] ?? []).length === 0) pendientes[fila.sku] = urls;
+    }
+    return pendientes;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fotosDeclaradas, result, imageAssignments]);
+
+  /**
+   * Trae las fotos que el vendedor declaro como enlace en su Excel. Se bajan desde SU
+   * navegador y no desde el servidor: que el backend descargue URLs escritas por un
+   * vendedor seria pedirle que consulte cualquier direccion, incluidas las internas.
+   */
+  const traerFotosDeclaradas = async () => {
+    const pendientes = urlsDeclaradasPendientes;
+    const total = Object.values(pendientes).reduce((n, urls) => n + urls.length, 0);
+    if (total === 0) return;
+    setPhotoErrorMsg(null);
+    setDescargandoFotos({ hechas: 0, total });
+    try {
+      const { archivos, asignaciones, fallidas } = await descargarFotos(
+        pendientes,
+        (hechas) => setDescargandoFotos({ hechas, total }),
+      );
+      setAvailableImages((prev) => ({ ...prev, ...archivos }));
+      setImageAssignments((prev) => {
+        const siguiente = { ...prev };
+        for (const [sku, nombres] of Object.entries(asignaciones)) {
+          siguiente[sku] = [...(siguiente[sku] ?? []), ...nombres].slice(0, MAX_IMAGES_PER_PRODUCT);
+        }
+        return siguiente;
+      });
+      setFotosNoTraidas(fallidas);
+      if (Object.keys(archivos).length === 0 && fallidas.length > 0) {
+        setPhotoErrorMsg('No pudimos traer ninguna foto desde los enlaces de tu Excel. '
+          + 'Puedes subir las fotos como carpeta o ZIP igual que siempre.');
+      }
+    } finally {
+      setDescargandoFotos(null);
+    }
   };
 
   /**
@@ -1675,6 +1750,35 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       {result.totalFilas} filas totales
                     </span>
                   </div>
+
+                  {Object.keys(urlsDeclaradasPendientes).length > 0 && (
+                    <div className="mapper-alert info" style={{ alignItems: 'center' }}>
+                      <span>
+                        Tu Excel trae el enlace de la foto de{' '}
+                        <b>{Object.keys(urlsDeclaradasPendientes).length}</b> repuestos. Podemos traerlas
+                        y asignarlas solas.
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary mapper-btn"
+                        style={{ marginLeft: 'auto' }}
+                        onClick={traerFotosDeclaradas}
+                        disabled={!!descargandoFotos || photoUploading}
+                      >
+                        {descargandoFotos
+                          ? `Trayendo ${descargandoFotos.hechas} de ${descargandoFotos.total}…`
+                          : 'Traer las fotos de mi Excel'}
+                      </button>
+                    </div>
+                  )}
+
+                  {fotosNoTraidas.length > 0 && (
+                    <p style={{ fontSize: '0.75rem', color: 'hsl(var(--warning))', margin: 0 }}>
+                      No pudimos traer {fotosNoTraidas.length} {fotosNoTraidas.length === 1 ? 'foto' : 'fotos'}
+                      {' '}({fotosNoTraidas[0].motivo}). Puedes subirlas como carpeta o ZIP, o agregarlas
+                      después desde Inventario General.
+                    </p>
+                  )}
 
                   {filasConProducto.length > 0 && Object.keys(availableImages).length === 0 && (
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>

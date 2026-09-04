@@ -445,7 +445,7 @@ compatibilidades extra con su OEM propio, precios limpios y la categoría correg
 
 41 tests verdes en el backend y 153 en el panel, 24 de ellos nuevos.
 
-### Fase 7 — Fotos desde el Excel del vendedor `panel` `backend`
+### Fase 7 — Fotos desde el Excel del vendedor `panel` — COMPLETADA 2026-09-04
 
 Resuelve G2.
 
@@ -453,6 +453,35 @@ Resuelve G2.
   entrega a la fase B de fotos que ya existe.
 - **Backend:** evaluar una columna `imagen` opcional al final de la plantilla oficial (aditiva,
   versión menor).
+
+**Resultado.**
+
+**La columna `imagen` en el contrato: evaluada y descartada.** Poner la URL en la plantilla
+obliga al backend a descargar direcciones que escribe el vendedor, y eso es un SSRF de manual:
+basta con apuntar a una dirección interna para que el servidor la consulte en tu nombre.
+Blindarlo bien —validar esquema, resolver DNS, bloquear rangos privados, límite de tamaño,
+timeouts, verificar el tipo real— es un trabajo de seguridad que no cabe como "columna
+aditiva", y no hace falta: bajando las fotos **desde el navegador del vendedor** el problema no
+existe (es su red y sus URLs) y terminan en el mismo lugar, la fase B que ya sube las fotos
+como archivos. Así que el contrato del Excel no cambia y esta fase es sólo del panel.
+
+**Panel.** `plantillaFotos.ts` reconoce, entre las columnas que el vendedor no asignó, la que
+trae las fotos, y distingue por mayoría si son enlaces o nombres de archivo:
+
+- **Nombres de archivo** — se usan para emparejar con la carpeta o el ZIP que el vendedor sube
+  igual, y **mandan** sobre el emparejamiento por nombre = SKU: si se tomó el trabajo de decir
+  cuál es la foto de cada repuesto, esa es. Antes tenía que renombrar cientos de archivos.
+- **Enlaces** — después de publicar aparece "Tu Excel trae el enlace de la foto de N repuestos"
+  con un botón para traerlas; se bajan una por una, con avance visible, y cada una que falla se
+  reporta con su motivo sin frenar al resto (que un sitio bloquee la descarga es lo más común).
+
+Las fotos no viajan en el archivo oficial: el mapper las entrega aparte, por SKU, y la columna
+deja de sumarse a la descripción, donde antes era el mismo dato repetido.
+
+Verificado en el navegador con fotos servidas de verdad: dos enlaces descargados y asignados a
+su repuesto, y un tercero inalcanzable reportado con su motivo, sin perder los otros dos.
+
+164 tests verdes en el panel, 11 de ellos nuevos.
 
 ### Fase 8 — Persistencia por cuenta y limpieza `panel` `backend`
 

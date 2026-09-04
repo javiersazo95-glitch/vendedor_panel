@@ -35,6 +35,7 @@ import {
   pareceColumnaDeRangos,
   partirRangoAnios,
 } from '../utils/plantillaNormalizacion';
+import { fotosPorSku, tipoColumnaFotos, type TipoColumnaFotos } from '../utils/plantillaFotos';
 import {
   detectarSkusRepetidos,
   pareceColumnaDeAplicacion,
@@ -49,7 +50,11 @@ import {
 } from '../utils/plantillaCatalogos';
 
 interface PlantillaMapperProps {
-  onGenerated: (file: File) => void;
+  /**
+   * `fotos` son las que el vendedor declaró en su Excel (URL o nombre de archivo), por
+   * SKU: no van en el archivo oficial, van al paso de fotos.
+   */
+  onGenerated: (file: File, fotos?: Record<string, string[]>) => void;
   onCancel: () => void;
   /** Esquema vigente de la plantilla. Por defecto, el contrato de respaldo del panel. */
   esquema?: EsquemaPlantilla;
@@ -402,6 +407,30 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     [mapping, userCols, userRows, esquema],
   );
 
+  /** ¿Alguna columna sin asignar trae la foto de cada repuesto? */
+  const columnaFotos = useMemo(() => {
+    if (!mapping) return null;
+    const elegida = mapping.columnaFotos ? userCols.find((c) => c.id === mapping.columnaFotos) : null;
+    const asignadas = new Set(Object.values(mapping.oficial).filter(Boolean) as string[]);
+    const candidatas = elegida ? [elegida] : userCols.filter((c) => !asignadas.has(c.id));
+    for (const col of candidatas) {
+      const muestra = userRows.slice(0, 50).map((r) => String((r as unknown[])[col.index] ?? '')).filter(Boolean);
+      const tipo: TipoColumnaFotos = tipoColumnaFotos(muestra);
+      if (tipo) return { col, tipo, ejemplo: muestra.find((v) => v.trim()) ?? '' };
+    }
+    return null;
+  }, [mapping, userCols, userRows]);
+
+  const setColumnaFotos = (id: string | null) => {
+    setMapping((prev) => {
+      if (!prev) return prev;
+      const extras = { ...prev.extras };
+      // Si se usa para fotos, deja de sumarse a la descripción: sería el mismo dato dos veces.
+      if (id) extras[id] = 'ignore';
+      return { ...prev, columnaFotos: id, extras };
+    });
+  };
+
   const setBandera = (clave: 'parsearAplicacion' | 'agruparPorSku' | 'dividirAnios', valor: boolean) => {
     setMapping((prev) => (prev ? { ...prev, [clave]: valor } : prev));
   };
@@ -430,6 +459,19 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     return buildOfficialXlsxFile(inventario, nombre, esquema.version, compatibilidades);
   };
 
+  /**
+   * Fotos declaradas por SKU. Se calculan sobre las filas del vendedor, con su columna de
+   * SKU: son el insumo del paso de fotos, no del archivo oficial.
+   */
+  const fotosDeclaradas = useMemo(() => {
+    if (!mapping?.columnaFotos || !columnaFotos) return null;
+    const idSku = mapping.oficial.sku_proveedor;
+    const colSku = idSku ? userCols.find((c) => c.id === idSku) : undefined;
+    if (!colSku) return null;
+    const mapa = fotosPorSku(userRows, columnaFotos.col.index, colSku.index);
+    return Object.keys(mapa).length > 0 ? mapa : null;
+  }, [mapping, columnaFotos, userCols, userRows]);
+
   const handleGenerate = () => {
     if (!mapping) return;
     setGenerating(true);
@@ -438,7 +480,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       try {
         const file = await buildFile();
         saveMapping(headerSignature(userCols), mapping);
-        onGenerated(file);
+        onGenerated(file, fotosDeclaradas ?? undefined);
       } catch (err) {
         setParseError(err instanceof Error ? err.message : 'No se pudo generar el archivo.');
         setGenerating(false);
@@ -796,6 +838,24 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           </label>
         )}
 
+        {columnaFotos && (
+          <label className="mapper-switch">
+            <input
+              type="checkbox"
+              aria-label="Usar la columna de fotos de mi Excel"
+              checked={!!mapping.columnaFotos}
+              onChange={(e) => setColumnaFotos(e.target.checked ? columnaFotos.col.id : null)}
+            />
+            <span>
+              <b>Tu columna "{columnaFotos.col.displayHeader}" trae las fotos</b>
+              {columnaFotos.tipo === 'url'
+                ? ' como enlaces de internet. Las traemos por ti después de publicar'
+                : ' como nombres de archivo. Las buscamos en la carpeta de fotos que subas después'}
+              {columnaFotos.ejemplo ? ` (${columnaFotos.ejemplo.slice(0, 60)})` : ''}.
+            </span>
+          </label>
+        )}
+
         <label className="mapper-switch">
           <input
             type="checkbox"
@@ -972,6 +1032,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         )}
         {(revision?.conAviso ?? 0) > 0 && (
           <span className="ojo"><b>{revision?.conAviso.toLocaleString('es-CL')}</b> para mirar</span>
+        )}
+        {fotosDeclaradas && (
+          <span><b>{Object.keys(fotosDeclaradas).length.toLocaleString('es-CL')}</b> con foto en tu Excel</span>
         )}
       </div>
 
