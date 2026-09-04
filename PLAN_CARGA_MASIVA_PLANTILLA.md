@@ -159,7 +159,7 @@ Cada fase es independiente, desplegable por sí sola y pensada para una sesión 
 El orden es: primero lo que hoy puede dañar datos, después lo que quita errores en volumen,
 después lo que hace el flujo agradable.
 
-### Fase 0 — Cerrar la corrupción silenciosa `backend` `bloqueante`
+### Fase 0 — Cerrar la corrupción silenciosa `backend` — COMPLETADA 2026-09-03
 
 - Reemplazar la guarda de versión por una **guarda de forma**: validar la fila de encabezados
   completa contra `COLUMNAS_EXCEL` antes de leer una sola fila. Si no calza, rechazo con
@@ -174,6 +174,19 @@ después lo que hace el flujo agradable.
 
 **Criterio de término:** no existe ningún archivo que el backend lea con las columnas
 desalineadas sin avisar.
+
+**Resultado.** `validarEstructuraPlantilla` compara la fila de encabezados completa contra
+`COLUMNAS_EXCEL` —y la hoja `compatibilidades` contra las suyas— antes de leer una sola fila,
+con un mensaje que nombra la columna, lo esperado y lo encontrado. Las columnas propias del
+vendedor al final se toleran, porque el lector nunca las mira. La guarda de versión queda solo
+para dar un mensaje más preciso cuando el archivo sí declara su origen. Se retiró la rama del
+layout sin `subcategoria`. Los tres `.xlsx` de prueba y sus generadores pasan a 2.0.0 con hoja
+`instrucciones`. 38 tests verdes en `InventarioExcelServiceTest`, incluidos cuatro nuevos de
+estructura; el central es `rechazaLaPlantilla1xAunqueNoDeclareVersion`.
+
+Nota para la Fase 1: el archivo que genera el mapper del panel sigue sin declarar versión y
+ahora pasa por su cabecera, que es correcta. Sumarle la hoja `instrucciones` con la versión que
+entregue `/excel/esquema` es parte de la Fase 1, no un pendiente de ésta.
 
 ### Fase 1 — Contrato único desde el backend `panel` `backend`
 
