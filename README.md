@@ -43,8 +43,9 @@ npm run preview   # sirve el build de dist/ localmente
 - **Adaptar mi plantilla** (`src/components/PlantillaMapper.tsx`, `src/utils/plantillaMapping.ts`):
   para el vendedor que ya lleva su inventario en su propio Excel. Wizard de cuatro pasos
   (subir · relacionar · revisar · generar): elige la hoja y la fila de títulos de su archivo,
-  relaciona sus columnas con las oficiales, manda las que sobran a la descripción y genera el
-  archivo en formato oficial, todo en el navegador. El plan de mejoras de este flujo está en
+  relaciona sus columnas con las oficiales, manda las que sobran a la descripción, revisa qué
+  filas se van a publicar y cómo se verá su primer repuesto, y genera el archivo en formato
+  oficial, todo en el navegador. El plan de mejoras de este flujo está en
   [PLAN_CARGA_MASIVA_PLANTILLA.md](PLAN_CARGA_MASIVA_PLANTILLA.md).
 - **Inventario** (`src/components/InventoryTable.tsx`, `src/components/Dashboard.tsx`): listado, filtros, pausar/reanudar y eliminar productos.
 
@@ -55,6 +56,9 @@ npm run preview   # sirve el build de dist/ localmente
   valores, generación del `.xlsx` oficial) y contrato de respaldo de la plantilla.
 - `src/utils/plantillaEsquema.ts` — consumo de `GET /inventario/excel/esquema`, la fuente
   autoritativa del contrato.
+- `src/utils/plantillaRevision.ts` — revisión previa de las filas ya transformadas y ficha de
+  vista previa. Replica a propósito las reglas de validación del backend; si el backend cambia
+  las suyas, hay que mover estas en el mismo ciclo.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).

@@ -884,6 +884,101 @@ h1, h2, h3, h4, h5, h6 {
 .mapper-row.falta .mapper-row-label > span:first-child { color: hsl(var(--danger)); font-weight: 700; }
 .mapper-default-input { width: 100%; }
 
+/* --- Fase 3: vista previa del resultado --- */
+.mapper-counts .ok b { color: #15803d; }
+.mapper-counts .mal b { color: hsl(var(--danger)); }
+.mapper-counts .ojo b { color: #b45309; }
+
+/* Tarjeta "asi se vera tu primer repuesto": el vendedor entiende un producto armado
+   mucho mejor que 18 selects correctos. */
+.mapper-ficha {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card, #fff);
+}
+@media (max-width: 640px) {
+  .mapper-ficha { flex-direction: column; }
+}
+.mapper-ficha-foto {
+  flex-shrink: 0;
+  width: 128px;
+  height: 128px;
+  border-radius: 12px;
+  border: 1px dashed var(--border-color);
+  background: var(--bg-app, #f8fafc);
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  text-align: center;
+}
+.mapper-ficha-foto span { font-size: 0.72rem; padding: 0 0.4rem; line-height: 1.3; }
+.mapper-ficha-body { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+.mapper-ficha-body h5 { font-size: 1.05rem; font-weight: 800; color: var(--text-primary); }
+.mapper-ficha-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.mapper-ficha-chip {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.1);
+}
+.mapper-ficha-chip.alt { color: var(--text-secondary); background: rgba(100, 116, 139, 0.14); }
+.mapper-ficha-chip.cond { color: #15803d; background: rgba(22, 163, 74, 0.12); }
+.mapper-ficha-precio { font-size: 1.25rem; font-weight: 800; color: var(--text-primary); }
+.mapper-ficha-compat { font-size: 0.9rem; color: #1d4ed8; font-weight: 600; }
+.mapper-ficha-meta { font-size: 0.86rem; color: var(--text-muted); }
+.mapper-ficha-desc {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-line;
+  max-height: 6.5em;
+  overflow: hidden;
+}
+
+/* Tabla de filas ya transformadas, con las celdas problematicas marcadas. */
+.mapper-preview.revisada thead th {
+  position: static;
+  background: var(--bg-app, #f8fafc);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.mapper-preview.revisada thead th:first-child { position: sticky; left: 0; z-index: 1; }
+.mapper-preview.revisada tr { cursor: default; }
+.mapper-preview.revisada tr:hover { background: transparent; }
+.mapper-preview.revisada tr.con-error th[scope="row"] { color: hsl(var(--danger)); }
+.mapper-preview.revisada tr.con-aviso th[scope="row"] { color: #b45309; }
+.mapper-preview.revisada td.celda-error {
+  background: var(--danger-bg);
+  color: hsl(var(--danger));
+  font-weight: 700;
+}
+.mapper-preview.revisada td.celda-aviso { background: var(--warning-bg); color: #b45309; }
+.mapper-preview.revisada td.motivo,
+.mapper-preview.revisada th.motivo {
+  /* El motivo se queda pegado a la derecha: con muchas columnas, si hay que ir a
+     buscarlo al final del scroll, no sirve de nada. */
+  position: sticky;
+  right: 0;
+  white-space: normal;
+  min-width: 200px;
+  max-width: 300px;
+  background: var(--bg-card, #fff);
+  border-left: 1px solid var(--border-color);
+}
+.mapper-preview.revisada th.motivo { background: var(--bg-app, #f8fafc); }
+.mapper-motivo { display: block; font-size: 0.8rem; line-height: 1.35; }
+.mapper-motivo.error { color: hsl(var(--danger)); }
+.mapper-motivo.aviso { color: #b45309; }
+
 .mapper-resumen { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .mapper-resumen li { font-size: 0.95rem; color: var(--text-secondary); }
 .mapper-resumen b { color: var(--text-primary); }

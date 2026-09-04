@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
-  UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check,
+  UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check, Image as ImageIcon,
 } from 'lucide-react';
 import {
   ESQUEMA_FALLBACK,
@@ -27,6 +27,7 @@ import {
   type UserColumn,
   type EsquemaPlantilla,
 } from '../utils/plantillaMapping';
+import { revisarAoA, fichaDesdeFila, type FilaRevisada } from '../utils/plantillaRevision';
 
 interface PlantillaMapperProps {
   onGenerated: (file: File) => void;
@@ -178,6 +179,35 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     () => (mapping ? mappedEnumColumns(mapping, campos) : []),
     [mapping, campos],
   );
+
+  /**
+   * Revisión del archivo ya transformado. Se calcula sólo en el paso 3 porque transforma
+   * todas las filas, y en los pasos anteriores no se muestra.
+   */
+  const revision = useMemo(() => {
+    if (paso !== 3 || !mapping) return null;
+    const aoa = buildOfficialAoA(userRows, userCols, mapping, campos);
+    return revisarAoA(aoa, campos, { maxFilas: 20, primeraFilaArchivo: filaEncabezados + 2 });
+  }, [paso, mapping, userRows, userCols, campos, filaEncabezados]);
+
+  /**
+   * Columnas que vale la pena mostrar en la tabla: las que traen algo o las que tienen
+   * algún problema. Las 18 completas obligan a un scroll largo lleno de celdas vacías, y
+   * lo que hay que mirar se pierde.
+   */
+  const columnasVisibles = useMemo(() => {
+    if (!revision) return [];
+    return revision.columnas.filter((col, i) =>
+      revision.filas.some((f) => (f.valores[i] ?? '').trim() !== '' || f.problemas.some((p) => p.columna === col)),
+    );
+  }, [revision]);
+
+  /** El primer repuesto que sí se puede publicar: es el que vale la pena mostrar armado. */
+  const ficha = useMemo(() => {
+    if (!revision) return null;
+    const fila = revision.filas.find((f) => !f.tieneError) ?? revision.filas[0];
+    return fila ? fichaDesdeFila(revision.columnas, fila.valores) : null;
+  }, [revision]);
 
   const setOficial = (key: string, valueId: string) => {
     setMapping((prev) => {
@@ -666,10 +696,103 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
       <div className="mapper-counts">
         <span><b>{filasListas.toLocaleString('es-CL')}</b> repuestos en tu archivo</span>
-        <span><b>{counts.asignadas}</b> datos relacionados</span>
-        <span><b>{counts.aDescripcion}</b> columnas tuyas van a la descripción</span>
-        <span><b>{counts.ignoradas}</b> quedan fuera</span>
+        <span className="ok"><b>{(revision?.publicables ?? 0).toLocaleString('es-CL')}</b> se pueden publicar</span>
+        {(revision?.conError ?? 0) > 0 && (
+          <span className="mal"><b>{revision?.conError.toLocaleString('es-CL')}</b> con problemas</span>
+        )}
+        {(revision?.conAviso ?? 0) > 0 && (
+          <span className="ojo"><b>{revision?.conAviso.toLocaleString('es-CL')}</b> para mirar</span>
+        )}
       </div>
+
+      {revision && revision.conError > 0 && (
+        <div className="mapper-alert warn">
+          <AlertTriangle size={15} />
+          <span>
+            Las filas con problemas no se van a publicar. Puedes generar igual y publicar el resto,
+            o volver atrás, corregirlas en tu Excel y subirlo de nuevo.
+          </span>
+        </div>
+      )}
+
+      {ficha && (
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">Así se verá tu primer repuesto en RepuesTop</span>
+          <article className="mapper-ficha">
+            <div className="mapper-ficha-foto">
+              <ImageIcon size={26} />
+              <span>La foto se agrega después</span>
+            </div>
+            <div className="mapper-ficha-body">
+              <h5>{ficha.nombre}</h5>
+              <div className="mapper-ficha-chips">
+                {ficha.marca && <span className="mapper-ficha-chip">{ficha.marca}</span>}
+                {ficha.categoria && <span className="mapper-ficha-chip alt">{ficha.categoria}</span>}
+                {ficha.subcategoria && <span className="mapper-ficha-chip alt">{ficha.subcategoria}</span>}
+                <span className="mapper-ficha-chip cond">{ficha.condicion}</span>
+              </div>
+              <div className="mapper-ficha-precio">{ficha.precio}</div>
+              <p className="mapper-ficha-compat">{ficha.compatibilidad}</p>
+              <p className="mapper-ficha-meta">
+                Código {ficha.sku || '—'}{ficha.stock ? ` · ${ficha.stock} en stock` : ''}
+              </p>
+              {ficha.descripcion && <p className="mapper-ficha-desc">{ficha.descripcion}</p>}
+            </div>
+          </article>
+        </section>
+      )}
+
+      {revision && revision.filas.length > 0 && (
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">
+            Tus primeros {revision.filas.length} repuestos, ya con el formato de RepuesTop
+          </span>
+          <div className="mapper-preview-wrap">
+            <table className="mapper-preview revisada">
+              <thead>
+                <tr>
+                  <th>Fila</th>
+                  {columnasVisibles.map((c) => (
+                    <th key={c}>{campos.find((campo) => campo.key === c)?.label ?? c}</th>
+                  ))}
+                  <th className="motivo">Qué revisar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {revision.filas.map((fila: FilaRevisada) => {
+                  const porColumna = new Map(fila.problemas.map((p) => [p.columna, p]));
+                  return (
+                    <tr key={fila.numeroFila} className={fila.tieneError ? 'con-error' : fila.problemas.length ? 'con-aviso' : ''}>
+                      <th scope="row">{fila.numeroFila}</th>
+                      {columnasVisibles.map((c) => {
+                        const problema = porColumna.get(c);
+                        return (
+                          <td key={c} className={problema ? `celda-${problema.severidad}` : ''} title={problema?.mensaje}>
+                            {fila.valores[revision.columnas.indexOf(c)]}
+                          </td>
+                        );
+                      })}
+                      <td className="motivo">
+                        {fila.problemas.map((p, i) => (
+                          <span key={i} className={`mapper-motivo ${p.severidad}`}>{p.mensaje}</span>
+                        ))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mapper-hint">
+            {revision.total > revision.filas.length
+              ? `Mostramos las primeras ${revision.filas.length} filas; los contadores de arriba miran las ${revision.total.toLocaleString('es-CL')}. `
+              : ''}
+            {columnasVisibles.length < revision.columnas.length
+              ? 'No mostramos las columnas que quedaron vacías en todas estas filas.'
+              : ''}
+          </p>
+        </section>
+      )}
 
       <section className="mapper-section">
         <span className="bulk-purpose-label">Así estamos leyendo tu archivo</span>

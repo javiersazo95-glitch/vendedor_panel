@@ -273,7 +273,7 @@ valor llega tal como lo escribió el vendedor y la Fase 4 lo normaliza a la vist
 83 tests verdes en el panel, incluidos los del wizard por pasos, la detección de títulos con
 encabezado de planilla arriba, la elección de hoja y el bloqueo de obligatorios.
 
-### Fase 3 — Vista previa del resultado `panel`
+### Fase 3 — Vista previa del resultado `panel` — COMPLETADA 2026-09-04
 
 Resuelve U8.
 
@@ -282,6 +282,33 @@ Resuelve U8.
 - Encima, una tarjeta **"así se verá tu primer repuesto en RepuesTop"**, replicando la ficha de
   `Repuestop_Market` (nombre, marca, categoría, precio, condición, compatibilidad, descripción).
 - Contadores en lenguaje llano: "120 filas · 118 se pueden publicar · 2 con problemas".
+
+**Resultado.** `plantillaRevision.ts` revisa el archivo ya transformado y dice, fila por fila,
+qué va a pasar cuando lo lea el backend. Sus reglas son una réplica deliberada de
+`requestDesdeFila` + `InventarioValidationSupport`: si el panel marcara un error donde el
+backend no lo marca, el vendedor perdería tiempo corrigiendo algo que estaba bien; si lo
+dejara pasar, se enteraría después de subir, que es justo lo que este paso viene a evitar.
+
+Dos severidades, porque el backend tiene dos comportamientos:
+
+- **error** — la fila no se publica: obligatorio vacío, número ilegible o negativo, y el caso
+  menos evidente, precio vacío sin `SOLO_COTIZAR` (un `tipo_precio` en blanco significa "con
+  precio a la vista", así que el backend lo rechaza).
+- **aviso** — la fila se publica, pero con un valor distinto del que el vendedor escribió. El
+  backend normaliza en silencio: una condición que no reconoce queda como ORIGINAL, un SI/NO
+  que no entiende queda en NO, y `$ 4.990` se publica como 4.990. Antes nada de esto se veía.
+
+En el paso "Revisar" hay ahora tres cosas: los contadores en lenguaje llano ("3 repuestos ·
+1 se pueden publicar · 2 con problemas · 1 para mirar"), la tarjeta **"así se verá tu primer
+repuesto en RepuesTop"** —el primero que sí se puede publicar, armado como en la ficha del
+comprador: nombre, marca, categoría, condición, precio en pesos, compatibilidad, código,
+stock y descripción— y la tabla de las primeras 20 filas ya transformadas, con las celdas
+problemáticas marcadas y el motivo en lenguaje llano en una columna fija a la derecha, para
+que no haya que ir a buscarlo al final del scroll. Las columnas que quedan vacías en todas las
+filas mostradas se ocultan: con las 18 completas, lo que hay que mirar se pierde entre celdas
+en blanco.
+
+101 tests verdes en el panel, 18 de ellos nuevos sobre la revisión y la ficha.
 
 ### Fase 4 — Normalización y valores por defecto `panel`
 

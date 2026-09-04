@@ -137,6 +137,32 @@ describe('PlantillaMapper', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
   });
 
+  it('en el paso de revisar muestra la ficha del primer repuesto y marca las filas con problemas', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Filtro de aceite,Bosch,Filtros,$ 4.990,10',
+      'A-2,Pastilla de freno,Brembo,Frenos,consultar,4',
+      'A-3,,Gates,Correas,9990,7',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // Contadores en lenguaje llano: 3 filas, 1 con precio ilegible y 1 sin nombre.
+    expect(screen.getByText(/se pueden publicar/)).toBeInTheDocument();
+    expect(screen.getByText('1', { selector: '.mapper-counts .ok b' })).toBeInTheDocument();
+    expect(screen.getByText('2', { selector: '.mapper-counts .mal b' })).toBeInTheDocument();
+
+    // La ficha muestra el primer repuesto que sí se puede publicar, ya armado.
+    expect(screen.getByText('Así se verá tu primer repuesto en RepuesTop')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Filtro de aceite' })).toBeInTheDocument();
+    expect(screen.getByText(/4\.990/, { selector: '.mapper-ficha-precio' })).toBeInTheDocument();
+
+    // Y la tabla dice qué revisar, con el número de fila del Excel del vendedor.
+    expect(screen.getByText(/"consultar" no es un número/)).toBeInTheDocument();
+    expect(screen.getByText(/Falta nombre publicado/)).toBeInTheDocument();
+  });
+
   it('deja elegir la hoja cuando el libro trae varias', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Portada de la lista']]), 'Portada');
