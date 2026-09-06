@@ -212,6 +212,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [archivoDelVendedor, setArchivoDelVendedor] = useState<File | null>(null);
   const [descargandoFotos, setDescargandoFotos] = useState<{ hechas: number; total: number } | null>(null);
   const [fotosNoTraidas, setFotosNoTraidas] = useState<{ sku: string; url: string; motivo: string }[]>([]);
+  // Aviso de cierre de la carga: que publicar no termine en silencio, y que el paso de las
+  // fotos -que es el que se olvida- quede dicho con todas sus letras.
+  const [resumenAbierto, setResumenAbierto] = useState(false);
   // Evita que la subida automatica de fotos (ver efecto mas abajo) se dispare mas de una
   // vez para el mismo resultado de carga.
   const autoPhotoUploadRef = useRef(false);
@@ -406,6 +409,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setDataFile(null);
     setPreview(null);
     setResult(null);
+    setResumenAbierto(false);
     setErrorMsg(null);
     setShowMapper(false);
     setDataFromMapper(false);
@@ -627,6 +631,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       const resultadoFinal = recalcularAgregados({ ...data, totalFilas: preview.totalFilas }, filasFinal);
 
       setResult(resultadoFinal);
+      setResumenAbierto(true);
       setPreview(null);
       if (resultadoFinal.productosCargados > 0) {
         onUploadSuccess();
@@ -924,6 +929,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     uploadPhotos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, imageAssignments]);
+
+  /** ¿Esta carga ya terminó con fotos reales publicadas? */
+  const fotosYaPublicadas = (photoUploadResults ?? []).some((r) => r.ok);
 
   const busy = validating || uploading;
 
@@ -1263,6 +1271,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   if (!isOpen) return null;
 
   return (
+    <>
     <div className={embedded ? 'bulk-upload-page' : 'modal-overlay'}>
       <div
         className={embedded ? 'bulk-upload-page-content' : 'modal-content'}
@@ -2100,5 +2109,93 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           </div>
         </div>
       </div>
+
+      {resumenAbierto && result && (
+        <div className="carga-resumen-overlay" role="dialog" aria-modal="true" aria-labelledby="carga-resumen-titulo">
+          <div className="carga-resumen">
+            <div className={`carga-resumen-icono ${result.productosConError > 0 ? 'con-errores' : 'ok'}`}>
+              {result.productosConError > 0 ? <AlertTriangle size={26} /> : <CheckCircle2 size={26} />}
+            </div>
+
+            <h4 id="carga-resumen-titulo">
+              {result.productosCargados === 0
+                ? 'No se pudo publicar ningún repuesto'
+                : `¡Listo! Publicamos ${result.productosCargados} ${result.productosCargados === 1 ? 'repuesto' : 'repuestos'}`}
+            </h4>
+
+            <p className="carga-resumen-detalle">
+              Ya están visibles en la plataforma web y en la app.
+              {result.productosConAdvertencia > 0 && (
+                ` ${result.productosConAdvertencia} ${result.productosConAdvertencia === 1 ? 'tiene un aviso' : 'tienen avisos'} que puedes revisar en la tabla.`
+              )}
+            </p>
+
+            {result.productosConError > 0 && (
+              <p className="carga-resumen-errores">
+                <FileSpreadsheet size={15} />
+                <span>
+                  <b>{result.productosConError} {result.productosConError === 1 ? 'fila no se publicó' : 'filas no se publicaron'}.</b>{' '}
+                  Te descargamos un Excel con esas filas y el motivo de cada una: corrígelas ahí y vuelve
+                  a subir sólo ese archivo.
+                </span>
+              </p>
+            )}
+
+            {/* El paso que se olvida. Se dice segun lo que este vendedor tiene a mano. */}
+            <div className="carga-resumen-fotos">
+              <span className="carga-resumen-paso">Ahora las fotos</span>
+              {fotosYaPublicadas ? (
+                <p>
+                  Tus fotos ya se publicaron junto con los repuestos. No tienes que hacer nada más.
+                </p>
+              ) : Object.keys(urlsDeclaradasPendientes).length > 0 ? (
+                <>
+                  <p>
+                    Tu Excel trae el enlace de la foto de{' '}
+                    <b>{Object.keys(urlsDeclaradasPendientes).length}</b>{' '}
+                    {Object.keys(urlsDeclaradasPendientes).length === 1 ? 'repuesto' : 'repuestos'}.
+                    Las traemos y las publicamos por ti.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-primary-blue"
+                    onClick={() => { setResumenAbierto(false); traerFotosDeclaradas(); }}
+                  >
+                    <ImageUp size={16} /> Traer las fotos de mi Excel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p>
+                    Tus repuestos quedaron con una foto genérica. Sube tus fotos ahora: las emparejamos
+                    solas con cada repuesto por su código.
+                  </p>
+                  <div className="carga-resumen-acciones">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => { setResumenAbierto(false); photoFolderInputRef.current?.click(); }}
+                    >
+                      <FolderOpen size={16} /> Subir una carpeta
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => { setResumenAbierto(false); photoZipInputRef.current?.click(); }}
+                    >
+                      <FileText size={16} /> Subir un ZIP
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button type="button" className="carga-resumen-cerrar" onClick={() => setResumenAbierto(false)}>
+              {fotosYaPublicadas ? 'Ver el detalle de la carga' : 'Lo hago después, ver el detalle'}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
