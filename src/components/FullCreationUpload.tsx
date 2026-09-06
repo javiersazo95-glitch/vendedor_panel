@@ -2259,6 +2259,22 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             {/* El paso que se olvida. Se dice segun lo que este vendedor tiene a mano. */}
             <div className="carga-resumen-fotos">
               <span className="carga-resumen-paso">Ahora las fotos</span>
+              <input
+                ref={avisoFolderInputRef}
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => { onPhotoFolderSelected(e.target.files); setResumenAbierto(false); }}
+                {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+              />
+              <input
+                ref={avisoZipInputRef}
+                type="file"
+                accept=".zip"
+                style={{ display: 'none' }}
+                onChange={(e) => { onPhotoZipSelected(e.target.files?.[0] ?? null); setResumenAbierto(false); }}
+              />
+
               {fotosYaPublicadas ? (
                 repuestosSinFoto.length > 0 ? (
                   <p>
@@ -2275,6 +2291,36 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     Tus fotos ya se publicaron junto con los repuestos. No tienes que hacer nada más.
                   </p>
                 )
+              ) : Object.keys(availableImages).length > 0 && repuestosSinFoto.length > 0 ? (
+                /* Subio fotos, pero sus nombres no calzan con ningun codigo. Pedirle que
+                   "suba sus fotos" seria pedirle lo que acaba de hacer; lo que necesita
+                   saber es por que no se asignaron. */
+                <>
+                  <p>
+                    Subiste <b>{Object.keys(availableImages).length}</b>{' '}
+                    {Object.keys(availableImages).length === 1 ? 'foto' : 'fotos'}, pero{' '}
+                    <b>
+                      {repuestosSinFoto.length === filasConProducto.length
+                        ? 'ninguna coincide'
+                        : `${repuestosSinFoto.length} ${repuestosSinFoto.length === 1 ? 'repuesto quedó' : 'repuestos quedaron'} sin foto`}
+                    </b>
+                    {' '}con el código de tus repuestos: para que{' '}
+                    <b>{repuestosSinFoto[0].sku}</b> tome la suya, el archivo tiene que llamarse{' '}
+                    <b>{repuestosSinFoto[0].sku}.jpg</b>.
+                  </p>
+                  <p>
+                    Puedes elegir otra carpeta con los nombres corregidos, o declarar el nombre de
+                    cada foto en una columna de tu Excel y volver a generar la plantilla.
+                  </p>
+                  <div className="carga-resumen-acciones">
+                    <button type="button" className="btn btn-secondary" onClick={() => avisoFolderInputRef.current?.click()}>
+                      <FolderOpen size={16} /> Elegir otra carpeta
+                    </button>
+                    <button type="button" className="btn btn-secondary" onClick={() => avisoZipInputRef.current?.click()}>
+                      <FileText size={16} /> Elegir otro ZIP
+                    </button>
+                  </div>
+                </>
               ) : Object.keys(urlsDeclaradasPendientes).length > 0 ? (
                 <>
                   <p>
@@ -2297,21 +2343,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     Tus repuestos quedaron con una foto genérica. Sube tus fotos ahora: las emparejamos
                     solas con cada repuesto por su código.
                   </p>
-                  <input
-                    ref={avisoFolderInputRef}
-                    type="file"
-                    multiple
-                    style={{ display: 'none' }}
-                    onChange={(e) => { onPhotoFolderSelected(e.target.files); setResumenAbierto(false); }}
-                    {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
-                  />
-                  <input
-                    ref={avisoZipInputRef}
-                    type="file"
-                    accept=".zip"
-                    style={{ display: 'none' }}
-                    onChange={(e) => { onPhotoZipSelected(e.target.files?.[0] ?? null); setResumenAbierto(false); }}
-                  />
                   <div className="carga-resumen-acciones">
                     <button
                       type="button"
