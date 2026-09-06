@@ -1243,6 +1243,19 @@ h1, h2, h3, h4, h5, h6 {
 .mapper-arreglo-despues { font-weight: 700; color: #15803d; }
 .mapper-arreglo-filas { margin-left: auto; font-size: 0.84rem; color: var(--text-muted); }
 
+/* Valor escrito a mano que el backend no aceptaria. */
+.mapper-default-input.con-error {
+  border-color: hsl(var(--danger));
+  background: var(--danger-bg);
+}
+.mapper-campo-error {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  color: hsl(var(--danger));
+}
+
 /* --- Fase 5: decisiones contra el catalogo real --- */
 .mapper-btn-sugerencias { align-self: flex-start; }
 .mapper-row.resuelta .mapper-row-label > span:not(.mapper-sample) {

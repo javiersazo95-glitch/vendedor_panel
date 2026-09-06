@@ -8,6 +8,8 @@ import {
   numeroLimpio,
   pareceColumnaDeRangos,
   partirRangoAnios,
+  limiteDeColumna,
+  validarValorFijo,
 } from './plantillaNormalizacion';
 
 describe('numeroLimpio', () => {
@@ -102,5 +104,37 @@ describe('agruparCambios', () => {
       { columna: 'precio', antes: '$ 1.000', despues: '1000', filas: 2 },
       { columna: 'stock', antes: ' 5 ', despues: '5', filas: 1 },
     ]);
+  });
+});
+
+describe('limites de lo que el vendedor escribe a mano', () => {
+  it('un valor vacío no es un error: significa que no hay valor fijo', () => {
+    expect(validarValorFijo('nombre_publicado', '')).toBeNull();
+    expect(validarValorFijo('stock', '   ')).toBeNull();
+  });
+
+  it('corta por el largo real de la columna del backend', () => {
+    expect(limiteDeColumna('nombre_publicado').maxLength).toBe(180);
+    expect(limiteDeColumna('sku_proveedor').maxLength).toBe(120);
+    expect(validarValorFijo('sku_proveedor', 'x'.repeat(121), 'SKU')).toMatch(/no puede pasar de 120/);
+    expect(validarValorFijo('sku_proveedor', 'x'.repeat(120))).toBeNull();
+  });
+
+  it('una columna que el panel no conoce igual tiene tope', () => {
+    expect(limiteDeColumna('columna_nueva_del_backend').maxLength).toBe(120);
+  });
+
+  it('en las columnas numéricas no deja pasar texto ni negativos', () => {
+    expect(validarValorFijo('stock', 'varios', 'Stock')).toBe('Stock tiene que ser un número.');
+    expect(validarValorFijo('precio', '-100', 'Precio')).toBe('Precio no puede ser negativo.');
+    // El formato chileno sí se acepta: es el mismo que entiende el resto del flujo.
+    expect(validarValorFijo('precio', '$ 12.900')).toBeNull();
+    expect(validarValorFijo('stock', '10')).toBeNull();
+  });
+
+  it('el año tiene que ser un año, no cualquier número', () => {
+    expect(validarValorFijo('anio_desde', '14', 'Año desde')).toMatch(/4 cifras/);
+    expect(validarValorFijo('anio_desde', '1800', 'Año desde')).toMatch(/entre 1900/);
+    expect(validarValorFijo('anio_desde', '2014')).toBeNull();
   });
 });

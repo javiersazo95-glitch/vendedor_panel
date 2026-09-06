@@ -32,9 +32,11 @@ import {
 import { revisarAoA, fichaDesdeFila, type FilaRevisada } from '../utils/plantillaRevision';
 import {
   agruparCambios,
+  limiteDeColumna,
   normalizarCelda,
   pareceColumnaDeRangos,
   partirRangoAnios,
+  validarValorFijo,
 } from '../utils/plantillaNormalizacion';
 import { fotosPorSku, tipoColumnaFotos, type TipoColumnaFotos } from '../utils/plantillaFotos';
 import {
@@ -244,6 +246,20 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   const enumColumns = useMemo(
     () => (mapping ? mappedEnumColumns(mapping, campos) : []),
+    [mapping, campos],
+  );
+
+  /**
+   * Valores fijos que el vendedor escribió a mano y que el backend no aceptaría. Bloquean
+   * igual que un obligatorio sin asignar: el valor se copia en cada fila, así que un error
+   * acá no rompe una fila, rompe el archivo entero.
+   */
+  const defaultsInvalidos = useMemo(
+    () => (mapping
+      ? campos
+        .map((c) => ({ campo: c, error: validarValorFijo(c.key, mapping.defaults?.[c.key] ?? '', c.label) }))
+        .filter((x): x is { campo: CampoMeta; error: string } => !!x.error)
+      : []),
     [mapping, campos],
   );
 
@@ -891,6 +907,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           <span><b>{counts.ignoradas}</b> quedan fuera</span>
         </div>
 
+        {defaultsInvalidos.length > 0 && (
+          <div className="mapper-alert warn">
+            <AlertTriangle size={15} />
+            <span>
+              Revisa lo que escribiste a mano: {defaultsInvalidos.map((d) => d.error).join(' ')}
+            </span>
+          </div>
+        )}
+
         {missingRequired.length > 0 && (
           <div className="mapper-alert warn">
             <AlertTriangle size={15} />
@@ -1167,14 +1192,37 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                                 ))}
                               </select>
                             ) : (
-                              <input
-                                className="form-control mapper-default-input"
-                                type="text"
-                                value={mapping.defaults?.[campo.key] ?? ''}
-                                placeholder="o el mismo valor para todas las filas"
-                                aria-label={`Valor fijo para ${campo.label}`}
-                                onChange={(e) => setDefault(campo.key, e.target.value)}
-                              />
+                              (() => {
+                                const limite = limiteDeColumna(campo.key);
+                                const error = validarValorFijo(
+                                  campo.key,
+                                  mapping.defaults?.[campo.key] ?? '',
+                                  campo.label,
+                                );
+                                return (
+                                  <>
+                                    <input
+                                      className={`form-control mapper-default-input ${error ? 'con-error' : ''}`}
+                                      type="text"
+                                      // El tope es el de la columna real del backend: sin el,
+                                      // un valor largo se corta recien en la base de datos y
+                                      // el vendedor recibe un error incomprensible.
+                                      maxLength={limite.maxLength}
+                                      inputMode={limite.tipo === 'texto' ? undefined : 'numeric'}
+                                      value={mapping.defaults?.[campo.key] ?? ''}
+                                      placeholder={
+                                        limite.tipo === 'anio' ? 'ej: 2014'
+                                          : limite.tipo === 'numero' ? 'solo numeros'
+                                            : 'o el mismo valor para todas las filas'
+                                      }
+                                      aria-label={`Valor fijo para ${campo.label}`}
+                                      aria-invalid={error ? true : undefined}
+                                      onChange={(e) => setDefault(campo.key, e.target.value)}
+                                    />
+                                    {error && <span className="mapper-campo-error">{error}</span>}
+                                  </>
+                                );
+                              })()
                             )}
                           </div>
                         )}
@@ -1295,8 +1343,12 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
             type="button"
             className="btn btn-primary btn-primary-blue mapper-btn"
             onClick={() => setPaso(3)}
-            disabled={missingRequired.length > 0}
-            title={missingRequired.length > 0 ? 'Falta indicar datos obligatorios' : undefined}
+            disabled={missingRequired.length > 0 || defaultsInvalidos.length > 0}
+            title={
+              missingRequired.length > 0 ? 'Falta indicar datos obligatorios'
+                : defaultsInvalidos.length > 0 ? 'Hay un valor escrito a mano que hay que corregir'
+                  : undefined
+            }
           >
             Siguiente <ArrowRight size={16} />
           </button>

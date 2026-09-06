@@ -394,6 +394,32 @@ describe('PlantillaMapper', () => {
     expect(screen.getByText(/2 filas · 7 columnas/)).toBeInTheDocument();
   });
 
+  it('no deja avanzar con un valor fijo que el backend no aceptaria', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
+    // Sin columna de stock: hay que escribirlo a mano, y ahi es donde se cuela cualquier cosa.
+    await subirYRelacionar(['Codigo,Titulo,Marca,Categoria,Precio', 'A-1,Filtro,Bosch,Filtros,4990'].join('\n'));
+
+    const stock = screen.getByLabelText('Valor fijo para Stock');
+    fireEvent.change(stock, { target: { value: 'varios' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeDisabled());
+    // El motivo se dice dos veces a proposito: en el aviso de arriba y bajo el campo.
+    expect(screen.getByText(/Stock tiene que ser un número/, { selector: '.mapper-campo-error' })).toBeInTheDocument();
+    expect(screen.getByText(/Revisa lo que escribiste a mano/)).toBeInTheDocument();
+
+    fireEvent.change(stock, { target: { value: '10' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
+  });
+
+  it('el valor escrito a mano no puede pasar del largo de la columna', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
+    await subirYRelacionar(['Codigo,Titulo,Marca,Categoria,Precio', 'A-1,Filtro,Bosch,Filtros,4990'].join('\n'));
+
+    // El SKU son 120 caracteres en la base: el input no deja escribir mas.
+    expect(screen.getByLabelText('Valor fijo para Referencia OEM')).toHaveAttribute('maxlength', '120');
+    expect(screen.getByLabelText('Valor fijo para Stock')).toHaveAttribute('inputmode', 'numeric');
+  });
+
   it('deja elegir la hoja cuando el libro trae varias', async () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Portada de la lista']]), 'Portada');

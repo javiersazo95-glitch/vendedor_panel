@@ -146,3 +146,81 @@ export function agruparCambios(cambios: CambioNormalizacion[], maxEjemplos = 8):
   }
   return [...mapa.values()].sort((a, b) => b.filas - a.filas).slice(0, maxEjemplos);
 }
+
+/* --------------------------------------------------------------------------
+ * Límites de lo que el vendedor escribe a mano.
+ *
+ * El "mismo valor para todas las filas" es texto libre, y de ahí sale un valor que se
+ * copia en cada fila del archivo. Sin tope, un nombre de 300 caracteres o un stock que
+ * dice "varios" llegan al backend y revientan ahí: el largo lo corta la base de datos con
+ * un error de columna, y el número lo rechaza fila por fila. Es el mismo criterio del
+ * resto del flujo -avisar antes de subir- aplicado a lo único que no viene del archivo.
+ *
+ * Los largos son los de las columnas reales (ProveedorProducto y Repuesto en el backend).
+ * ------------------------------------------------------------------------ */
+
+export type TipoDeDato = 'texto' | 'numero' | 'anio';
+
+export interface LimiteColumna {
+  maxLength: number;
+  tipo: TipoDeDato;
+}
+
+const LIMITES: Record<string, LimiteColumna> = {
+  nombre_publicado: { maxLength: 180, tipo: 'texto' },
+  sku_proveedor: { maxLength: 120, tipo: 'texto' },
+  referencia_oem: { maxLength: 120, tipo: 'texto' },
+  categoria: { maxLength: 120, tipo: 'texto' },
+  subcategoria: { maxLength: 120, tipo: 'texto' },
+  marca_repuesto: { maxLength: 120, tipo: 'texto' },
+  compatibilidad_marca: { maxLength: 120, tipo: 'texto' },
+  compatibilidad_modelo: { maxLength: 120, tipo: 'texto' },
+  motor: { maxLength: 120, tipo: 'texto' },
+  // La descripción es TEXT en la base, pero un valor fijo enorme repetido en cada fila no
+  // le sirve a nadie y engorda el archivo.
+  descripcion: { maxLength: 2000, tipo: 'texto' },
+  precio: { maxLength: 15, tipo: 'numero' },
+  stock: { maxLength: 9, tipo: 'numero' },
+  anio_desde: { maxLength: 4, tipo: 'anio' },
+  anio_hasta: { maxLength: 4, tipo: 'anio' },
+};
+
+const LIMITE_POR_DEFECTO: LimiteColumna = { maxLength: 120, tipo: 'texto' };
+
+/** Qué se acepta en una columna. Una que el panel no conozca cae en el límite general. */
+export function limiteDeColumna(columna: string): LimiteColumna {
+  return LIMITES[columna] ?? LIMITE_POR_DEFECTO;
+}
+
+const ANIO_MINIMO = 1900;
+const ANIO_MAXIMO = new Date().getFullYear() + 2;
+
+/**
+ * Revisa un valor escrito a mano y devuelve el motivo en lenguaje llano, o null si sirve.
+ * Un valor vacío no es un error: significa que no hay valor fijo para esa columna.
+ */
+export function validarValorFijo(columna: string, valor: string, etiqueta = 'Este dato'): string | null {
+  const texto = String(valor ?? '').trim();
+  if (!texto) return null;
+
+  const { maxLength, tipo } = limiteDeColumna(columna);
+  if (texto.length > maxLength) {
+    return `${etiqueta} no puede pasar de ${maxLength} caracteres (escribiste ${texto.length}).`;
+  }
+
+  if (tipo === 'numero') {
+    const { numero } = normalizarNumero(texto);
+    if (numero === null) return `${etiqueta} tiene que ser un número.`;
+    if (numero < 0) return `${etiqueta} no puede ser negativo.`;
+  }
+
+  if (tipo === 'anio') {
+    if (!/^\d{4}$/.test(texto)) return `${etiqueta} tiene que ser un año de 4 cifras.`;
+    const anio = Number(texto);
+    if (anio < ANIO_MINIMO || anio > ANIO_MAXIMO) {
+      return `${etiqueta} tiene que estar entre ${ANIO_MINIMO} y ${ANIO_MAXIMO}.`;
+    }
+  }
+
+  return null;
+}
