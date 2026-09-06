@@ -1243,6 +1243,21 @@ h1, h2, h3, h4, h5, h6 {
 .mapper-arreglo-despues { font-weight: 700; color: #15803d; }
 .mapper-arreglo-filas { margin-left: auto; font-size: 0.84rem; color: var(--text-muted); }
 
+/* El Excel ya trae los enlaces: no hay nada que subir. */
+.fotos-desde-excel {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin: 0 0 0.4rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  background: rgba(22, 163, 74, 0.09);
+  color: #15803d;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.fotos-desde-excel svg { flex-shrink: 0; margin-top: 0.1rem; }
+
 /* Repuestos que quedaron sin foto: el contador plano se perdia entre el resto. */
 .fotos-faltantes {
   display: flex;

@@ -498,6 +498,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
    * primer paso (ya no hay dos botones para elegir).
    */
   const handleAnalizar = async () => {
+    setAvisoSinFotos(false);
     if (!dataFile) return;
     const session = requireSession();
     if (!session) return;
@@ -585,20 +586,20 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     || Object.keys(fotosDeclaradas ?? {}).length > 0;
 
   /**
-   * Antes de publicar: si no hay fotos por ninguna via, se pregunta. Un catalogo entero
-   * con la imagen generica casi nunca es lo que el vendedor queria, y despues de publicar
-   * la unica salida es editar producto por producto.
+   * Las fotos se eligen al principio, junto con el Excel: asi el analisis y la carga van
+   * con todo de una vez. Si el vendedor llega a "Analizar" sin carpeta ni ZIP se le
+   * pregunta aca -- despues de publicar ya es tarde, porque la unica salida seria editar
+   * producto por producto.
    */
-  const pedirCarga = () => {
+  const pedirAnalisis = () => {
     if (!tieneFotosPreparadas) {
       setAvisoSinFotos(true);
       return;
     }
-    handleIniciarCarga();
+    handleAnalizar();
   };
 
   const handleIniciarCarga = async () => {
-    setAvisoSinFotos(false);
     if (!dataFile || !preview) return;
     const session = requireSession();
     if (!session) return;
@@ -1579,9 +1580,21 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                           </span>
                         )}
                       </div>
-                      <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '0.4rem' }}>
-                        Se emparejan solas por SKU. Selecciona una carpeta O un ZIP (el otro se bloqueará).
-                      </p>
+                      {Object.keys(fotosDeclaradas ?? {}).length > 0 ? (
+                        <p className="fotos-desde-excel">
+                          <CheckCircle2 size={15} />
+                          <span>
+                            Tu Excel trae el enlace de la foto de{' '}
+                            <b>{Object.keys(fotosDeclaradas ?? {}).length}</b>{' '}
+                            {Object.keys(fotosDeclaradas ?? {}).length === 1 ? 'repuesto' : 'repuestos'}:
+                            no necesitas subir carpeta ni ZIP, las traemos por ti al publicar.
+                          </span>
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '0.4rem' }}>
+                          Se emparejan solas por SKU. Selecciona una carpeta O un ZIP (el otro se bloqueará).
+                        </p>
+                      )}
                       <div className="dropzones-horizontal-container">
                         {/* Dropzone 1: Carpeta Local */}
                         <div
@@ -1706,7 +1719,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       <button
                         type="button"
                         className="btn btn-primary btn-primary-blue"
-                        onClick={handleAnalizar}
+                        onClick={pedirAnalisis}
                         disabled={!dataFile || busy}
                         style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem' }}
                       >
@@ -2125,7 +2138,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                   <button
                     type="button"
                     className="btn btn-primary btn-primary-blue"
-                    onClick={pedirCarga}
+                    onClick={handleIniciarCarga}
                     disabled={!preview || busy || preview.productosCargados === 0}
                     style={{
                       padding: '0.65rem 1.6rem',
@@ -2176,18 +2189,21 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             <h4 id="aviso-sin-fotos-titulo">No seleccionaste fotos</h4>
 
             <p className="carga-resumen-detalle">
-              Tus {preview?.productosCargados ?? 0}{' '}
-              {(preview?.productosCargados ?? 0) === 1 ? 'repuesto se va a publicar' : 'repuestos se van a publicar'}
-              {' '}con una <b>imagen genérica</b>. Se pueden agregar fotos después, pero hay que hacerlo
-              repuesto por repuesto desde Inventario General.
+              Si sigues sin fotos, tus repuestos se van a publicar con una <b>imagen genérica</b>.
+              Se pueden agregar después, pero hay que hacerlo repuesto por repuesto desde
+              Inventario General: es mucho más simple mandarlas ahora, junto con el Excel.
             </p>
 
             <div className="carga-resumen-fotos">
               <span className="carga-resumen-paso">Súbelas ahora y nos encargamos</span>
               <p>
                 Las emparejamos solas con cada repuesto por su código: el archivo{' '}
-                <b>{preview?.filas?.find((f) => f.estado !== 'ERROR')?.sku ?? 'SKU-001'}.jpg</b> va al
-                repuesto con ese código.
+                <b>PF-100.jpg</b> va al repuesto cuyo código es <b>PF-100</b>, y{' '}
+                <b>PF-100_2.jpg</b> es su segunda foto.
+              </p>
+              <p>
+                ¿Tus fotos están en internet? También puedes poner el enlace de cada una en una
+                columna de tu Excel: las traemos solas al publicar.
               </p>
               <input
                 ref={avisoPrevioFolderRef}
@@ -2218,7 +2234,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
               <button type="button" className="carga-resumen-cerrar" onClick={() => setAvisoSinFotos(false)}>
                 Volver
               </button>
-              <button type="button" className="btn btn-secondary" onClick={handleIniciarCarga}>
+              <button type="button" className="btn btn-secondary" onClick={handleAnalizar}>
                 Continuar sin fotos
               </button>
             </div>
