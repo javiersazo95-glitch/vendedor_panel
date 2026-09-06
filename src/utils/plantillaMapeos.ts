@@ -87,12 +87,12 @@ export function useMapeosGuardados(activo: boolean): MapeosGuardados {
     if (!session?.sellerId || !session?.token) return;
 
     pedidoRef.current = true;
-    let vigente = true;
+    // Sin flag de "sigo montado": junto con el ref, en StrictMode descartaba la unica
+    // respuesta que se pedia y los mapeos guardados no llegaban nunca (ver el mismo
+    // detalle en useEsquemaPlantilla).
     listarMapeos(session.sellerId, session.token)
-      .then((remotos) => { if (vigente) setMapeos(remotos); })
+      .then(setMapeos)
       .catch(() => { pedidoRef.current = false; });
-
-    return () => { vigente = false; };
   }, [activo]);
 
   const guardar = useCallback((firma: string, mapping: Mapping, archivoNombre?: string) => {

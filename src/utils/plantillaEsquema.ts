@@ -98,17 +98,21 @@ export function useEsquemaPlantilla(activo: boolean): EsquemaState {
     if (!session?.sellerId || !session?.token) return;
 
     pedidoRef.current = true;
-    let vigente = true;
+    // La respuesta se aplica siempre, sin un flag de "sigo montado". Con ese flag y el
+    // ref juntos, en StrictMode el esquema no llegaba nunca: React monta, desmonta y
+    // vuelve a montar el efecto, el cleanup invalidaba el pedido en vuelo y el remonte
+    // lo daba por hecho, asi que la respuesta llegaba y se descartaba. El panel quedaba
+    // con el contrato de respaldo -- sin categorias ni marcas- aunque el backend hubiera
+    // contestado. En React 18 un setState sobre un componente ya desmontado no hace nada
+    // ni avisa, asi que no hay nada que proteger.
     fetchEsquemaPlantilla(session.sellerId, session.token)
       .then((esquema) => {
-        if (vigente && esquema) setState({ esquema, usandoRespaldo: false });
+        if (esquema) setState({ esquema, usandoRespaldo: false });
       })
       .catch(() => {
-        // Se sigue con el respaldo. El vendedor no tiene nada que hacer con este error.
+        // Se sigue con el respaldo, y se permite reintentar en el proximo montaje.
         pedidoRef.current = false;
       });
-
-    return () => { vigente = false; };
   }, [activo]);
 
   return state;
