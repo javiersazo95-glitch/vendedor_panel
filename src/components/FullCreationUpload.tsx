@@ -783,6 +783,15 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         (hechas) => setDescargandoFotos({ hechas, total }),
       );
       setAvailableImages((prev) => ({ ...prev, ...archivos }));
+      // Mismo trato que con la carpeta o el ZIP: si nadie subio fotos todavia, las que se
+      // acaban de traer se publican solas. Antes quedaban asignadas esperando un segundo
+      // clic en "Subir fotos", con la pantalla diciendo "2 de 2 productos con foto
+      // asignada" -- que suena a trabajo terminado y no lo estaba. Si YA hubo una subida
+      // en esta carga no se dispara otra: subir dos veces reemplaza las fotos del
+      // producto, y para ese caso esta el boton manual.
+      if (!autoPhotoUploadRef.current && Object.keys(asignaciones).length > 0) {
+        pendingAutoUploadRef.current = true;
+      }
       setImageAssignments((prev) => {
         const siguiente = { ...prev };
         for (const [sku, nombres] of Object.entries(asignaciones)) {
@@ -1789,7 +1798,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       <span>
                         Tu Excel trae el enlace de la foto de{' '}
                         <b>{Object.keys(urlsDeclaradasPendientes).length}</b> repuestos. Podemos traerlas
-                        y asignarlas solas.
+                        y publicarlas solas, sin que tengas que subir nada.
                       </span>
                       <button
                         type="button"
