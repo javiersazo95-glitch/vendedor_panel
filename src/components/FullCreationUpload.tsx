@@ -204,8 +204,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [photoErrorMsg, setPhotoErrorMsg] = useState<string | null>(null);
   const photoFolderInputRef = useRef<HTMLInputElement>(null);
   const photoZipInputRef = useRef<HTMLInputElement>(null);
-  const avisoPrevioFolderRef = useRef<HTMLInputElement>(null);
-  const avisoPrevioZipRef = useRef<HTMLInputElement>(null);
   const [productInfoBySku, setProductInfoBySku] = useState<Record<string, { nombre: string; categoria: string }>>({});
   // Fotos que el vendedor declaro en su propio Excel (URL o nombre de archivo), por SKU.
   // No viajan en el archivo oficial: son el insumo de esta fase B.
@@ -2190,44 +2188,22 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             </p>
 
             <div className="carga-resumen-fotos">
-              <span className="carga-resumen-paso">Súbelas ahora y nos encargamos</span>
+              <span className="carga-resumen-paso">Cómo mandarlas</span>
               <p>
-                Las emparejamos solas con cada repuesto por su código: el archivo{' '}
-                <b>PF-100.jpg</b> va al repuesto cuyo código es <b>PF-100</b>, y{' '}
-                <b>PF-100_2.jpg</b> es su segunda foto.
+                Cierra este aviso y, en <b>2. FOTOS (OPCIONAL)</b> —arriba, en esta misma pantalla—,
+                elige tu <b>carpeta</b> o tu <b>ZIP</b>. Las emparejamos solas con cada repuesto por
+                su código: el archivo <b>PF-100.jpg</b> va al repuesto cuyo código es <b>PF-100</b>,
+                y <b>PF-100_2.jpg</b> es su segunda foto.
               </p>
               <p>
                 ¿Tus fotos están en internet? También puedes poner el enlace de cada una en una
                 columna de tu Excel: las traemos solas al publicar.
               </p>
-              <input
-                ref={avisoPrevioFolderRef}
-                type="file"
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => { onPhotoFolderSelected(e.target.files); setAvisoSinFotos(false); }}
-                {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
-              />
-              <input
-                ref={avisoPrevioZipRef}
-                type="file"
-                accept=".zip"
-                style={{ display: 'none' }}
-                onChange={(e) => { onPhotoZipSelected(e.target.files?.[0] ?? null); setAvisoSinFotos(false); }}
-              />
-              <div className="carga-resumen-acciones">
-                <button type="button" className="btn btn-primary btn-primary-blue" onClick={() => avisoPrevioFolderRef.current?.click()}>
-                  <FolderOpen size={16} /> Elegir una carpeta
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => avisoPrevioZipRef.current?.click()}>
-                  <FileText size={16} /> Elegir un ZIP
-                </button>
-              </div>
             </div>
 
             <div className="carga-resumen-acciones" style={{ width: '100%', justifyContent: 'space-between' }}>
-              <button type="button" className="carga-resumen-cerrar" onClick={() => setAvisoSinFotos(false)}>
-                Volver
+              <button type="button" className="btn btn-primary btn-primary-blue" onClick={() => setAvisoSinFotos(false)}>
+                Volver y elegir mis fotos
               </button>
               <button type="button" className="btn btn-secondary" onClick={handleAnalizar}>
                 Continuar sin fotos
