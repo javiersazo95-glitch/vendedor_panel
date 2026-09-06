@@ -1243,6 +1243,20 @@ h1, h2, h3, h4, h5, h6 {
 .mapper-arreglo-despues { font-weight: 700; color: #15803d; }
 .mapper-arreglo-filas { margin-left: auto; font-size: 0.84rem; color: var(--text-muted); }
 
+/* Repuestos que quedaron sin foto: el contador plano se perdia entre el resto. */
+.fotos-faltantes {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  background: var(--warning-bg);
+  color: #92400e;
+}
+.fotos-faltantes svg { flex-shrink: 0; margin-top: 0.1rem; }
+.fotos-faltantes b { color: #78350f; }
+.fotos-faltantes p { margin-top: 0.35rem; font-size: 0.88rem; line-height: 1.5; }
+
 /* --- Aviso de cierre de la carga: que publicar no termine en silencio --- */
 .carga-resumen-overlay {
   position: fixed;

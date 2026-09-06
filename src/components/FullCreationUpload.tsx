@@ -933,6 +933,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   /** ¿Esta carga ya terminó con fotos reales publicadas? */
   const fotosYaPublicadas = (photoUploadResults ?? []).some((r) => r.ok);
 
+  /**
+   * Repuestos que quedaron sin ninguna foto. Con pocos productos se nota a simple vista;
+   * con doscientos, un "3 de 200 con foto asignada" pasa desapercibido y el vendedor
+   * publica su catalogo entero con la imagen generica sin darse cuenta.
+   */
+  const repuestosSinFoto = filasConProducto.filter((f) => (imageAssignments[f.sku] ?? []).length === 0);
+
   const busy = validating || uploading;
 
   const verDetalleCarga = async (cargaId: number) => {
@@ -1846,10 +1853,31 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                   )}
 
                   {Object.keys(availableImages).length > 0 && (
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                      {filasConProducto.filter((f) => (imageAssignments[f.sku] || []).length > 0).length} de {filasConProducto.length} productos con foto asignada.
-                      Usa "Elegir fotos" en la tabla para corregir lo que no haya coincidido solo.
-                    </span>
+                    repuestosSinFoto.length === 0 ? (
+                      <span style={{ fontSize: '0.78rem', color: 'hsl(var(--success))', fontWeight: 700 }}>
+                        Los {filasConProducto.length} repuestos quedaron con foto.
+                      </span>
+                    ) : (
+                      <div className="fotos-faltantes">
+                        <AlertTriangle size={16} />
+                        <div>
+                          <b>
+                            {repuestosSinFoto.length} de {filasConProducto.length}{' '}
+                            {repuestosSinFoto.length === 1 ? 'repuesto quedó sin foto' : 'repuestos quedaron sin foto'}
+                          </b>
+                          <p>
+                            Emparejamos cada foto con su repuesto por el nombre del archivo: para que
+                            {' '}<b>{repuestosSinFoto[0].sku}</b> tome la suya, el archivo tiene que llamarse{' '}
+                            <b>{repuestosSinFoto[0].sku}.jpg</b> (o {repuestosSinFoto[0].sku}_2.jpg para la segunda).
+                          </p>
+                          <p>
+                            Si tus fotos tienen otro nombre, no hace falta renombrarlas: agrega una columna
+                            en tu Excel con el nombre de archivo de cada una y vuelve a generar la plantilla.
+                            También puedes elegirlas a mano con "Elegir fotos" en la tabla, repuesto por repuesto.
+                          </p>
+                        </div>
+                      </div>
+                    )
                   )}
 
                   {photoUploadResults && (() => {
@@ -2145,9 +2173,21 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             <div className="carga-resumen-fotos">
               <span className="carga-resumen-paso">Ahora las fotos</span>
               {fotosYaPublicadas ? (
-                <p>
-                  Tus fotos ya se publicaron junto con los repuestos. No tienes que hacer nada más.
-                </p>
+                repuestosSinFoto.length > 0 ? (
+                  <p>
+                    Tus fotos ya se publicaron, pero{' '}
+                    <b>
+                      {repuestosSinFoto.length}{' '}
+                      {repuestosSinFoto.length === 1 ? 'repuesto quedó sin foto' : 'repuestos quedaron sin foto'}
+                    </b>{' '}
+                    porque el nombre de sus archivos no coincide con el código del repuesto. Abajo te
+                    decimos cómo resolverlo.
+                  </p>
+                ) : (
+                  <p>
+                    Tus fotos ya se publicaron junto con los repuestos. No tienes que hacer nada más.
+                  </p>
+                )
               ) : Object.keys(urlsDeclaradasPendientes).length > 0 ? (
                 <>
                   <p>
