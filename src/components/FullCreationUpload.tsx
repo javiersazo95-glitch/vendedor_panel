@@ -2194,12 +2194,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                 elige tu <b>carpeta</b> o tu <b>ZIP</b>. Las emparejamos solas con cada repuesto por
                 su código, usando el nombre del archivo.
               </p>
-              {/* Con un codigo inventado hay que decir que lo es: si no, el vendedor busca
-                  "PF-100" en su lista y no lo encuentra. */}
+              {/* El ejemplo se ata a la columna que el vendedor acaba de relacionar, y usa un
+                  codigo que se lee como de relleno: uno con pinta real ("A-25") lo manda a
+                  buscarlo en su lista. */}
               <p className="carga-resumen-ejemplo">
-                <b>Ejemplo:</b> si un repuesto tuyo tiene el código <b>A-25</b>, su foto es el
-                archivo <b>A-25.jpg</b>, y <b>A-25_2.jpg</b> sería la segunda foto de ese mismo
-                repuesto.
+                <b>Ejemplo:</b> si en la columna <b>SKU / Código</b> pusiste <b>SKU001</b>, su foto
+                es el archivo <b>SKU001.jpg</b>, y <b>SKU001_2.jpg</b> sería la segunda foto de ese
+                mismo repuesto.
               </p>
               <p>
                 ¿Tus fotos están en internet? También puedes poner el enlace de cada una en una
