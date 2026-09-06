@@ -204,11 +204,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [photoErrorMsg, setPhotoErrorMsg] = useState<string | null>(null);
   const photoFolderInputRef = useRef<HTMLInputElement>(null);
   const photoZipInputRef = useRef<HTMLInputElement>(null);
-  // Los inputs de fotos de la pantalla de carga viven bajo `!result`: al publicar
-  // desaparecen del DOM y sus refs quedan en null. El aviso de cierre aparece justo
-  // despues, asi que necesita los suyos o sus botones no abren nada.
-  const avisoFolderInputRef = useRef<HTMLInputElement>(null);
-  const avisoZipInputRef = useRef<HTMLInputElement>(null);
   const avisoPrevioFolderRef = useRef<HTMLInputElement>(null);
   const avisoPrevioZipRef = useRef<HTMLInputElement>(null);
   const [productInfoBySku, setProductInfoBySku] = useState<Record<string, { nombre: string; categoria: string }>>({});
@@ -2272,115 +2267,45 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
               </p>
             )}
 
-            {/* El paso que se olvida. Se dice segun lo que este vendedor tiene a mano. */}
+            {/*
+              Informativo a proposito: las fotos se eligen al principio, junto con el Excel.
+              Ofrecer aca "sube una carpeta" invitaba a dejarlas para el final, que es lo que
+              termina en un catalogo entero con la imagen generica. Lo que si corresponde es
+              decir como quedaron y, si algo falto, por que.
+            */}
             <div className="carga-resumen-fotos">
-              <span className="carga-resumen-paso">Ahora las fotos</span>
-              <input
-                ref={avisoFolderInputRef}
-                type="file"
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => { onPhotoFolderSelected(e.target.files); setResumenAbierto(false); }}
-                {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
-              />
-              <input
-                ref={avisoZipInputRef}
-                type="file"
-                accept=".zip"
-                style={{ display: 'none' }}
-                onChange={(e) => { onPhotoZipSelected(e.target.files?.[0] ?? null); setResumenAbierto(false); }}
-              />
-
-              {fotosYaPublicadas ? (
-                repuestosSinFoto.length > 0 ? (
-                  <p>
-                    Tus fotos ya se publicaron, pero{' '}
-                    <b>
-                      {repuestosSinFoto.length}{' '}
-                      {repuestosSinFoto.length === 1 ? 'repuesto quedó sin foto' : 'repuestos quedaron sin foto'}
-                    </b>{' '}
-                    porque el nombre de sus archivos no coincide con el código del repuesto. Abajo te
-                    decimos cómo resolverlo.
-                  </p>
-                ) : (
-                  <p>
-                    Tus fotos ya se publicaron junto con los repuestos. No tienes que hacer nada más.
-                  </p>
-                )
-              ) : Object.keys(availableImages).length > 0 && repuestosSinFoto.length > 0 ? (
-                /* Subio fotos, pero sus nombres no calzan con ningun codigo. Pedirle que
-                   "suba sus fotos" seria pedirle lo que acaba de hacer; lo que necesita
-                   saber es por que no se asignaron. */
-                <>
-                  <p>
-                    Subiste <b>{Object.keys(availableImages).length}</b>{' '}
-                    {Object.keys(availableImages).length === 1 ? 'foto' : 'fotos'}, pero{' '}
-                    <b>
-                      {repuestosSinFoto.length === filasConProducto.length
-                        ? 'ninguna coincide'
-                        : `${repuestosSinFoto.length} ${repuestosSinFoto.length === 1 ? 'repuesto quedó' : 'repuestos quedaron'} sin foto`}
-                    </b>
-                    {' '}con el código de tus repuestos: para que{' '}
-                    <b>{repuestosSinFoto[0].sku}</b> tome la suya, el archivo tiene que llamarse{' '}
-                    <b>{repuestosSinFoto[0].sku}.jpg</b>.
-                  </p>
-                  <p>
-                    Puedes elegir otra carpeta con los nombres corregidos, o declarar el nombre de
-                    cada foto en una columna de tu Excel y volver a generar la plantilla.
-                  </p>
-                  <div className="carga-resumen-acciones">
-                    <button type="button" className="btn btn-secondary" onClick={() => avisoFolderInputRef.current?.click()}>
-                      <FolderOpen size={16} /> Elegir otra carpeta
-                    </button>
-                    <button type="button" className="btn btn-secondary" onClick={() => avisoZipInputRef.current?.click()}>
-                      <FileText size={16} /> Elegir otro ZIP
-                    </button>
-                  </div>
-                </>
+              <span className="carga-resumen-paso">Tus fotos</span>
+              {fotosYaPublicadas && repuestosSinFoto.length === 0 ? (
+                <p>Se publicaron junto con los repuestos. No tienes que hacer nada más.</p>
               ) : Object.keys(urlsDeclaradasPendientes).length > 0 ? (
-                <>
-                  <p>
-                    Tu Excel trae el enlace de la foto de{' '}
-                    <b>{Object.keys(urlsDeclaradasPendientes).length}</b>{' '}
-                    {Object.keys(urlsDeclaradasPendientes).length === 1 ? 'repuesto' : 'repuestos'}.
-                    Las traemos y las publicamos por ti.
-                  </p>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-primary-blue"
-                    onClick={() => { setResumenAbierto(false); traerFotosDeclaradas(); }}
-                  >
-                    <ImageUp size={16} /> Traer las fotos de mi Excel
-                  </button>
-                </>
+                <p>
+                  Tu Excel trae el enlace de la foto de{' '}
+                  <b>{Object.keys(urlsDeclaradasPendientes).length}</b>{' '}
+                  {Object.keys(urlsDeclaradasPendientes).length === 1 ? 'repuesto' : 'repuestos'}.
+                  Abajo, en el detalle de la carga, está el botón para traerlas.
+                </p>
+              ) : repuestosSinFoto.length > 0 && Object.keys(availableImages).length > 0 ? (
+                <p>
+                  <b>
+                    {repuestosSinFoto.length}{' '}
+                    {repuestosSinFoto.length === 1 ? 'repuesto quedó sin foto' : 'repuestos quedaron sin foto'}
+                  </b>{' '}
+                  porque el nombre de sus archivos no coincide con su código: para que{' '}
+                  <b>{repuestosSinFoto[0].sku}</b> tome la suya, el archivo tiene que llamarse{' '}
+                  <b>{repuestosSinFoto[0].sku}.jpg</b>. Corrige los nombres y vuelve a cargar esos
+                  repuestos, o agrégales la foto desde Inventario General.
+                </p>
               ) : (
-                <>
-                  <p>
-                    Tus repuestos quedaron con una foto genérica. Sube tus fotos ahora: las emparejamos
-                    solas con cada repuesto por su código.
-                  </p>
-                  <div className="carga-resumen-acciones">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => avisoFolderInputRef.current?.click()}
-                    >
-                      <FolderOpen size={16} /> Subir una carpeta
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => avisoZipInputRef.current?.click()}
-                    >
-                      <FileText size={16} /> Subir un ZIP
-                    </button>
-                  </div>
-                </>
+                <p>
+                  Publicaste sin fotos, así que tus repuestos quedaron con una imagen genérica.
+                  Puedes agregarlas desde Inventario General, o volver a cargarlos con su carpeta
+                  de fotos desde el principio.
+                </p>
               )}
             </div>
 
             <button type="button" className="carga-resumen-cerrar" onClick={() => setResumenAbierto(false)}>
-              {fotosYaPublicadas ? 'Ver el detalle de la carga' : 'Lo hago después, ver el detalle'}
+              Ver el detalle de la carga
             </button>
           </div>
         </div>
