@@ -204,6 +204,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [photoErrorMsg, setPhotoErrorMsg] = useState<string | null>(null);
   const photoFolderInputRef = useRef<HTMLInputElement>(null);
   const photoZipInputRef = useRef<HTMLInputElement>(null);
+  // Los inputs de fotos de la pantalla de carga viven bajo `!result`: al publicar
+  // desaparecen del DOM y sus refs quedan en null. El aviso de cierre aparece justo
+  // despues, asi que necesita los suyos o sus botones no abren nada.
+  const avisoFolderInputRef = useRef<HTMLInputElement>(null);
+  const avisoZipInputRef = useRef<HTMLInputElement>(null);
+  const avisoPrevioFolderRef = useRef<HTMLInputElement>(null);
+  const avisoPrevioZipRef = useRef<HTMLInputElement>(null);
   const [productInfoBySku, setProductInfoBySku] = useState<Record<string, { nombre: string; categoria: string }>>({});
   // Fotos que el vendedor declaro en su propio Excel (URL o nombre de archivo), por SKU.
   // No viajan en el archivo oficial: son el insumo de esta fase B.
@@ -215,6 +222,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   // Aviso de cierre de la carga: que publicar no termine en silencio, y que el paso de las
   // fotos -que es el que se olvida- quede dicho con todas sus letras.
   const [resumenAbierto, setResumenAbierto] = useState(false);
+  // Aviso previo: publicar sin fotos es una decision, no un descuido. Se pregunta una vez.
+  const [avisoSinFotos, setAvisoSinFotos] = useState(false);
   // Evita que la subida automatica de fotos (ver efecto mas abajo) se dispare mas de una
   // vez para el mismo resultado de carga.
   const autoPhotoUploadRef = useRef(false);
@@ -410,6 +419,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setPreview(null);
     setResult(null);
     setResumenAbierto(false);
+    setAvisoSinFotos(false);
     setErrorMsg(null);
     setShowMapper(false);
     setDataFromMapper(false);
@@ -569,7 +579,26 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
    * unicamente esas filas -- el backend no tiene forma de "saltarse" filas de un archivo,
    * asi que la exclusion se hace en el cliente antes de mandar el request.
    */
+  /** ¿El vendedor tiene fotos para estos repuestos, de donde sea? */
+  const tieneFotosPreparadas = photoFolderCount > 0
+    || photoZipFile !== null
+    || Object.keys(fotosDeclaradas ?? {}).length > 0;
+
+  /**
+   * Antes de publicar: si no hay fotos por ninguna via, se pregunta. Un catalogo entero
+   * con la imagen generica casi nunca es lo que el vendedor queria, y despues de publicar
+   * la unica salida es editar producto por producto.
+   */
+  const pedirCarga = () => {
+    if (!tieneFotosPreparadas) {
+      setAvisoSinFotos(true);
+      return;
+    }
+    handleIniciarCarga();
+  };
+
   const handleIniciarCarga = async () => {
+    setAvisoSinFotos(false);
     if (!dataFile || !preview) return;
     const session = requireSession();
     if (!session) return;
@@ -2096,7 +2125,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                   <button
                     type="button"
                     className="btn btn-primary btn-primary-blue"
-                    onClick={handleIniciarCarga}
+                    onClick={pedirCarga}
                     disabled={!preview || busy || preview.productosCargados === 0}
                     style={{
                       padding: '0.65rem 1.6rem',
@@ -2138,6 +2167,64 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         </div>
       </div>
 
+
+      {avisoSinFotos && (
+        <div className="carga-resumen-overlay" role="dialog" aria-modal="true" aria-labelledby="aviso-sin-fotos-titulo">
+          <div className="carga-resumen">
+            <div className="carga-resumen-icono con-errores"><ImageUp size={26} /></div>
+
+            <h4 id="aviso-sin-fotos-titulo">No seleccionaste fotos</h4>
+
+            <p className="carga-resumen-detalle">
+              Tus {preview?.productosCargados ?? 0}{' '}
+              {(preview?.productosCargados ?? 0) === 1 ? 'repuesto se va a publicar' : 'repuestos se van a publicar'}
+              {' '}con una <b>imagen genérica</b>. Se pueden agregar fotos después, pero hay que hacerlo
+              repuesto por repuesto desde Inventario General.
+            </p>
+
+            <div className="carga-resumen-fotos">
+              <span className="carga-resumen-paso">Súbelas ahora y nos encargamos</span>
+              <p>
+                Las emparejamos solas con cada repuesto por su código: el archivo{' '}
+                <b>{preview?.filas?.find((f) => f.estado !== 'ERROR')?.sku ?? 'SKU-001'}.jpg</b> va al
+                repuesto con ese código.
+              </p>
+              <input
+                ref={avisoPrevioFolderRef}
+                type="file"
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => { onPhotoFolderSelected(e.target.files); setAvisoSinFotos(false); }}
+                {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+              />
+              <input
+                ref={avisoPrevioZipRef}
+                type="file"
+                accept=".zip"
+                style={{ display: 'none' }}
+                onChange={(e) => { onPhotoZipSelected(e.target.files?.[0] ?? null); setAvisoSinFotos(false); }}
+              />
+              <div className="carga-resumen-acciones">
+                <button type="button" className="btn btn-primary btn-primary-blue" onClick={() => avisoPrevioFolderRef.current?.click()}>
+                  <FolderOpen size={16} /> Elegir una carpeta
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={() => avisoPrevioZipRef.current?.click()}>
+                  <FileText size={16} /> Elegir un ZIP
+                </button>
+              </div>
+            </div>
+
+            <div className="carga-resumen-acciones" style={{ width: '100%', justifyContent: 'space-between' }}>
+              <button type="button" className="carga-resumen-cerrar" onClick={() => setAvisoSinFotos(false)}>
+                Volver
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={handleIniciarCarga}>
+                Continuar sin fotos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {resumenAbierto && result && (
         <div className="carga-resumen-overlay" role="dialog" aria-modal="true" aria-labelledby="carga-resumen-titulo">
           <div className="carga-resumen">
@@ -2210,18 +2297,33 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     Tus repuestos quedaron con una foto genérica. Sube tus fotos ahora: las emparejamos
                     solas con cada repuesto por su código.
                   </p>
+                  <input
+                    ref={avisoFolderInputRef}
+                    type="file"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={(e) => { onPhotoFolderSelected(e.target.files); setResumenAbierto(false); }}
+                    {...({ webkitdirectory: '', directory: '' } as Record<string, string>)}
+                  />
+                  <input
+                    ref={avisoZipInputRef}
+                    type="file"
+                    accept=".zip"
+                    style={{ display: 'none' }}
+                    onChange={(e) => { onPhotoZipSelected(e.target.files?.[0] ?? null); setResumenAbierto(false); }}
+                  />
                   <div className="carga-resumen-acciones">
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={() => { setResumenAbierto(false); photoFolderInputRef.current?.click(); }}
+                      onClick={() => avisoFolderInputRef.current?.click()}
                     >
                       <FolderOpen size={16} /> Subir una carpeta
                     </button>
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={() => { setResumenAbierto(false); photoZipInputRef.current?.click(); }}
+                      onClick={() => avisoZipInputRef.current?.click()}
                     >
                       <FileText size={16} /> Subir un ZIP
                     </button>
