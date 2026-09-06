@@ -3,3 +3,9 @@
 node_modules/
 dist/
 audit-runs/
+
+# Archivos de prueba de la carga masiva: Excel de vendedor, plantillas descargadas y
+# fotos de ejemplo. Se generan al probar el flujo y no son del proyecto.
+prueba*.xlsx
+Plantilla_*.xlsx
+pruebas-fotos/
