@@ -1346,6 +1346,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 .carga-resumen-fotos p { font-size: 0.96rem; line-height: 1.55; color: var(--text-secondary); }
 .carga-resumen-fotos .btn { align-self: flex-start; min-height: 48px; font-size: 0.95rem; }
+/* El ejemplo se lee como ejemplo, no como un dato del archivo del vendedor. */
+.carga-resumen-ejemplo {
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid rgba(37, 99, 235, 0.4);
+  border-radius: 0 8px 8px 0;
+  background: rgba(37, 99, 235, 0.07);
+  font-size: 0.92rem;
+}
 .carga-resumen-acciones { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .carga-resumen-cerrar {
   align-self: center;
