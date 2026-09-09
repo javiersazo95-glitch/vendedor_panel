@@ -40,7 +40,7 @@ import {
   partirRangoAnios,
   validarValorFijo,
 } from '../utils/plantillaNormalizacion';
-import { buscarEnTexto } from '../utils/plantillaCatalogos';
+import { buscarEnCatalogo, buscarEnTexto } from '../utils/plantillaCatalogos';
 import { detectarBandas, detectarSegundaTabla } from '../utils/plantillaFilas';
 import { fotosPorSku, tipoColumnaFotos, type TipoColumnaFotos } from '../utils/plantillaFotos';
 import {
@@ -463,8 +463,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     if (!mapping || mapping.oficial.categoria) return null;
     const encontradas = detectarBandas(userRows, userCols.length);
     if (encontradas.length === 0) return null;
+    // Una fila de una sola celda puede ser cualquier cosa: "PROVEEDOR: MONROE" también lo
+    // es, y no es una categoría. Se ofrece sólo si los títulos son categorías de verdad,
+    // contra el catálogo; si no, esto no es una lista agrupada por familia.
+    const enCatalogo = encontradas.filter(
+      (b) => buscarEnCatalogo(b.titulo, esquema.catalogos.categorias),
+    );
+    if (enCatalogo.length === 0 || enCatalogo.length * 2 < encontradas.length) return null;
     return { total: encontradas.length, titulos: encontradas.map((b) => b.titulo) };
-  }, [mapping, userCols, userRows]);
+  }, [mapping, userCols, userRows, esquema]);
 
   /** ¿La hoja trae subtotales, totales o el encabezado repetido entre los repuestos? */
   const filasDeTotales = useMemo(() => {
@@ -1627,6 +1634,13 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   /* ---------------------------- Paso 3: revisar ---------------------------- */
   const filasListas = userRows.length;
+  /**
+   * Filas de la hoja que se dejaron fuera por no ser repuestos. Sin este numero los
+   * contadores no cuadran —"5 en tu archivo, 3 se pueden publicar" hace pensar que dos
+   * fallaron— y el vendedor se queda buscando dos repuestos que nunca existieron.
+   */
+  const filasFuera = (mapping?.usarBandasComoCategoria && bandas ? bandas.total : 0)
+    + (mapping?.quitarFilasDeTotales && filasDeTotales ? filasDeTotales.total : 0);
 
   return (
     <div className="mapper">
@@ -1657,7 +1671,13 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       )}
 
       <div className="mapper-counts">
-        <span><b>{filasListas.toLocaleString('es-CL')}</b> {separacion ? 'filas en tu archivo' : 'repuestos en tu archivo'}</span>
+        <span>
+          <b>{filasListas.toLocaleString('es-CL')}</b>{' '}
+          {separacion || filasFuera > 0 ? 'filas en tu archivo' : 'repuestos en tu archivo'}
+        </span>
+        {filasFuera > 0 && (
+          <span><b>{filasFuera.toLocaleString('es-CL')}</b> no son repuestos, quedan fuera</span>
+        )}
         <span className="ok"><b>{(revision?.publicables ?? 0).toLocaleString('es-CL')}</b> se pueden publicar</span>
         {(revision?.conError ?? 0) > 0 && (
           <span className="mal"><b>{revision?.conError.toLocaleString('es-CL')}</b> con problemas</span>
@@ -1789,7 +1809,12 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           <li><b>Archivo:</b> {userFile.name}</li>
           {hojas.length > 1 && <li><b>Hoja:</b> {hoja?.nombre}</li>}
           <li><b>Títulos:</b> fila {filaEncabezados + 1} de tu Excel</li>
-          <li><b>Repuestos a preparar:</b> {filasListas.toLocaleString('es-CL')}</li>
+          <li>
+            <b>Repuestos a preparar:</b> {(filasListas - filasFuera).toLocaleString('es-CL')}
+            {filasFuera > 0
+              ? ` (de ${filasListas.toLocaleString('es-CL')} filas; el resto son títulos o totales)`
+              : ''}
+          </li>
         </ul>
       </section>
 
