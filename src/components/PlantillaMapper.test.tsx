@@ -751,11 +751,11 @@ describe('PlantillaMapper', () => {
     // La segunda hoja se veía sólo al abrir el Excel: ahora está en la pantalla, y sus
     // celdas se corrigen como las de arriba.
     expect(screen.getByText(/Compatibilidades: los demás autos/)).toBeInTheDocument();
-    expect((screen.getByLabelText('Marca del vehículo, auto 1') as HTMLSelectElement).value)
+    expect((screen.getByLabelText('Marca del vehículo, compatibilidad 1') as HTMLSelectElement).value)
       .toBe('Nissan');
     // Sin catálogo de modelos cargado la celda es texto, y el texto que ya está bien se
     // muestra como texto hasta que se usa.
-    expect(screen.getByTitle(/^Modelo del vehículo, auto 1/).textContent).toBe('V16');
+    expect(screen.getByTitle(/^Modelo del vehículo, compatibilidad 1/).textContent).toBe('V16');
   });
 
 
@@ -772,13 +772,13 @@ describe('PlantillaMapper', () => {
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument();
 
-    clic(/Agregar un auto/);
-    await screen.findByLabelText('Marca del vehículo, auto 1');
-    fireEvent.change(screen.getByLabelText('Marca del vehículo, auto 1'), {
+    clic(/Agregar compatibilidad/);
+    await screen.findByLabelText('Marca del vehículo, compatibilidad 1');
+    fireEvent.change(screen.getByLabelText('Marca del vehículo, compatibilidad 1'), {
       target: { value: 'Nissan' },
     });
     // La celda viene vacía, así que ya es un campo: no hay que hacerle clic primero.
-    const modelo = screen.getByLabelText('Modelo del vehículo, auto 1');
+    const modelo = screen.getByLabelText('Modelo del vehículo, compatibilidad 1');
     fireEvent.change(modelo, { target: { value: 'V16' } });
     fireEvent.blur(modelo);
 
@@ -799,9 +799,9 @@ describe('PlantillaMapper', () => {
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
-    clic(/Agregar un auto/);
-    await screen.findByLabelText('Marca del vehículo, auto 1');
-    fireEvent.click(screen.getByTitle('Quitar este vehículo'));
+    clic(/Agregar compatibilidad/);
+    await screen.findByLabelText('Marca del vehículo, compatibilidad 1');
+    fireEvent.click(screen.getByTitle('Quitar esta compatibilidad'));
     await waitFor(() => expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument());
   });
 

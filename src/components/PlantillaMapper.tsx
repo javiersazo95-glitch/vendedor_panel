@@ -2191,7 +2191,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                             columna={c}
                             opciones={opcionesDeCelda(c, contexto)}
                             sugerencias={sugerenciasDeCelda(c, dato(c), contexto)}
-                            etiqueta={`${campos.find((campo) => campo.key === c)?.label ?? c}, auto ${i + 1}`}
+                            etiqueta={`${campos.find((campo) => campo.key === c)?.label ?? c}, compatibilidad ${i + 1}`}
                             destacada={!dato(c) && c !== 'motor' && c !== 'referencia_oem'}
                             onCambio={(nuevo) => (fila.extra !== null
                               ? setExtraCompat(fila.extra, c, nuevo)
@@ -2204,7 +2204,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                           <button
                             type="button"
                             className="mapper-quitar"
-                            title="Quitar este vehículo"
+                            title="Quitar esta compatibilidad"
                             onClick={() => quitarCompat(fila.extra as number)}
                           >
                             Quitar
@@ -2218,7 +2218,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                   <tr>
                     <td colSpan={COLUMNAS_COMPATIBILIDADES.length + 1} className="mapper-empty">
                       Ningún repuesto tiene más de un auto. Si alguno sirve para varios,
-                      agrégalos acá.
+                      agrega una compatibilidad por cada uno.
                     </td>
                   </tr>
                 )}
@@ -2231,7 +2231,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
             className="btn btn-secondary mapper-btn"
             onClick={() => agregarCompat(primerSku)}
           >
-            <Plus size={16} /> Agregar un auto
+            <Plus size={16} /> Agregar compatibilidad
           </button>
         </section>
       )}
