@@ -35,9 +35,11 @@ const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
   const encontrado = CASOS_CRUDOS.find((c) => c.id === id);
   if (!encontrado) throw new Error(`No existe el caso crudo ${id}`);
   const filaEncabezados = detectarFilaEncabezados(encontrado.aoa);
-  const { cols, rows } = columnasDeHoja(encontrado.aoa, filaEncabezados);
+  const { cols, rows, filasOriginales } = columnasDeHoja(encontrado.aoa, filaEncabezados);
   const mapping = { ...autoDetectMapping(cols, PLANTILLA_CAMPOS), ...banderas };
-  const { aoa: oficial } = buildOfficialAoADetallado(rows, cols, mapping, PLANTILLA_CAMPOS, CATALOGOS);
+  const { aoa: oficial, filasOrigen } = buildOfficialAoADetallado(
+    rows, cols, mapping, PLANTILLA_CAMPOS, CATALOGOS,
+  );
   return {
     filaEncabezados,
     cols,
@@ -51,7 +53,14 @@ const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
       .filter((c) => requiereValorEnPanel(c, mapping) && !mapping.oficial[c.key]
         && !(mapping.defaults?.[c.key] ?? '').trim())
       .map((c) => c.key),
-    revision: revisarAoA(oficial, PLANTILLA_CAMPOS, { maxFilas: 50, catalogos: CATALOGOS }),
+    filasOrigen,
+    revision: revisarAoA(oficial, PLANTILLA_CAMPOS, {
+      maxFilas: 50,
+      catalogos: CATALOGOS,
+      // La misma cuenta que hace el panel: de qué fila de la hoja salió, y el Excel
+      // empieza a contar en 1.
+      numerosDeFila: filasOrigen.map((i) => filasOriginales[i] + 1),
+    }),
   };
 };
 
@@ -163,6 +172,20 @@ describe('archivos crudos: lo que ya funciona', () => {
     expect(valorEn(r.oficial, 3, 'categoria')).toBe('Filtros');
     expect(r.revision.publicables).toBe(3);
     expect(r.revision.conError).toBe(0);
+  });
+
+  it('el número de fila sigue apuntando al Excel del vendedor después de sacar filas', () => {
+    const r = leerComoElPanel('05-subtotales', { quitarFilasDeTotales: true });
+    // En la hoja, los tres repuestos están en las filas 2, 3 y 7: entre medio hay un
+    // subtotal, una fila vacía y los títulos repetidos. Si el número se calculara sobre el
+    // archivo ya generado dirían 2, 3 y 4, y el vendedor iría a mirar el subtotal.
+    expect(r.revision.filas.map((f) => f.numeroFila)).toEqual([2, 3, 7]);
+  });
+
+  it('el número de fila aguanta que una fila se separe en varios vehículos', () => {
+    const r = leerComoElPanel('09-varios-autos-por-celda', { separarAplicaciones: true });
+    // Las tres compatibilidades del primer repuesto salen todas de la fila 2.
+    expect(r.revision.filas.map((f) => f.numeroFila)).toEqual([2, 2, 2, 3, 3]);
   });
 
   it('deja fuera los subtotales y los títulos repetidos a mitad de tabla', () => {

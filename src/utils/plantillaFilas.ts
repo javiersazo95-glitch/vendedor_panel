@@ -90,12 +90,6 @@ export function detectarFilasNoRepuesto(
   return fuera;
 }
 
-/** Las filas de datos, sin las que no son repuestos. */
-export function quitarFilasNoRepuesto(rows: unknown[][], descartadas: FilaDescartada[]): unknown[][] {
-  if (descartadas.length === 0) return rows;
-  const fuera = new Set(descartadas.map((d) => d.indice));
-  return rows.filter((_, i) => !fuera.has(i));
-}
 
 export interface Banda {
   /** Índice de la fila de banda dentro de las filas de datos. */
@@ -127,34 +121,6 @@ export function detectarBandas(rows: unknown[][], totalColumnas: number): Banda[
   return bandas;
 }
 
-/**
- * Reparte el título de cada banda en las filas que vienen abajo, como una columna más.
- *
- * Devuelve las filas sin las bandas y con una celda extra al final —la columna sintética
- * que después se mapea a la categoría—. Las filas anteriores a la primera banda quedan con
- * esa celda vacía: no hay título que les corresponda y inventarles uno sería peor.
- */
-export function repartirBandas(
-  rows: unknown[][],
-  bandas: Banda[],
-  indiceColumnaNueva: number,
-): unknown[][] {
-  if (bandas.length === 0) return rows;
-  const titulos = new Map(bandas.map((b) => [b.indice, b.titulo]));
-  const salida: unknown[][] = [];
-  let actual = '';
-  rows.forEach((fila, indice) => {
-    const titulo = titulos.get(indice);
-    if (titulo !== undefined) {
-      actual = titulo;
-      return;
-    }
-    const copia = [...(fila as unknown[])];
-    copia[indiceColumnaNueva] = actual;
-    salida.push(copia);
-  });
-  return salida;
-}
 
 export interface SegundaTabla {
   /** Índice de la fila de títulos de la segunda tabla, dentro de las filas de datos. */

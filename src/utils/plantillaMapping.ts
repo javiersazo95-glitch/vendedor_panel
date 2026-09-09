@@ -8,8 +8,6 @@ import { parsearAplicacion, separarAplicaciones } from './plantillaCompatibilida
 import {
   detectarBandas,
   detectarFilasNoRepuesto,
-  quitarFilasNoRepuesto,
-  repartirBandas,
   type FilaDescartada,
 } from './plantillaFilas';
 import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
@@ -588,6 +586,12 @@ export interface ParsedUserFile {
   cols: UserColumn[];
   /** Filas de datos (sin la fila de encabezados), como arreglo de arreglos. */
   rows: unknown[][];
+  /**
+   * Fila de la hoja (base 0) de la que salió cada una de `rows`. Las filas vacías se
+   * saltan, así que sin esto el número que se le muestra al vendedor deja de coincidir
+   * con el de su Excel en cuanto su lista tiene un renglón en blanco.
+   */
+  filasOriginales: number[];
 }
 
 /** Lee el archivo con FileReader (funciona en navegador y en jsdom, a diferencia de File.text()). */
@@ -715,7 +719,13 @@ export function elegirHojaInicial(hojas: HojaUsuario[]): number {
  */
 export function columnasDeHoja(aoa: unknown[][], filaEncabezados: number): ParsedUserFile {
   const headerRow = (aoa[filaEncabezados] as unknown[]) ?? [];
-  const rows = aoa.slice(filaEncabezados + 1).filter((r) => filaTieneAlgo(r as unknown[]));
+  const rows: unknown[][] = [];
+  const filasOriginales: number[] = [];
+  for (let i = filaEncabezados + 1; i < aoa.length; i++) {
+    if (!filaTieneAlgo(aoa[i] as unknown[])) continue;
+    rows.push(aoa[i] as unknown[]);
+    filasOriginales.push(i);
+  }
 
   const seen = new Map<string, number>();
   const cols: UserColumn[] = headerRow.map((raw, index) => {
@@ -731,7 +741,7 @@ export function columnasDeHoja(aoa: unknown[][], filaEncabezados: number): Parse
     return { id: String(index), rawHeader, displayHeader, index };
   });
 
-  return { cols, rows };
+  return { cols, rows, filasOriginales };
 }
 
 /**
@@ -742,10 +752,10 @@ export function columnasDeHoja(aoa: unknown[][], filaEncabezados: number): Parse
 export async function parseUserFile(file: File): Promise<ParsedUserFile> {
   const hojas = await leerLibro(file);
   const hoja = hojas[elegirHojaInicial(hojas)];
-  const { cols, rows } = columnasDeHoja(hoja.aoa, detectarFilaEncabezados(hoja.aoa));
-  if (cols.length === 0) throw new Error('La primera fila del archivo no tiene títulos de columna.');
-  if (rows.length === 0) throw new Error('No encontramos filas de datos debajo de los títulos.');
-  return { cols, rows };
+  const leida = columnasDeHoja(hoja.aoa, detectarFilaEncabezados(hoja.aoa));
+  if (leida.cols.length === 0) throw new Error('La primera fila del archivo no tiene títulos de columna.');
+  if (leida.rows.length === 0) throw new Error('No encontramos filas de datos debajo de los títulos.');
+  return leida;
 }
 
 /** Valores distintos no vacíos de una columna de origen (para el mapeo de valores). */
@@ -780,7 +790,12 @@ export function buildOfficialAoADetallado(
   campos: CampoMeta[] = PLANTILLA_CAMPOS,
   /** Catálogos reales: para partir la aplicación y para escribir los nombres tal cual. */
   catalogos: EsquemaPlantilla['catalogos'] = ESQUEMA_FALLBACK.catalogos,
-): { aoa: (string | number)[][]; cambios: CambioNormalizacion[] } {
+): {
+  aoa: (string | number)[][];
+  cambios: CambioNormalizacion[];
+  /** Por cada fila de datos de `aoa`, de qué fila del vendedor salió (base 0). */
+  filasOrigen: number[];
+} {
   const marcasVehiculo = catalogos.marcasVehiculo;
   // El backend busca estos nombres con findByNombreIgnoreCase, que ignora mayusculas
   // pero NO tildes: "Suspension" no encuentra a "Suspensión" y la fila se rechaza. Si el
@@ -822,18 +837,37 @@ export function buildOfficialAoADetallado(
   // Las bandas se reparten antes que nada: son filas de la hoja original y hay que
   // leerlas en su posición, antes de que se saque o se duplique ninguna otra. El título
   // viaja en una celda extra al final, en un índice que ninguna columna del vendedor usa.
-  const idxBanda = userCols.reduce((max, c) => Math.max(max, c.index), -1) + 1;
-  const filasSinBandas = mapping.usarBandasComoCategoria
-    ? repartirBandas(rows, detectarBandas(rows, userCols.length), idxBanda)
-    : rows;
+  // Los detectores miran las celdas del vendedor y nada más, así que todo lo que
+  // agregamos —de qué fila salió y bajo qué título estaba— viaja **al lado** de la fila y
+  // no dentro. Meterlo en una celda extra hacía que una banda dejara de tener una sola
+  // celda llena y no se reconociera.
+  const bandas = mapping.usarBandasComoCategoria ? detectarBandas(rows, userCols.length) : [];
+  const tituloPorFila = new Map(bandas.map((b) => [b.indice, b.titulo]));
+  const fueraPorTotales = new Set(
+    (mapping.quitarFilasDeTotales ? filasNoRepuesto(rows, userCols, mapping) : [])
+      .map((f) => f.indice),
+  );
 
-  // Las filas que no son repuestos salen después: nada de lo que viene luego tiene
-  // sentido sobre un subtotal, y expandirlo o limpiarlo sería trabajo perdido.
-  const filasUtiles = mapping.quitarFilasDeTotales
-    ? quitarFilasNoRepuesto(
-      filasSinBandas, filasNoRepuesto(filasSinBandas, userCols, mapping),
-    )
-    : filasSinBandas;
+  /** Fila del vendedor lista para transformar, con lo que sabemos de dónde vino. */
+  interface FilaConOrigen {
+    row: unknown[];
+    /** Índice en el archivo del vendedor (base 0). Sobrevive a que se saquen o dupliquen filas. */
+    origen: number;
+    /** Título de la banda que la agrupaba, si la lista viene agrupada por familia. */
+    banda: string;
+  }
+
+  const utiles: FilaConOrigen[] = [];
+  let bandaActual = '';
+  rows.forEach((fila, i) => {
+    const titulo = tituloPorFila.get(i);
+    if (titulo !== undefined) {
+      bandaActual = titulo;
+      return;
+    }
+    if (fueraPorTotales.has(i)) return;
+    utiles.push({ row: fila as unknown[], origen: i, banda: bandaActual });
+  });
 
   // Varios vehículos en una celda: la fila se repite una vez por vehículo antes de
   // transformarla, así cada copia recorre el resto del pipeline como una fila normal.
@@ -841,21 +875,22 @@ export function buildOfficialAoADetallado(
     ? mapping.oficial.compatibilidad_modelo ?? mapping.oficial.compatibilidad_marca ?? null
     : null;
   const idxAplicacion = colAplicacion ? idToIndex.get(colAplicacion) : undefined;
-  const filas = idxAplicacion === undefined ? filasUtiles : filasUtiles.flatMap((raw) => {
-    const row = raw as unknown[];
-    const vehiculos = separarAplicaciones(String(row[idxAplicacion] ?? ''), marcasVehiculo);
-    if (vehiculos.length < 2) return [row];
+  const filas: FilaConOrigen[] = idxAplicacion === undefined ? utiles : utiles.flatMap((f) => {
+    const vehiculos = separarAplicaciones(String(f.row[idxAplicacion] ?? ''), marcasVehiculo);
+    if (vehiculos.length < 2) return [f];
     return vehiculos.map((vehiculo) => {
-      const copia = [...row];
+      const copia = [...f.row];
       copia[idxAplicacion] = vehiculo;
-      return copia;
+      return { ...f, row: copia };
     });
   });
 
   const out: (string | number)[][] = [[...columnas]];
+  /** Fila del archivo del vendedor (base 0) de la que sale cada fila de `out`. */
+  const filasOrigen: number[] = [];
 
-  for (const raw of filas) {
-    const row = raw as unknown[];
+  for (const fila of filas) {
+    const row = fila.row;
 
     // Valor base por columna oficial.
     const cells: Record<string, string> = {};
@@ -912,7 +947,7 @@ export function buildOfficialAoADetallado(
     // antes que la deducción por nombre: lo que el vendedor agrupó a mano manda sobre lo
     // que nosotros creamos leer en el texto.
     if (mapping.usarBandasComoCategoria && !cells.categoria) {
-      const titulo = String(row[idxBanda] ?? '').trim();
+      const titulo = fila.banda.trim();
       // El título viene escrito como en una lista impresa, en mayúsculas y sin tildes. Se
       // escribe con el nombre del catálogo porque el backend busca ignorando mayúsculas
       // pero NO tildes: "SUSPENSION" no encuentra a "Suspensión" y la fila se rechaza.
@@ -964,9 +999,10 @@ export function buildOfficialAoADetallado(
     }
 
     out.push(columnas.map((key) => cells[key]));
+    filasOrigen.push(fila.origen);
   }
 
-  return { aoa: out, cambios };
+  return { aoa: out, cambios, filasOrigen };
 }
 
 /** Igual que `buildOfficialAoADetallado`, cuando sólo interesa el archivo resultante. */

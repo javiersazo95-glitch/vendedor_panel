@@ -119,6 +119,12 @@ export interface SeparacionPorSku {
   compatibilidades: (string | number)[][];
   /** Diferencias entre las filas de un mismo SKU que conviene contar antes de generar. */
   advertencias: string[];
+  /**
+   * Por cada fila de `inventario`, qué fila de datos del AoA de entrada la produjo (base
+   * 0). Sirve para seguir sabiendo de qué fila del Excel del vendedor viene cada repuesto
+   * después de juntar los códigos repetidos.
+   */
+  indices: number[];
 }
 
 /** Campos del repuesto que no deberían cambiar entre las filas de un mismo SKU. */
@@ -137,6 +143,7 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
   };
 
   const inventario: (string | number)[][] = [[...columnas]];
+  const indices: number[] = [];
   const compatibilidades: (string | number)[][] = [[...COLUMNAS_COMPATIBILIDADES]];
   const advertencias: string[] = [];
   const primeraPorSku = new Map<string, (string | number)[]>();
@@ -150,6 +157,7 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
     if (!sku || !primera) {
       if (sku) primeraPorSku.set(sku, fila);
       inventario.push(fila);
+      indices.push(i - 1);
       continue;
     }
 
@@ -179,7 +187,7 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
     );
   }
 
-  return { inventario, compatibilidades, advertencias };
+  return { inventario, compatibilidades, advertencias, indices };
 }
 
 /**

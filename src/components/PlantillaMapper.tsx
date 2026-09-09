@@ -144,6 +144,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const [hojaIndex, setHojaIndex] = useState(0);
   const [filaEncabezados, setFilaEncabezados] = useState(0);
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
+  /** Fila de la hoja (base 0) de la que salió cada fila de `userRows`. */
+  const [filasOriginales, setFilasOriginales] = useState<number[]>([]);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [userCols, setUserCols] = useState<UserColumn[]>([]);
@@ -165,12 +167,13 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    */
   const aplicarSeleccion = (libro: HojaUsuario[], indiceHoja: number, fila: number) => {
     const hoja = libro[indiceHoja];
-    const { cols, rows } = columnasDeHoja(hoja?.aoa ?? [], fila);
+    const { cols, rows, filasOriginales } = columnasDeHoja(hoja?.aoa ?? [], fila);
     const firma = cols.length ? headerSignature(cols) : '';
     const saved = firma ? (mapeosGuardados?.[firma] ?? loadSavedMapping(firma)) : null;
     const base = saved ? reconcileMapping(saved, cols, campos) : autoDetectMapping(cols, campos);
     setUserCols(cols);
     setUserRows(rows);
+    setFilasOriginales(filasOriginales);
     // Si la columna de años trae rangos ("2014-2020"), se propone dividirla de entrada:
     // es el formato más común en las listas de repuestos, y el vendedor puede desactivarlo.
     setMapping({ ...base, dividirAnios: base.dividirAnios ?? traeRangosDeAnios(base, cols, rows) });
@@ -274,7 +277,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    */
   const { revision, cambios, separacion } = useMemo(() => {
     if (paso !== 3 || !mapping) return { revision: null, cambios: [], separacion: null };
-    const { aoa, cambios: hechos } = buildOfficialAoADetallado(
+    const { aoa, cambios: hechos, filasOrigen } = buildOfficialAoADetallado(
       userRows, userCols, mapping, campos, esquema.catalogos,
     );
     // Con el SKU repetido, lo que se revisa es el archivo ya agrupado: es el que se sube.
@@ -284,16 +287,21 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       ? separarPorSku(aoa)
       : null;
     const paraRevisar = separada ? separada.inventario : aoa;
+    // El número que se muestra tiene que apuntar a la fila del Excel del vendedor, no a
+    // la posición en el archivo generado: entre medio se sacan subtotales y bandas, se
+    // duplica por vehículo y se juntan los códigos repetidos.
+    const origenes = separada ? separada.indices.map((i) => filasOrigen[i]) : filasOrigen;
     return {
       separacion: separada,
       revision: revisarAoA(paraRevisar, campos, {
         maxFilas: 20,
         primeraFilaArchivo: filaEncabezados + 2,
         catalogos: esquema.catalogos,
+        numerosDeFila: origenes.map((i) => (filasOriginales[i] ?? i) + 1),
       }),
       cambios: hechos,
     };
-  }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema]);
+  }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema, filasOriginales]);
 
   /** Los arreglos automáticos, agrupados para poder mostrarlos como "antes → después". */
   const arreglos = useMemo(() => agruparCambios(cambios), [cambios]);

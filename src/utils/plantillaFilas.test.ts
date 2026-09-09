@@ -4,8 +4,6 @@ import {
   detectarBandas,
   detectarFilasNoRepuesto,
   detectarSegundaTabla,
-  quitarFilasNoRepuesto,
-  repartirBandas,
 } from './plantillaFilas';
 
 const ENCABEZADO = ['sku', 'nombre', 'marca', 'categoria', 'precio', 'stock'];
@@ -58,18 +56,6 @@ describe('detectarFilasNoRepuesto', () => {
   });
 });
 
-describe('quitarFilasNoRepuesto', () => {
-  it('deja las filas en su orden, sin las descartadas', () => {
-    const rows = [['a'], ['b'], ['c']];
-    const fuera = [{ indice: 1, motivo: 'totales' as const, texto: 'b' }];
-    expect(quitarFilasNoRepuesto(rows, fuera)).toEqual([['a'], ['c']]);
-  });
-
-  it('devuelve las mismas filas cuando no hay nada que sacar', () => {
-    const rows = [['a'], ['b']];
-    expect(quitarFilasNoRepuesto(rows, [])).toBe(rows);
-  });
-});
 
 describe('detectarBandas', () => {
   it('reconoce la fila de una sola celda que titula el grupo', () => {
@@ -95,28 +81,6 @@ describe('detectarBandas', () => {
   });
 });
 
-describe('repartirBandas', () => {
-  const FILAS = [['FRENOS'], ['PF-201', 'Pastilla'], ['FILTROS'], ['FA-110', 'Filtro']];
-
-  it('pone el título en las filas que venían debajo y saca la banda', () => {
-    const bandas = detectarBandas([...FILAS, ['x', 'y', 'z']], 5).slice(0, 2);
-    const salida = repartirBandas(FILAS, bandas, 5);
-    expect(salida).toHaveLength(2);
-    expect(salida[0][5]).toBe('FRENOS');
-    expect(salida[1][5]).toBe('FILTROS');
-  });
-
-  it('lo que viene antes de la primera banda queda sin título, no con uno prestado', () => {
-    const filas = [['PF-000', 'Suelto'], ['FRENOS'], ['PF-201', 'Pastilla']];
-    const salida = repartirBandas(filas, [{ indice: 1, titulo: 'FRENOS' }], 5);
-    expect(salida[0][5]).toBe('');
-    expect(salida[1][5]).toBe('FRENOS');
-  });
-
-  it('sin bandas devuelve las mismas filas', () => {
-    expect(repartirBandas(FILAS, [], 5)).toBe(FILAS);
-  });
-});
 
 describe('detectarSegundaTabla', () => {
   it('reconoce los títulos de un segundo bloque', () => {

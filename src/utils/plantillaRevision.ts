@@ -81,9 +81,20 @@ const etiquetaDe = (campos: CampoMeta[], key: string) =>
 export function revisarAoA(
   aoa: (string | number)[][],
   campos: CampoMeta[],
-  opciones: { maxFilas?: number; primeraFilaArchivo?: number; catalogos?: EsquemaPlantilla['catalogos'] } = {},
+  opciones: {
+    maxFilas?: number;
+    primeraFilaArchivo?: number;
+    catalogos?: EsquemaPlantilla['catalogos'];
+    /**
+     * Número de fila del Excel del vendedor de cada fila de datos. Va aparte porque el
+     * archivo oficial ya no va fila a fila con el del vendedor: se sacan subtotales, se
+     * reparten bandas, se duplica por vehículo y se juntan los códigos repetidos. Sin
+     * esto el número que se muestra apunta a la fila equivocada.
+     */
+    numerosDeFila?: number[];
+  } = {},
 ): RevisionArchivo {
-  const { maxFilas = 20, primeraFilaArchivo = 2, catalogos } = opciones;
+  const { maxFilas = 20, primeraFilaArchivo = 2, catalogos, numerosDeFila } = opciones;
   // Sin catálogos —porque el esquema no respondió— no se revisa nada contra ellos: es
   // preferible no decir nada a inventar un error con una copia local desactualizada.
   const categorias = catalogos?.categorias ?? [];
@@ -198,7 +209,12 @@ export function revisarAoA(
     if (!tieneError && problemas.length > 0) conAviso += 1;
 
     if (filas.length < maxFilas) {
-      filas.push({ numeroFila: primeraFilaArchivo + i - 1, valores, problemas, tieneError });
+      filas.push({
+        numeroFila: numerosDeFila?.[i - 1] ?? primeraFilaArchivo + i - 1,
+        valores,
+        problemas,
+        tieneError,
+      });
     }
   }
 
