@@ -68,8 +68,11 @@ export const CeldaRevision = ({
     // y otra para elegir—: así el que sabe lo que busca baja, y el que no, elige arriba.
     const conocidas = new Set(sugerencias);
     const resto = opciones.filter((o) => !conocidas.has(o));
-    // El valor actual va siempre, aunque no esté en el catálogo: es justo el caso de la
-    // marca que todavía no existe, y sin él el selector se vería vacío.
+    // El valor actual va siempre que no esté igual en el catálogo, y la comparación es
+    // exacta a propósito. Con una que ignorara mayúsculas, un "COROLLA" cuyo catálogo dice
+    // "Corolla" no calzaría con ninguna opción y el selector se vería vacío. Además
+    // mostrarlo aparte tiene su gracia: le dice al vendedor que lo escribió distinto y
+    // dejarlo como el catálogo es un clic.
     const propio = valor && !opciones.includes(valor) ? valor : '';
 
     return (
@@ -83,7 +86,7 @@ export const CeldaRevision = ({
         {/* El contexto va en el título del grupo y no en el texto de la opción: la celda
             cerrada muestra la opción elegida, y un texto largo ahí se ve cortado. */}
         {propio && (
-          <optgroup label="Tu archivo dice">
+          <optgroup label="Tal como lo escribiste">
             <option value={propio}>{propio}</option>
           </optgroup>
         )}

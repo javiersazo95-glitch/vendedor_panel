@@ -655,7 +655,7 @@ describe('PlantillaMapper', () => {
     // El parecido va arriba, en su propio grupo, y el catálogo entero debajo: se elige en
     // un solo despliegue, sin tener que pedir "ver todas" y volver a abrir.
     const grupos = [...celda.querySelectorAll('optgroup')].map((g) => g.label);
-    expect(grupos).toEqual(['Tu archivo dice', 'Se parece a', 'Todas']);
+    expect(grupos).toEqual(['Tal como lo escribiste', 'Se parece a', 'Todas']);
     const enGrupo = (i: number) => [...celda.querySelectorAll('optgroup')[i].querySelectorAll('option')].map((o) => o.textContent);
     // Lo que dice el archivo va primero, aunque no esté en el catálogo.
     expect(enGrupo(0)).toEqual(['Mann']);
@@ -703,15 +703,56 @@ describe('PlantillaMapper', () => {
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
-    fireEvent.click(screen.getByTitle(/^Año desde de la fila 2/));
-    const campo = screen.getByLabelText('Año desde de la fila 2') as HTMLInputElement;
-    fireEvent.change(campo, { target: { value: '19' } });
+    fireEvent.click(screen.getByTitle(/^Precio de la fila 2/));
+    const campo = screen.getByLabelText('Precio de la fila 2') as HTMLInputElement;
+    fireEvent.change(campo, { target: { value: '1.2.3.4' } });
     fireEvent.blur(campo);
 
     // Si volviera a texto, lo escrito desaparecería sin decir nada y el vendedor creería
     // que se guardó. El campo se queda, con su motivo.
-    await waitFor(() => expect(screen.getByText(/año de 4 cifras/)).toBeInTheDocument());
-    expect((screen.getByLabelText('Año desde de la fila 2') as HTMLInputElement).value).toBe('19');
+    await waitFor(() => expect(screen.getByText(/tiene que ser un número/)).toBeInTheDocument());
+    expect((screen.getByLabelText('Precio de la fila 2') as HTMLInputElement).value).toBe('1.2.3.4');
+  });
+
+
+  it('el año se elige de una lista, y el hasta no puede ser anterior al desde', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto,Desde,Hasta',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla,2014,2018',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // Escribir el año a mano era la puerta a un "20l4" que no encuentra ningún auto.
+    const desde = screen.getByLabelText('Año desde de la fila 2') as HTMLSelectElement;
+    expect(desde.tagName).toBe('SELECT');
+    expect(desde.value).toBe('2014');
+
+    // El hasta arranca en el año desde de su propia fila: no hay autos de 2018 a 2014.
+    const hasta = screen.getByLabelText('Año hasta de la fila 2') as HTMLSelectElement;
+    const anios = [...hasta.querySelectorAll('option')].map((o) => o.value).filter(Boolean);
+    expect(anios[anios.length - 1]).toBe('2014');
+  });
+
+  it('muestra la hoja de compatibilidades del archivo generado', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    // El mismo código en dos filas, una por vehículo: el archivo sale con dos hojas.
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Nissan,V16',
+    ].join('\n'));
+    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // La segunda hoja se veía sólo al abrir el Excel: ahora está en la pantalla.
+    expect(screen.getByText(/Los otros vehículos de cada repuesto/)).toBeInTheDocument();
+    const tablas = document.querySelectorAll('.mapper-preview.revisada');
+    const compat = tablas[tablas.length - 1];
+    expect(compat.querySelector('tbody')?.textContent).toContain('Nissan');
+    expect(compat.querySelector('tbody')?.textContent).toContain('V16');
   });
 
 });

@@ -43,7 +43,17 @@ import {
   partirRangoAnios,
   validarValorFijo,
 } from '../utils/plantillaNormalizacion';
-import { buscarEnCatalogo, buscarEnTexto, sugerirDelCatalogo } from '../utils/plantillaCatalogos';
+import {
+  buscarEnCatalogo,
+  buscarEnTexto,
+  normalizarParaComparar,
+  sugerirDelCatalogo,
+} from '../utils/plantillaCatalogos';
+import {
+  aniosDisponibles,
+  cargarMarcasDeVehiculo,
+  cargarModelos,
+} from '../utils/plantillaVehiculos';
 import { detectarBandas, detectarSegundaTabla } from '../utils/plantillaFilas';
 import { fotosPorSku, tipoColumnaFotos, type TipoColumnaFotos } from '../utils/plantillaFotos';
 import {
@@ -82,6 +92,23 @@ const BIG_FILE_ROWS = 5000;
 const VALUE_MAP_CAP = 20;
 /** Filas crudas que se muestran para que el vendedor confirme dónde están sus títulos. */
 const PREVIEW_ROWS = 6;
+
+/** Cuántas filas de la hoja de compatibilidades se muestran: son de apoyo, no el plato. */
+const COMPAT_VISIBLES = 12;
+
+/** Los años que se pueden elegir, del más nuevo al más viejo, como en la carga 1:1. */
+const ANIOS = aniosDisponibles();
+
+/**
+ * Lo que una celda necesita saber de su propia fila para ofrecer las opciones correctas:
+ * las subcategorías dependen de la categoría, los modelos de la marca del vehículo y el
+ * año hasta del año desde.
+ */
+interface ContextoDeFila {
+  categoria: string;
+  marcaVehiculo: string;
+  anioDesde: string;
+}
 
 /** Los cuatro pasos del flujo. El 4 es la acción final, no una pantalla más. */
 const PASOS = [
@@ -149,6 +176,10 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const [paso, setPaso] = useState<1 | 2 | 3>(1);
   /** Fila de la hoja (base 0) de la que salió cada fila de `userRows`. */
   const [filasOriginales, setFilasOriginales] = useState<number[]>([]);
+  /** Marca de vehículo normalizada -> id del catálogo, para poder pedir sus modelos. */
+  const [idsDeMarca, setIdsDeMarca] = useState<Map<string, number>>(new Map());
+  /** Marca normalizada -> sus modelos. Se van pidiendo a medida que aparecen en la tabla. */
+  const [modelosPorMarca, setModelosPorMarca] = useState<Record<string, string[]>>({});
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [userCols, setUserCols] = useState<UserColumn[]>([]);
@@ -337,6 +368,39 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema, filasOriginales,
     opcionesDeGrupo]);
 
+  // Las marcas se piden al llegar a revisar y no antes: es el único paso que las usa, y
+  // pedirlas al abrir el asistente cargaría el catálogo a quien sólo viene a mapear.
+  useEffect(() => {
+    if (paso !== 3 || idsDeMarca.size > 0) return;
+    let vivo = true;
+    cargarMarcasDeVehiculo().then((ids) => { if (vivo) setIdsDeMarca(ids); });
+    return () => { vivo = false; };
+  }, [paso, idsDeMarca]);
+
+  /**
+   * Los modelos de las marcas que aparecen en las filas que se están mostrando. Se piden
+   * de a una y sólo las que hacen falta: son decenas de marcas y en un archivo aparecen
+   * tres o cuatro.
+   */
+  useEffect(() => {
+    if (!revision || idsDeMarca.size === 0) return;
+    const i = revision.columnas.indexOf('compatibilidad_marca');
+    if (i < 0) return;
+    const pendientes = [...new Set(revision.filas.map((f) => (f.valores[i] ?? '').trim()))]
+      .map((nombre) => ({ nombre, clave: normalizarParaComparar(nombre) }))
+      .filter(({ clave }) => clave && modelosPorMarca[clave] === undefined && idsDeMarca.has(clave));
+    if (pendientes.length === 0) return;
+
+    let vivo = true;
+    Promise.all(pendientes.map(async ({ clave }) => (
+      [clave, await cargarModelos(idsDeMarca.get(clave) as number)] as const
+    ))).then((cargados) => {
+      if (!vivo) return;
+      setModelosPorMarca((prev) => ({ ...prev, ...Object.fromEntries(cargados) }));
+    });
+    return () => { vivo = false; };
+  }, [revision, idsDeMarca, modelosPorMarca]);
+
   /** Los arreglos automáticos, agrupados para poder mostrarlos como "antes → después". */
   const arreglos = useMemo(() => agruparCambios(cambios), [cambios]);
 
@@ -359,9 +423,19 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    * **de esa fila**: ofrecer las de motor a un repuesto de frenos es ruido y el backend
    * las rechaza igual. Lo que no tiene lista es texto libre.
    */
-  const opcionesDeCelda = useCallback((columna: string, categoriaDeLaFila: string): string[] => {
+  const opcionesDeCelda = useCallback((columna: string, fila: ContextoDeFila): string[] => {
     if (columna === 'subcategoria') {
-      return esquema.catalogos.subcategoriasPorCategoria[categoriaDeLaFila] ?? [];
+      return esquema.catalogos.subcategoriasPorCategoria[fila.categoria] ?? [];
+    }
+    // El modelo cuelga de la marca de esa fila, igual que en la carga 1:1: escribirlo a
+    // mano no hace aparecer el repuesto en la búsqueda por vehículo.
+    if (columna === 'compatibilidad_modelo') {
+      return modelosPorMarca[normalizarParaComparar(fila.marcaVehiculo)] ?? [];
+    }
+    // El año hasta no puede ser anterior al año desde de su propia fila.
+    if (columna === 'anio_desde') return ANIOS;
+    if (columna === 'anio_hasta') {
+      return fila.anioDesde ? ANIOS.filter((a) => a >= fila.anioDesde) : ANIOS;
     }
     const campo = campos.find((c) => c.key === columna);
     if (campo?.enumHint?.length) return campo.enumHint;
@@ -369,7 +443,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     if (columna === 'marca_repuesto') return esquema.catalogos.marcasRepuesto;
     if (columna === 'compatibilidad_marca') return esquema.catalogos.marcasVehiculo;
     return [];
-  }, [esquema, campos]);
+  }, [esquema, campos, modelosPorMarca]);
 
   /**
    * Los pocos nombres del catálogo que se parecen a lo que trae la celda. Sólo tiene
@@ -378,10 +452,10 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    * entera, que además ahí suele ser corta.
    */
   const sugerenciasDeCelda = useCallback((
-    columna: string, valor: string, categoriaDeLaFila: string,
+    columna: string, valor: string, fila: ContextoDeFila,
   ): string[] => {
     if (!valor.trim()) return [];
-    const opciones = opcionesDeCelda(columna, categoriaDeLaFila);
+    const opciones = opcionesDeCelda(columna, fila);
     if (opciones.length <= 12 || buscarEnCatalogo(valor, opciones)) return [];
     return sugerirDelCatalogo(valor, opciones);
   }, [opcionesDeCelda]);
@@ -1950,10 +2024,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                 {revision.filas.map((fila: FilaRevisada) => {
                   const completables = new Set(porCompletar.map((x) => x.columna));
                   const porColumna = new Map(fila.problemas.map((p) => [p.columna, p]));
-                  const iCategoria = revision.columnas.indexOf('categoria');
-                  const categoriaDeLaFila = iCategoria >= 0
-                    ? (fila.valores[iCategoria] ?? '').trim()
-                    : '';
+                  const dato = (columna: string) => {
+                    const i = revision.columnas.indexOf(columna);
+                    return i >= 0 ? (fila.valores[i] ?? '').trim() : '';
+                  };
+                  const contexto: ContextoDeFila = {
+                    categoria: dato('categoria'),
+                    marcaVehiculo: dato('compatibilidad_marca'),
+                    anioDesde: dato('anio_desde'),
+                  };
                   return (
                     <tr key={fila.numeroFila} className={fila.tieneError ? 'con-error' : fila.problemas.length ? 'con-aviso' : ''}>
                       <th scope="row">{fila.numeroFila}</th>
@@ -1976,8 +2055,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                             <CeldaRevision
                               valor={valor}
                               columna={c}
-                              opciones={opcionesDeCelda(c, categoriaDeLaFila)}
-                              sugerencias={sugerenciasDeCelda(c, valor, categoriaDeLaFila)}
+                              opciones={opcionesDeCelda(c, contexto)}
+                              sugerencias={sugerenciasDeCelda(c, valor, contexto)}
                               etiqueta={`${meta?.label ?? c} de la fila ${fila.numeroFila}`}
                               destacada={destacada}
                               onCambio={(nuevo) => setParche(fila.clave, c, nuevo)}
@@ -2004,6 +2083,47 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               ? 'No mostramos las columnas que quedaron vacías en todas estas filas.'
               : ''}
           </p>
+        </section>
+      )}
+
+      {separacion && separacion.compatibilidades.length > 1 && (
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">
+            Los otros vehículos de cada repuesto ({plural(
+              separacion.compatibilidades.length - 1, 'compatibilidad', 'compatibilidades',
+            )})
+          </span>
+          <p className="mapper-hint">
+            El archivo lleva dos hojas: arriba va un repuesto por código, y acá los demás
+            vehículos que le sirven a cada uno. Es la hoja "compatibilidades" del Excel, y
+            así es como la va a leer RepuesTop.
+          </p>
+          <div className="mapper-preview-wrap">
+            <table className="mapper-preview revisada">
+              <thead>
+                <tr>
+                  {separacion.compatibilidades[0].map((c) => (
+                    <th key={String(c)}>
+                      {campos.find((campo) => campo.key === String(c))?.label ?? String(c)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {separacion.compatibilidades.slice(1, COMPAT_VISIBLES + 1).map((fila, i) => (
+                  <tr key={`${String(fila[0])}-${i}`}>
+                    {fila.map((celda, j) => <td key={j}>{celda}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {separacion.compatibilidades.length - 1 > COMPAT_VISIBLES && (
+            <p className="mapper-hint">
+              Mostramos las primeras {COMPAT_VISIBLES}; el archivo lleva{' '}
+              {(separacion.compatibilidades.length - 1).toLocaleString('es-CL')}.
+            </p>
+          )}
         </section>
       )}
 
