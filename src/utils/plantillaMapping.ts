@@ -370,6 +370,11 @@ export interface GrupoPorCompletar {
   filas: number;
   /** Lo que el vendedor eligió para el grupo, si eligió algo. */
   elegido: string;
+  /**
+   * Cuántas de esas filas el vendedor corrigió una por una en la tabla. Sin este número,
+   * el grupo dice "3 repuestos" y arriba se ve un valor que ya no es el de los tres.
+   */
+  propios: number;
 }
 
 export interface CampoPorCompletar {
@@ -928,8 +933,8 @@ export function buildOfficialAoADetallado(
   const out: (string | number)[][] = [[...columnas]];
   /** Fila del archivo del vendedor (base 0) de la que sale cada fila de `out`. */
   const filasOrigen: number[] = [];
-  /** campo -> grupo -> cuántas filas venían sin el dato. */
-  const huecos = new Map<string, Map<string, number>>();
+  /** campo -> grupo -> cuántas filas venían sin el dato, y cuántas se corrigieron sueltas. */
+  const huecos = new Map<string, Map<string, { filas: number; propios: number }>>();
 
   for (const fila of filas) {
     const row = fila.row;
@@ -1029,8 +1034,11 @@ export function buildOfficialAoADetallado(
       if (cells[campo]) continue;
       const clave = cells[campoClave] ?? '';
       if (!clave) continue;
-      const porCampo = huecos.get(campo) ?? new Map<string, number>();
-      porCampo.set(clave, (porCampo.get(clave) ?? 0) + 1);
+      const porCampo = huecos.get(campo) ?? new Map<string, { filas: number; propios: number }>();
+      const cuenta = porCampo.get(clave) ?? { filas: 0, propios: 0 };
+      cuenta.filas += 1;
+      if (mapping.parches?.[String(fila.origen)]?.[campo] !== undefined) cuenta.propios += 1;
+      porCampo.set(clave, cuenta);
       huecos.set(campo, porCampo);
       const elegido = mapping.completar?.[campo]?.[clave];
       if (elegido) cells[campo] = elegido;
@@ -1078,9 +1086,14 @@ export function buildOfficialAoADetallado(
 
   const porCompletar: CampoPorCompletar[] = [...huecos.entries()].map(([columna, porGrupo]) => ({
     columna,
-    filas: [...porGrupo.values()].reduce((n, x) => n + x, 0),
+    filas: [...porGrupo.values()].reduce((n, x) => n + x.filas, 0),
     grupos: [...porGrupo.entries()]
-      .map(([clave, filas]) => ({ clave, filas, elegido: mapping.completar?.[columna]?.[clave] ?? '' }))
+      .map(([clave, { filas, propios }]) => ({
+        clave,
+        filas,
+        propios,
+        elegido: mapping.completar?.[columna]?.[clave] ?? '',
+      }))
       .sort((a, b) => b.filas - a.filas || a.clave.localeCompare(b.clave, 'es')),
   }));
 

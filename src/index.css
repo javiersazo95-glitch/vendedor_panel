@@ -4382,3 +4382,35 @@ h1, h2, h3, h4, h5, h6 {
   background: #fff;
 }
 .mapper-preview.revisada td:has(.mapper-celda-edit) { padding: 0.2rem 0.3rem; }
+
+/* La celda que no pide atención se ve como texto: la tabla se lee de un vistazo y sólo
+   salta lo que hay que mirar. Al usarla se comporta como cualquier campo. */
+.mapper-celda-edit { border-color: transparent; background: transparent; }
+.mapper-celda-edit:hover { border-color: rgba(148, 163, 184, 0.6); background: #fff; }
+.mapper-celda-edit.destacada {
+  border: 1px dashed rgba(79, 70, 229, 0.45);
+  background: rgba(79, 70, 229, 0.05);
+}
+.mapper-celda-edit.con-error {
+  border: 1px solid #dc2626;
+  background: rgba(220, 38, 38, 0.06);
+}
+.mapper-celda-error {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: #b91c1c;
+}
+/* La celda de texto que ya está bien: se lee entera y se vuelve campo al usarla. */
+.mapper-celda-texto {
+  display: block;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: text;
+}
+.mapper-celda-texto:hover, .mapper-celda-texto:focus {
+  border-color: rgba(148, 163, 184, 0.6);
+  background: #fff;
+  outline: none;
+}

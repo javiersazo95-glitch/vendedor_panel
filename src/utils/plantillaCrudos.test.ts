@@ -211,9 +211,9 @@ describe('archivos crudos: lo que ya funciona', () => {
     expect(r.porCompletar[0].columna).toBe('subcategoria');
     // Seis repuestos sin subcategoría: tres de frenos, dos de filtros y uno de suspensión.
     expect(r.porCompletar[0].grupos).toEqual([
-      { clave: 'Frenos', filas: 3, elegido: '' },
-      { clave: 'Filtros', filas: 2, elegido: '' },
-      { clave: 'Suspensión', filas: 1, elegido: '' },
+      { clave: 'Frenos', filas: 3, elegido: '', propios: 0 },
+      { clave: 'Filtros', filas: 2, elegido: '', propios: 0 },
+      { clave: 'Suspensión', filas: 1, elegido: '', propios: 0 },
     ]);
   });
 
@@ -224,7 +224,19 @@ describe('archivos crudos: lo que ya funciona', () => {
       completar: { subcategoria: { Frenos: 'Pastillas' } },
     });
     const frenos = r.porCompletar[0].grupos.find((g) => g.clave === 'Frenos');
-    expect(frenos).toEqual({ clave: 'Frenos', filas: 3, elegido: 'Pastillas' });
+    expect(frenos).toEqual({ clave: 'Frenos', filas: 3, elegido: 'Pastillas', propios: 0 });
+  });
+
+  it('el grupo cuenta aparte las filas que se corrigieron una por una', () => {
+    // Sin ese número el grupo dice "3 repuestos" y arriba se ve un valor que ya no es el
+    // de los tres: el vendedor cambió uno en su fila y nada se lo recuerda.
+    const r = leerComoElPanel('11-sin-subcategoria', {
+      completar: { subcategoria: { Frenos: 'Pastillas' } },
+      parches: { 2: { subcategoria: 'Discos' } },
+    });
+    const frenos = r.porCompletar[0].grupos.find((g) => g.clave === 'Frenos');
+    expect(frenos).toEqual({ clave: 'Frenos', filas: 3, elegido: 'Pastillas', propios: 1 });
+    expect(valorEn(r.oficial, 3, 'subcategoria')).toBe('Discos');
   });
 
   it('no propone nada cuando ni siquiera se sabe la categoría', () => {

@@ -1906,6 +1906,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                           <span>{grupo.clave}</span>
                           <span className="mapper-sample">
                             {plural(grupo.filas, 'repuesto', 'repuestos')}
+                            {grupo.propios > 0
+                              ? ` · ${grupo.propios} con valor propio`
+                              : ''}
                           </span>
                         </div>
                         <select
@@ -1958,26 +1961,27 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         const problema = porColumna.get(c);
                         const valor = fila.valores[revision.columnas.indexOf(c)] ?? '';
                         const meta = campos.find((campo) => campo.key === c);
-                        // Se corrige lo que falta, lo que la revisión marcó, y lo que
-                        // pusimos nosotros al completar por grupo: ahí el valor es el de
-                        // toda la categoría y puede no calzarle a esta fila en particular.
-                        // Lo que el vendedor escribió en su Excel se deja como está.
-                        const editable = !valor || Boolean(problema) || completables.has(c);
+                        // Se destaca lo que pide atención: la celda vacía, la que la
+                        // revisión marcó, y la que rellenamos nosotros al completar por
+                        // grupo —ahí el valor es el de toda la categoría y puede no
+                        // calzarle a esta fila—. Corregir se puede en todas: el vendedor
+                        // ve en la tabla que un dato suyo quedó mal y lo arregla ahí.
+                        const destacada = !valor || Boolean(problema) || completables.has(c);
                         return (
                           <td
                             key={c}
                             className={problema ? `celda-${problema.severidad}` : ''}
                             title={problema?.mensaje}
                           >
-                            {editable ? (
-                              <CeldaRevision
-                                valor={valor}
-                                opciones={opcionesDeCelda(c, categoriaDeLaFila)}
-                                sugerencias={sugerenciasDeCelda(c, valor, categoriaDeLaFila)}
-                                etiqueta={`${meta?.label ?? c} de la fila ${fila.numeroFila}`}
-                                onCambio={(nuevo) => setParche(fila.clave, c, nuevo)}
-                              />
-                            ) : valor}
+                            <CeldaRevision
+                              valor={valor}
+                              columna={c}
+                              opciones={opcionesDeCelda(c, categoriaDeLaFila)}
+                              sugerencias={sugerenciasDeCelda(c, valor, categoriaDeLaFila)}
+                              etiqueta={`${meta?.label ?? c} de la fila ${fila.numeroFila}`}
+                              destacada={destacada}
+                              onCambio={(nuevo) => setParche(fila.clave, c, nuevo)}
+                            />
                           </td>
                         );
                       })}

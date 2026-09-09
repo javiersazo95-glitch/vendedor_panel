@@ -652,15 +652,18 @@ describe('PlantillaMapper', () => {
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
     const celda = screen.getByLabelText('Marca del repuesto de la fila 2');
-    const textos = () => [...celda.querySelectorAll('option')].map((o) => o.textContent);
-    // Lo que trae la celda, el parecido y la salida al catálogo entero. Nada más.
-    expect(textos()).toEqual(['— sin dato —', 'Mann', 'Mann-Filter — parecido', 'ver todas…']);
-
-    fireEvent.change(celda, { target: { value: '__ver_todas__' } });
-    // Con el catálogo entero, y el valor actual sigue en la lista aunque no exista en él.
-    await waitFor(() => expect(textos()).toContain('Valeo'));
-    // "Ver todas" no elige nada por sí solo: la celda sigue con lo que decía.
+    // El parecido va arriba, en su propio grupo, y el catálogo entero debajo: se elige en
+    // un solo despliegue, sin tener que pedir "ver todas" y volver a abrir.
+    const grupos = [...celda.querySelectorAll('optgroup')].map((g) => g.label);
+    expect(grupos).toEqual(['Tu archivo dice', 'Se parece a', 'Todas']);
+    const enGrupo = (i: number) => [...celda.querySelectorAll('optgroup')[i].querySelectorAll('option')].map((o) => o.textContent);
+    // Lo que dice el archivo va primero, aunque no esté en el catálogo.
+    expect(enGrupo(0)).toEqual(['Mann']);
+    expect(enGrupo(1)).toEqual(['Mann-Filter']);
     expect((celda as HTMLSelectElement).value).toBe('Mann');
+
+    fireEvent.change(celda, { target: { value: 'Mann-Filter' } });
+    await waitFor(() => expect((screen.getByLabelText('Marca del repuesto de la fila 2') as HTMLSelectElement).value).toBe('Mann-Filter'));
   });
 
 });

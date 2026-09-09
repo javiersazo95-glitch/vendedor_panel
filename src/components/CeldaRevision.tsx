@@ -1,84 +1,141 @@
 /**
  * Una celda de la tabla del paso 3, corregible sin volver al Excel.
  *
- * Sólo se vuelve editable donde hace falta —la celda está vacía o la revisión le marcó un
- * problema—, no en todas. Una tabla entera de campos de texto se lee como una planilla, y
- * la gracia de este paso es justamente mirar cómo quedó el archivo, no volver a llenarlo.
+ * Todas las celdas se pueden corregir, no sólo las que están vacías: el vendedor puede ver
+ * en la tabla que un dato suyo quedó mal y arreglarlo ahí mismo. Las que piden atención
+ * —vacías, con problema, o rellenadas por nosotros— se marcan; el resto se ve como texto
+ * normal hasta que se usa, para que la tabla se siga leyendo de un vistazo y no como una
+ * planilla.
  */
 import { useState } from 'react';
 
-/** Valor reservado de la lista corta para pasar al catálogo completo. */
-const VER_TODAS = '__ver_todas__';
+import { limiteDeColumna, validarValorFijo } from '../utils/plantillaNormalizacion';
 
 interface Props {
   valor: string;
+  /** Columna oficial: de ella salen el largo máximo y el tipo de dato. */
+  columna: string;
   /** Opciones del catálogo o de la lista fija; vacío si el dato es texto libre. */
   opciones: string[];
   /**
-   * Los pocos nombres del catálogo que se parecen a lo que trae la celda. Cuando los hay
-   * se muestran solos, con un "ver todas" al final: el catálogo de marcas pasa de las
-   * doscientas y buscar ahí el que ya sabemos que corresponde es trabajo de más.
+   * Los pocos nombres del catálogo que se parecen a lo que trae la celda. Van arriba, en su
+   * propio grupo: el catálogo de marcas pasa de las cien y buscar ahí el que ya sabemos que
+   * corresponde es trabajo de más.
    */
   sugerencias?: string[];
   /** Se llama con el valor final; vacío significa "esta fila va sin el dato". */
   onCambio: (valor: string) => void;
   etiqueta: string;
+  /** La celda pide atención: está vacía, tiene un problema, o el valor lo pusimos nosotros. */
+  destacada: boolean;
 }
 
-export const CeldaRevision = ({ valor, opciones, sugerencias = [], onCambio, etiqueta }: Props) => {
+export const CeldaRevision = ({
+  valor, columna, opciones, sugerencias = [], onCambio, etiqueta, destacada,
+}: Props) => {
   const [borrador, setBorrador] = useState(valor);
   // Si el valor cambia por fuera —otra corrección, otro interruptor del paso 2— el
   // borrador se pone al día en el mismo render, sin efecto de por medio.
   const [valorPrevio, setValorPrevio] = useState(valor);
-  const [verTodas, setVerTodas] = useState(false);
+  const [editando, setEditando] = useState(false);
   if (valorPrevio !== valor) {
     setValorPrevio(valor);
     setBorrador(valor);
   }
 
+  const clases = `form-control mapper-celda-edit ${destacada ? 'destacada' : ''}`;
+
   if (opciones.length > 0) {
-    const corta = sugerencias.length > 0 && !verTodas;
-    // El valor actual va siempre en la lista, aunque no esté en el catálogo: es
-    // justamente el caso de la marca que no existe todavía, y sin él el selector se vería
-    // vacío y parecería que se perdió lo que la celda decía.
-    const visibles = [...new Set([valor, ...(corta ? sugerencias : opciones)].filter(Boolean))];
+    // Los parecidos van en su propio grupo, arriba, y el catálogo entero debajo. Una lista
+    // corta con un "ver todas" obligaba a abrir el desplegable dos veces —una para pedirlo
+    // y otra para elegir—: así el que sabe lo que busca baja, y el que no, elige arriba.
+    const conocidas = new Set(sugerencias);
+    const resto = opciones.filter((o) => !conocidas.has(o));
+    // El valor actual va siempre, aunque no esté en el catálogo: es justo el caso de la
+    // marca que todavía no existe, y sin él el selector se vería vacío.
+    const propio = valor && !opciones.includes(valor) ? valor : '';
 
     return (
       <select
-        className="form-control mapper-celda-edit"
+        className={clases}
         value={valor}
         aria-label={etiqueta}
-        onChange={(e) => {
-          if (e.target.value === VER_TODAS) setVerTodas(true);
-          else onCambio(e.target.value);
-        }}
+        onChange={(e) => onCambio(e.target.value)}
       >
         <option value="">— sin dato —</option>
-        {visibles.map((o) => (
-          <option key={o} value={o}>
-            {corta && o !== valor ? `${o} — parecido` : o}
-          </option>
-        ))}
-        {corta && <option value={VER_TODAS}>ver todas…</option>}
+        {/* El contexto va en el título del grupo y no en el texto de la opción: la celda
+            cerrada muestra la opción elegida, y un texto largo ahí se ve cortado. */}
+        {propio && (
+          <optgroup label="Tu archivo dice">
+            <option value={propio}>{propio}</option>
+          </optgroup>
+        )}
+        {sugerencias.length > 0 ? (
+          <>
+            <optgroup label="Se parece a">
+              {sugerencias.map((o) => <option key={o} value={o}>{o}</option>)}
+            </optgroup>
+            <optgroup label="Todas">
+              {resto.map((o) => <option key={o} value={o}>{o}</option>)}
+            </optgroup>
+          </>
+        ) : (
+          resto.map((o) => <option key={o} value={o}>{o}</option>)
+        )}
       </select>
     );
   }
 
+  const { maxLength, tipo } = limiteDeColumna(columna);
+  const error = validarValorFijo(columna, borrador);
+
+  // El texto que ya está bien se muestra como texto y se vuelve campo al usarlo. Dentro de
+  // un input, un nombre largo se ve cortado y la tabla deja de servir para lo que es: mirar
+  // cómo quedó el archivo.
+  if (!destacada && !editando) {
+    return (
+      <span
+        className="mapper-celda-texto"
+        role="button"
+        tabIndex={0}
+        title={`${etiqueta}. Haz clic para corregirlo.`}
+        onClick={() => setEditando(true)}
+        onFocus={() => setEditando(true)}
+      >
+        {valor}
+      </span>
+    );
+  }
+
   return (
-    <input
-      className="form-control mapper-celda-edit"
-      type="text"
-      value={borrador}
-      aria-label={etiqueta}
-      onChange={(e) => setBorrador(e.target.value)}
-      // El texto se confirma al salir del campo y no en cada tecla: cada cambio rehace la
-      // transformación del archivo completo, y hacerlo por letra se siente pesado con
-      // listas largas. Los selectores sí avisan al instante, que es un evento por elección.
-      onBlur={() => borrador !== valor && onCambio(borrador)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur();
-        if (e.key === 'Escape') setBorrador(valor);
-      }}
-    />
+    <>
+      <input
+        className={`${clases} ${error ? 'con-error' : ''}`}
+        type="text"
+        // El tope y el teclado numérico salen de la columna real del backend, igual que en
+        // el valor fijo del paso 2: sin ellos un valor largo se corta recién en la base de
+        // datos y el vendedor recibe un error incomprensible.
+        maxLength={maxLength}
+        inputMode={tipo === 'texto' ? undefined : 'numeric'}
+        value={borrador}
+        aria-label={etiqueta}
+        aria-invalid={error ? true : undefined}
+        autoFocus={editando}
+        onChange={(e) => setBorrador(e.target.value)}
+        // El texto se confirma al salir del campo y no en cada tecla: cada cambio rehace la
+        // transformación del archivo completo, y hacerlo por letra se siente pesado con
+        // listas largas. Un valor que no sirve no se guarda: se queda a la vista con su
+        // motivo, para que el vendedor lo corrija en vez de descubrirlo al publicar.
+        onBlur={() => {
+          setEditando(false);
+          if (!error && borrador !== valor) onCambio(borrador);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          if (e.key === 'Escape') setBorrador(valor);
+        }}
+      />
+      {error && <span className="mapper-celda-error">{error}</span>}
+    </>
   );
 };
