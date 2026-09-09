@@ -15,18 +15,22 @@ empieza a fallar es porque arreglamos (o rompimos) algo, y hay que actualizarlo 
 
 ## Estado al 2026-09-09
 
-| Caso | Qué pasa hoy |
-| --- | --- |
-| 01 lista de dos columnas | ✅ **Arreglado.** La columna descriptiva va al nombre (obligatorio) y no a la descripción (opcional), y con el interruptor "sacar del nombre" salen la marca y la categoría escritas dentro del texto |
-| 02 encabezados abreviados | ✅ **Arreglado.** Las seis columnas se reconocen: se sumaron las abreviaturas de mostrador y la primera pasada prueba término por término |
-| 03 precios sucios | ✅ **Arreglado.** 3 de 5 publicables. Se recorta la unidad (`45.000 c/u`, `3 unid`), `CONSULTAR` pasa a `SOLO_COTIZAR` y `6,990` ya no se lee como 6,99. Lo que queda (`SIN STOCK`, stock vacío) no se puede inventar |
-| 04 títulos bajo el membrete | ✅ 2 de 2 publicables, ya funcionaba |
-| 05 subtotales intercalados | ✅ **Arreglado.** 3 de 3 publicables. El subtotal, el total general y el encabezado repetido se reconocen y quedan fuera |
-| 06 dos tablas apiladas | ⚠️ **Avisado, no arreglado.** Sigue leyéndose sólo la primera tabla, pero el paso 2 dice que la hoja tiene más de una y sugiere separarlas |
-| 07 categoría como banda | ✅ **Arreglado.** 3 de 3 publicables. Cada fila de título es la categoría de los repuestos que vienen debajo, escrita con el nombre del catálogo |
-| 08 sin precio ni stock | ✅ **Arreglado.** El paso 2 exige el precio además de los obligatorios del esquema, y ofrece `SOLO_COTIZAR` como salida en vez de obligar a inventar un precio |
-| 09 varios autos por celda | ✅ **Arreglado.** Con el interruptor "varios autos en la misma celda" se publica un repuesto con una compatibilidad por auto; sin activarlo, la revisión avisa en vez de pasar en verde |
-| 10 todo junto | ⚠️ 0 publicables, pero ya sólo porque la categoría no está en ninguna parte y por un "sin stock" que no es número |
+Los diez se probaron además por la interfaz, subiendo el `.xlsx` al panel contra los
+catálogos reales del backend (25 categorías). Los números de fila de la tabla son los del
+Excel del vendedor.
+
+| Caso | Qué pasa hoy | Filas |
+| --- | --- | --- |
+| 01 lista de dos columnas | ✅ **Arreglado.** La columna descriptiva va al nombre (obligatorio) y no a la descripción (opcional), y con el interruptor "sacar del nombre" salen la marca y la categoría escritas dentro del texto | 2, 3, 4 |
+| 02 encabezados abreviados | ✅ **Arreglado.** Las seis columnas se reconocen: se sumaron las abreviaturas de mostrador y la primera pasada prueba término por término | 2, 3 |
+| 03 precios sucios | ✅ **Arreglado.** 3 de 5 publicables. Se recorta la unidad (`45.000 c/u`, `3 unid`), `CONSULTAR` pasa a `SOLO_COTIZAR` y `6,990` ya no se lee como 6,99. Lo que queda (`SIN STOCK`, stock vacío) no se puede inventar | 2–6 |
+| 04 títulos bajo el membrete | ✅ 2 de 2 publicables, ya funcionaba | 6, 7 |
+| 05 subtotales intercalados | ✅ **Arreglado.** 3 de 3 publicables. El subtotal, el total general y el encabezado repetido se reconocen y quedan fuera | 2, 3, 7 |
+| 06 dos tablas apiladas | ⚠️ **Avisado, no arreglado.** Sigue leyéndose sólo la primera tabla, pero el paso 2 dice que la hoja tiene más de una y no deja avanzar | — |
+| 07 categoría como banda | ✅ **Arreglado.** 3 de 3 publicables. Cada fila de título es la categoría de los repuestos que vienen debajo, escrita con el nombre del catálogo | 3, 4, 6 |
+| 08 sin precio ni stock | ✅ **Arreglado.** El paso 2 exige el precio además de los obligatorios del esquema, y ofrece `SOLO_COTIZAR` como salida en vez de obligar a inventar un precio | 2, 3 |
+| 09 varios autos por celda | ✅ **Arreglado.** Con el interruptor "varios autos en la misma celda" salen 2 repuestos con 3 compatibilidades extra; sin activarlo, la revisión avisa en vez de pasar en verde | 2, 3 |
+| 10 todo junto | ⚠️ 1 de 2 publicables. Ya sólo falla por un "sin stock" que no es número | 4, 6 |
 
 **8 arreglados, 1 que ya andaba, 1 avisado.**
 
@@ -61,6 +65,14 @@ empieza a fallar es porque arreglamos (o rompimos) algo, y hay que actualizarlo 
 - **Avisar antes, no después.** El paso 2 ya no deja avanzar sin precio, que era la causa de
   recorrer el asistente entero para llegar a cero publicables, y avisa cuando la hoja trae
   más de una tabla.
+- **El número de fila apunta al Excel del vendedor.** Es el único dato que le sirve para ir a
+  buscar el problema en su archivo, y se calculaba sobre la posición en el archivo generado
+  —que ya no va fila a fila con el suyo: se sacan subtotales y bandas, se duplica por
+  vehículo y se juntan los códigos repetidos. Cada fila arrastra de dónde vino, incluidas
+  las filas en blanco que la lectura se saltaba desde antes de todo esto.
+- **Los contadores cuadran.** Al sacar filas, el paso 3 decía "5 repuestos en tu archivo · 3
+  se pueden publicar", como si dos hubieran fallado. Ahora las filas que no son repuestos se
+  cuentan aparte, y los contadores van en singular cuando va uno.
 
 ## Lo que queda
 
@@ -72,6 +84,13 @@ adivinar y publicar mal la mitad del archivo.
 
 De ahí en adelante conviene esperar archivos de vendedores reales antes de seguir
 afinando: todo lo que sigue serían casos imaginados por nosotros.
+
+## Un detalle al comparar tests con el panel
+
+En el 06 el test cuenta 4 columnas y el panel muestra 5. No es una diferencia de
+comportamiento: el `.xlsx` real tiene 5 columnas de ancho porque la segunda tabla trae una
+de más, así que la fila de títulos llega con una celda vacía al final y aparece como
+"(columna E — sin título)". El AoA de `casos.mjs` no tiene ese relleno.
 
 ## Pendiente fuera de este repo
 
