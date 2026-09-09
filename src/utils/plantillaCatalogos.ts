@@ -141,3 +141,51 @@ export function decisionesDeCatalogo(
 export function todasLasSubcategorias(porCategoria: Record<string, string[]>): string[] {
   return [...new Set(Object.values(porCategoria).flat())].sort((a, b) => a.localeCompare(b, 'es'));
 }
+
+/** Raíz simple para comparar palabras sueltas: "frenos" y "freno" son la misma. */
+const raiz = (token: string) => (token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
+
+const enRaices = (texto: string) => normalizarParaComparar(texto).split(' ').filter(Boolean).map(raiz);
+
+/**
+ * Busca nombres del catálogo **dentro** de un texto libre.
+ *
+ * Es la única forma de sacar la marca o la categoría de una lista que sólo trae código y
+ * descripción: "PASTILLA FRENO DEL. TOYOTA COROLLA 2014-2018 BOSCH" tiene las dos cosas
+ * escritas, pero mezcladas en la columna del nombre.
+ *
+ * Se exige que el nombre del catálogo aparezca como palabra completa —comparando raíces,
+ * porque el vendedor escribe "freno" donde el catálogo dice "Frenos"— y se devuelve un
+ * valor sólo cuando queda **uno** candidato: con dos, elegir sería adivinar.
+ *
+ * `ambiguos` son nombres que también significan otra cosa en el mismo texto, típicamente
+ * las marcas de vehículo: "Toyota" puede ser la marca del repuesto (si es genuino) o el
+ * auto al que le sirve. Se descartan sólo si hay otro candidato que no lo sea.
+ */
+export function buscarEnTexto(
+  texto: string,
+  catalogo: string[],
+  ambiguos: string[] = [],
+): string | null {
+  const palabras = enRaices(texto);
+  if (palabras.length === 0 || catalogo.length === 0) return null;
+
+  const contiene = (nombre: string): boolean => {
+    const buscadas = enRaices(nombre);
+    if (buscadas.length === 0) return false;
+    return palabras.some((_, i) => buscadas.every((b, j) => palabras[i + j] === b));
+  };
+
+  let candidatos = catalogo.filter(contiene);
+  if (candidatos.length === 0) return null;
+  if (candidatos.length > 1 && ambiguos.length > 0) {
+    const sinAmbiguos = candidatos.filter((c) => !buscarEnCatalogo(c, ambiguos));
+    if (sinAmbiguos.length > 0) candidatos = sinAmbiguos;
+  }
+  if (candidatos.length === 1) return candidatos[0];
+
+  // Con varios, gana el más específico ("Frenos delanteros" antes que "Frenos"); si dos
+  // son igual de largos no hay forma de decidir y no se declara ninguno.
+  const porLargo = [...candidatos].sort((a, b) => enRaices(b).length - enRaices(a).length);
+  return enRaices(porLargo[0]).length > enRaices(porLargo[1]).length ? porLargo[0] : null;
+}

@@ -53,6 +53,23 @@ export interface RevisionArchivo {
 const SI_NO = new Set(['SI', 'SÍ', 'TRUE', '1']);
 const NO_EXPLICITO = new Set(['NO', 'FALSE', '0', '']);
 
+/**
+ * Separadores con los que se listan varios vehículos. La barra se exige con espacio
+ * alrededor porque pegada separa años ("2014/2018"), que es otra cosa.
+ */
+const SEPARADOR_VEHICULOS = /[\n\r;|]|\s\/\s/;
+
+const ANIO = /(?:19|20)\d{2}/g;
+
+/**
+ * ¿La celda del modelo trae más de un vehículo? Los separadores no alcanzan: la limpieza
+ * ya convirtió el salto de línea en un espacio antes de llegar acá. Un vehículo declara
+ * como mucho dos años (desde y hasta), así que más de dos delatan que hay varios.
+ */
+const pareceVariosVehiculos = (modelo: string): boolean =>
+  Boolean(modelo)
+  && (SEPARADOR_VEHICULOS.test(modelo) || (modelo.match(ANIO) ?? []).length > 2);
+
 const etiquetaDe = (campos: CampoMeta[], key: string) =>
   campos.find((c) => c.key === key)?.label ?? key;
 
@@ -157,6 +174,16 @@ export function revisarAoA(
     if (marca && marcas.length > 0 && !buscarEnCatalogo(marca, marcas)) {
       agregar('marca_repuesto', 'aviso',
         `"${marca}" no está en el catálogo: se va a crear como marca nueva.${conSugerencia(marca, marcas)}`);
+    }
+
+    // Varios autos en la celda del modelo. Es el único caso que pasaba en verde estando
+    // mal: se publicaba un modelo que no existe y el repuesto no aparecía en ninguna
+    // búsqueda por vehículo. El aviso va aunque el vendedor no active la separación.
+    const modelo = leer('compatibilidad_modelo');
+    if (pareceVariosVehiculos(modelo)) {
+      agregar('compatibilidad_modelo', 'aviso',
+        `"${modelo}" parece traer varios autos en una sola celda: se publicaría como un `
+        + 'modelo solo. Vuelve atrás y activa la separación por vehículo.');
     }
 
     const desde = normalizarNumero(leer('anio_desde')).numero;

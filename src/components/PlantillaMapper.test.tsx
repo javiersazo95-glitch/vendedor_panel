@@ -148,7 +148,7 @@ describe('PlantillaMapper', () => {
 
   it('no deja avanzar mientras falten datos obligatorios, y acepta un valor fijo como salida', async () => {
     render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
-    // Sin columna de categoría ni de marca: dos obligatorios sin resolver.
+    // Sin columna de categoría, de marca ni de precio: tres datos sin resolver.
     await subirYRelacionar(['Codigo,Titulo,Stock', 'A-1,Filtro,10'].join('\n'));
 
     expect(screen.getByText(/Todavía falta indicar/)).toBeInTheDocument();
@@ -156,6 +156,25 @@ describe('PlantillaMapper', () => {
 
     fireEvent.change(screen.getByLabelText('Valor fijo para Categoría'), { target: { value: 'Filtros' } });
     fireEvent.change(screen.getByLabelText('Valor fijo para Marca del repuesto'), { target: { value: 'Bosch' } });
+    fireEvent.change(screen.getByLabelText('Valor fijo para Precio'), { target: { value: '4990' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
+  });
+
+  it('frena por el precio aunque el backend no lo exija, y lo suelta con SOLO_COTIZAR', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
+    // El archivo trae todo lo obligatorio del esquema, pero no trae precio: tal cual, el
+    // paso 3 rechazaría todas las filas, así que el paso 2 no deja pasar.
+    await subirYRelacionar(['Codigo,Titulo,Marca,Categoria,Stock', 'A-1,Filtro,Bosch,Filtros,10'].join('\n'));
+
+    expect(screen.getByText(/Todavía falta indicar/)).toBeInTheDocument();
+    expect(screen.getByText(/Si tus repuestos se venden a pedido/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Siguiente/ })).toBeDisabled();
+
+    // Declarar que todo se vende a pedido es la otra salida, sin inventar un precio.
+    fireEvent.change(screen.getByLabelText('Valor fijo para Tipo de precio'), {
+      target: { value: 'SOLO_COTIZAR' },
+    });
 
     await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
   });
@@ -171,10 +190,11 @@ describe('PlantillaMapper', () => {
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
-    // Contadores en lenguaje llano: 3 filas, 1 con precio ilegible y 1 sin nombre.
+    // Contadores en lenguaje llano: 3 filas y 1 sin nombre. La del precio "consultar" sí
+    // se publica: ese precio se traduce a SOLO_COTIZAR en vez de quedar como error.
     expect(screen.getByText(/se pueden publicar/)).toBeInTheDocument();
-    expect(screen.getByText('1', { selector: '.mapper-counts .ok b' })).toBeInTheDocument();
-    expect(screen.getByText('2', { selector: '.mapper-counts .mal b' })).toBeInTheDocument();
+    expect(screen.getByText('2', { selector: '.mapper-counts .ok b' })).toBeInTheDocument();
+    expect(screen.getByText('1', { selector: '.mapper-counts .mal b' })).toBeInTheDocument();
 
     // La ficha muestra el primer repuesto que sí se puede publicar, ya armado.
     expect(screen.getByText('Así se verá tu primer repuesto en RepuesTop')).toBeInTheDocument();
@@ -182,8 +202,11 @@ describe('PlantillaMapper', () => {
     expect(screen.getByText(/4\.990/, { selector: '.mapper-ficha-precio' })).toBeInTheDocument();
 
     // Y la tabla dice qué revisar, con el número de fila del Excel del vendedor.
-    expect(screen.getByText(/"consultar" no es un número/)).toBeInTheDocument();
     expect(screen.getByText(/Falta nombre publicado/)).toBeInTheDocument();
+
+    // El precio escrito en palabras aparece entre los arreglos, no entre los errores.
+    expect(screen.getByText('SOLO_COTIZAR', { selector: '.mapper-arreglo-despues' }))
+      .toBeInTheDocument();
   });
 
   it('ofrece dividir la columna de años con rangos y muestra los arreglos que hizo', async () => {

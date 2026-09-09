@@ -18,6 +18,7 @@
  * el backend va a guardar.
  *
  * - "$ 4.990" / "12.900" → punto de separador de miles (tres decimales exactos).
+ * - "6,990" → coma de miles, con el mismo criterio de los tres dígitos.
  * - "1.234,50" → punto de miles y coma decimal.
  * - "4.99" → punto decimal, se respeta.
  */
@@ -40,8 +41,18 @@ export function normalizarNumero(valor: string): { numero: number | null; comoMi
     } else {
       limpio = texto;
     }
+  } else if (tieneComa) {
+    // La coma con exactamente tres dígitos detrás es separador de miles, igual que el
+    // punto: nadie cotiza un repuesto con tres decimales. Con uno o dos, es decimal.
+    const decimales = texto.length - texto.lastIndexOf(',') - 1;
+    if (decimales === 3) {
+      limpio = texto.replace(/,/g, '');
+      comoMiles = true;
+    } else {
+      limpio = texto.replace(',', '.');
+    }
   } else {
-    limpio = texto.replace(',', '.');
+    limpio = texto;
   }
 
   const numero = /^-?\d*\.?\d+$/.test(limpio) ? Number(limpio) : null;
@@ -52,6 +63,21 @@ export function normalizarNumero(valor: string): { numero: number | null; comoMi
 export function numeroLimpio(valor: string): string | null {
   const { numero } = normalizarNumero(valor);
   return numero === null ? null : String(numero);
+}
+
+/**
+ * Un número con su unidad escrita al lado: "45.000 c/u", "3 unid", "10 pzas", "12 unidades
+ * disponibles". Se recorta lo que venga después del número y **sólo** se acepta si lo que
+ * queda es un número: así "CONSULTAR" o "sin stock" siguen sin interpretarse y los marca la
+ * revisión, en vez de convertirse en un cero inventado.
+ */
+const NUMERO_CON_UNIDAD = /^([^A-Za-zÀ-ÿ]*\d[\d.,]*)\s*[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ./\s]*$/;
+
+export function numeroConUnidad(valor: string): string | null {
+  const directo = numeroLimpio(valor);
+  if (directo !== null) return directo;
+  const m = String(valor ?? '').trim().match(NUMERO_CON_UNIDAD);
+  return m ? numeroLimpio(m[1]) : null;
 }
 
 /**
@@ -117,7 +143,7 @@ export function normalizarCelda(columna: string, valor: string): { valor: string
 
   if (salida) {
     if (COLUMNAS_NUMERICAS.has(columna)) {
-      salida = numeroLimpio(salida) ?? salida;
+      salida = numeroConUnidad(salida) ?? salida;
     } else if (COLUMNAS_SI_NO.has(columna)) {
       salida = normalizarSiNo(salida) ?? salida;
     }

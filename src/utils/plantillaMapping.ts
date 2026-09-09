@@ -3,8 +3,8 @@ import {
   partirRangoAnios,
   type CambioNormalizacion,
 } from './plantillaNormalizacion';
-import { parsearAplicacion } from './plantillaCompatibilidad';
-import { buscarEnCatalogo } from './plantillaCatalogos';
+import { buscarEnCatalogo, buscarEnTexto } from './plantillaCatalogos';
+import { parsearAplicacion, separarAplicaciones } from './plantillaCompatibilidad';
 import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
 
 /**
@@ -169,35 +169,37 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     seccion: 'obligatorios',
     descripcion: 'Título principal del repuesto con el que aparecerá en el catálogo y en las búsquedas de clientes.',
     ejemplo: 'Ej: Pastilla de freno delantera Yaris 1.5',
-    synonyms: ['nombre', 'titulo', 'producto', 'articulo', 'item', 'nombre producto', 'descripcion corta'],
+    // "detalle" y "glosa" van al final: si la planilla trae además una columna "Nombre",
+    // esa gana, y el detalle queda libre para la descripción.
+    synonyms: ['nombre', 'titulo', 'producto', 'articulo', 'item', 'nombre producto', 'descripcion corta', 'descripcion producto', 'descripcion articulo', 'glosa', 'detalle', 'descripcion'],
   },
   sku_proveedor: {
     label: 'SKU / Código',
     seccion: 'obligatorios',
     descripcion: 'Tu código interno de producto o número de parte con el que identificas el repuesto en bodega.',
     ejemplo: 'Ej: PF-100, 0986AB01',
-    synonyms: ['sku', 'codigo', 'cod', 'referencia', 'ref', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte'],
+    synonyms: ['sku', 'codigo', 'cod', 'referencia', 'ref', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte', 'cod art', 'cod articulo', 'codigo articulo', 'cod producto', 'nro parte', 'n parte'],
   },
   marca_repuesto: {
     label: 'Marca del repuesto',
     seccion: 'obligatorios',
     descripcion: 'Fabricante de la pieza o repuesto (por ejemplo Bosch, Valeo, Brembo, o la marca del auto si es genuino).',
     ejemplo: 'Ej: Bosch, Brembo, Valeo, Toyota, Mann',
-    synonyms: ['marca', 'fabricante', 'marca pieza', 'marca parte', 'brand'],
+    synonyms: ['marca', 'fabricante', 'marca pieza', 'marca parte', 'brand', 'mca', 'marca art'],
   },
   categoria: {
     label: 'Categoría',
     seccion: 'obligatorios',
     descripcion: 'Familia o sistema del auto al que pertenece el repuesto dentro del catálogo de RepuesTop.',
     ejemplo: 'Ej: Frenos, Motor, Suspensión, Filtros',
-    synonyms: ['rubro', 'familia', 'tipo', 'linea'],
+    synonyms: ['rubro', 'familia', 'tipo', 'linea', 'grupo', 'categoria producto'],
   },
   stock: {
     label: 'Stock',
     seccion: 'obligatorios',
     descripcion: 'Cantidad de unidades físicas disponibles para la venta inmediata.',
     ejemplo: 'Ej: 10',
-    synonyms: ['cantidad', 'existencias', 'unidades', 'disponible', 'inventario', 'qty', 'stock actual'],
+    synonyms: ['cantidad', 'existencias', 'unidades', 'disponible', 'inventario', 'qty', 'stock actual', 'exist', 'existencia', 'cant', 'saldo', 'stock disponible'],
   },
 
   precio: {
@@ -205,7 +207,7 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     seccion: 'precio_condicion',
     descripcion: 'Precio de venta al público en pesos (CLP) sin puntos ni símbolos.',
     ejemplo: 'Ej: 24990',
-    synonyms: ['valor', 'pvp', 'precio venta', 'price', 'monto', 'precio unitario'],
+    synonyms: ['valor', 'pvp', 'precio venta', 'price', 'monto', 'precio unitario', 'p u', 'pu', 'precio unit', 'valor unitario', 'precio neto', 'precio publico'],
   },
   tipo_precio: {
     label: 'Tipo de precio',
@@ -349,6 +351,9 @@ export const PLANTILLA_CAMPOS: CampoMeta[] = camposDesdeEsquema(ESQUEMA_FALLBACK
 
 const UNIVERSAL_TRUTHY = new Set(['si', 'sí', 'true', '1', 'universal', 'x', 'yes']);
 
+/** Lo que un vendedor escribe en la columna de precio cuando el repuesto se cotiza. */
+const PRECIO_A_COTIZAR = /^(consultar|consultar precio|a consultar|cotizar|a cotizar|por cotizar|a pedido|preguntar|sin precio|s\/p)$/i;
+
 /** trim + minúsculas + sin acentos + no-alfanuméricos colapsados a un espacio. */
 export function normalizeHeader(h: string): string {
   return String(h ?? '')
@@ -400,6 +405,17 @@ export interface Mapping {
    */
   parsearAplicacion?: boolean;
   /**
+   * La celda de compatibilidad trae varios vehículos a la vez ("Corolla 2014-2018 /
+   * Yaris 2015-2019"). La fila se repite una vez por vehículo; los códigos repetidos que
+   * eso genera los junta después `separarPorSku` en la hoja `compatibilidades`.
+   */
+  separarAplicaciones?: boolean;
+  /**
+   * El archivo no trae columna de marca ni de categoría, pero el nombre del repuesto las
+   * menciona ("PASTILLA FRENO ... BOSCH"). Se sacan de ahí contra el catálogo real.
+   */
+  deducirDelNombre?: boolean;
+  /**
    * El archivo repite el mismo SKU una vez por vehículo. En vez de tratarlos como
    * duplicados —que el backend rechaza— se convierten en un repuesto con varias
    * compatibilidades, en la hoja `compatibilidades` de la plantilla.
@@ -411,6 +427,23 @@ export interface Mapping {
    * de fotos, después de publicar.
    */
   columnaFotos?: string | null;
+}
+
+/**
+ * ¿El panel exige este dato para dejar avanzar del paso 2?
+ *
+ * Son los obligatorios del esquema más el precio. El backend no pide precio —un repuesto
+ * puede publicarse a cotizar— pero la revisión rechaza toda fila sin precio que no diga
+ * SOLO_COTIZAR, así que sin esta regla el vendedor recorre el asistente entero para llegar
+ * a cero repuestos publicables. La lista obligatoria del esquema no se toca: es del
+ * backend, y el panel no tiene por qué reescribirla.
+ */
+export function requiereValorEnPanel(campo: CampoMeta, mapping: Mapping): boolean {
+  if (campo.required) return true;
+  if (campo.key !== 'precio') return false;
+  // Con una columna de tipo de precio la decisión es fila por fila y la toma el paso 3.
+  if (mapping.oficial.tipo_precio) return false;
+  return (mapping.defaults?.tipo_precio ?? '').toUpperCase() !== 'SOLO_COTIZAR';
 }
 
 /** Letra de columna estilo Excel (0 -> A, 26 -> AA). */
@@ -447,19 +480,25 @@ export function autoDetectMapping(userCols: UserColumn[], camposEsquema: CampoMe
   const campos = camposEsquema.map((campo) => ({
     campo,
     keyNorm: normalizeForMatch(campo.key),
-    synSet: new Set(campo.synonyms.map(normalizeForMatch)),
+    terminos: [campo.key, ...campo.synonyms].map(normalizeForMatch).filter(Boolean),
     keyTokens: new Set(
       [campo.key, ...campo.synonyms].flatMap((s) => normalizeForMatch(s).split(' ')).filter(Boolean),
     ),
   }));
 
-  // Pasada 1: exacto / sinónimo.
-  for (const { campo, keyNorm, synSet } of campos) {
+  // Pasada 1: exacto / sinónimo. Se recorren los términos del campo en orden —el nombre
+  // propio primero y los sinónimos del más literal al más suelto— en vez de recorrer las
+  // columnas: así una planilla con "Nombre" y "Detalle" se queda con la primera para el
+  // nombre publicado, y no con la que aparezca antes en la hoja.
+  for (const { campo, terminos } of campos) {
     if (mapping.oficial[campo.key]) continue;
-    const hit = normCols.find(({ col, norm }) => norm && !usados.has(col.id) && (norm === keyNorm || synSet.has(norm)));
-    if (hit) {
-      mapping.oficial[campo.key] = hit.col.id;
-      usados.add(hit.col.id);
+    for (const termino of terminos) {
+      const hit = normCols.find(({ col, norm }) => norm && !usados.has(col.id) && norm === termino);
+      if (hit) {
+        mapping.oficial[campo.key] = hit.col.id;
+        usados.add(hit.col.id);
+        break;
+      }
     }
   }
 
@@ -745,9 +784,26 @@ export function buildOfficialAoADetallado(
     return table[value] ?? value;
   };
 
+  // Varios vehículos en una celda: la fila se repite una vez por vehículo antes de
+  // transformarla, así cada copia recorre el resto del pipeline como una fila normal.
+  const colAplicacion = mapping.separarAplicaciones
+    ? mapping.oficial.compatibilidad_modelo ?? mapping.oficial.compatibilidad_marca ?? null
+    : null;
+  const idxAplicacion = colAplicacion ? idToIndex.get(colAplicacion) : undefined;
+  const filas = idxAplicacion === undefined ? rows : rows.flatMap((raw) => {
+    const row = raw as unknown[];
+    const vehiculos = separarAplicaciones(String(row[idxAplicacion] ?? ''), marcasVehiculo);
+    if (vehiculos.length < 2) return [row];
+    return vehiculos.map((vehiculo) => {
+      const copia = [...row];
+      copia[idxAplicacion] = vehiculo;
+      return copia;
+    });
+  });
+
   const out: (string | number)[][] = [[...columnas]];
 
-  for (const raw of rows) {
+  for (const raw of filas) {
     const row = raw as unknown[];
 
     // Valor base por columna oficial.
@@ -762,7 +818,9 @@ export function buildOfficialAoADetallado(
     // Aplicación escrita de corrido: "Toyota Corolla 2014-2020" se reparte en marca,
     // modelo y años. Si no se reconoce la marca no se toca nada: inventar una
     // compatibilidad es peor que no declarar ninguna.
-    if (mapping.parsearAplicacion) {
+    // Separar por vehículo implica partir cada fragmento: de nada sirve una fila por
+    // auto si el auto sigue escrito de corrido en la columna de modelo.
+    if (mapping.parsearAplicacion || mapping.separarAplicaciones) {
       const fuente = cells.compatibilidad_modelo || cells.compatibilidad_marca || '';
       const app = parsearAplicacion(fuente, marcasVehiculo);
       if (app) {
@@ -797,6 +855,29 @@ export function buildOfficialAoADetallado(
         cambios.push({ columna: key, antes: cells[key], despues: canonico });
         cells[key] = canonico;
       }
+    }
+
+    // Marca y categoría escondidas en el nombre. Van antes que el valor fijo: lo que
+    // dice cada fila es mejor dato que un valor común para todas, y sólo se escribe
+    // donde el archivo no dijo nada.
+    if (mapping.deducirDelNombre && cells.nombre_publicado) {
+      if (!cells.marca_repuesto) {
+        cells.marca_repuesto = buscarEnTexto(
+          cells.nombre_publicado, catalogos.marcasRepuesto, marcasVehiculo,
+        ) ?? '';
+      }
+      if (!cells.categoria) {
+        cells.categoria = buscarEnTexto(cells.nombre_publicado, catalogos.categorias) ?? '';
+      }
+    }
+
+    // "CONSULTAR" en la columna del precio no es un precio roto: es el tipo de precio
+    // escrito en la columna equivocada. Se traduce sólo si el vendedor no declaró uno,
+    // y queda listado en los arreglos para que lo vea antes de generar.
+    if (cells.precio && !cells.tipo_precio && PRECIO_A_COTIZAR.test(cells.precio)) {
+      cambios.push({ columna: 'tipo_precio', antes: cells.precio, despues: 'SOLO_COTIZAR' });
+      cells.tipo_precio = 'SOLO_COTIZAR';
+      cells.precio = '';
     }
 
     // El valor fijo entra donde el archivo no dice nada, sea porque la columna no está

@@ -9,6 +9,7 @@ import {
   camposDesdeEsquema,
   autoDetectMapping,
   reconcileMapping,
+  requiereValorEnPanel,
   buildOfficialAoA,
   buildOfficialAoADetallado,
   buildOfficialXlsxFile,
@@ -38,11 +39,13 @@ import {
   partirRangoAnios,
   validarValorFijo,
 } from '../utils/plantillaNormalizacion';
+import { buscarEnTexto } from '../utils/plantillaCatalogos';
 import { fotosPorSku, tipoColumnaFotos, type TipoColumnaFotos } from '../utils/plantillaFotos';
 import {
   detectarSkusRepetidos,
   pareceColumnaDeAplicacion,
   parsearAplicacion,
+  detectarAplicacionesMultiples,
   separarPorSku,
 } from '../utils/plantillaCompatibilidad';
 import { MARCAS_VEHICULO_BASE } from '../utils/marcasVehiculoBase';
@@ -273,7 +276,11 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       userRows, userCols, mapping, campos, esquema.catalogos,
     );
     // Con el SKU repetido, lo que se revisa es el archivo ya agrupado: es el que se sube.
-    const separada = mapping.agruparPorSku ? separarPorSku(aoa) : null;
+    // Separar una celda con varios vehículos también genera códigos repetidos, así que
+    // pasa por lo mismo: si no, el backend los rechazaría como duplicados.
+    const separada = mapping.agruparPorSku || mapping.separarAplicaciones
+      ? separarPorSku(aoa)
+      : null;
     const paraRevisar = separada ? separada.inventario : aoa;
     return {
       separacion: separada,
@@ -438,6 +445,46 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     return null;
   }, [mapping, userCols, userRows]);
 
+  /**
+   * ¿El nombre del repuesto trae escrita la marca o la categoría? Es la salida de la
+   * lista de dos columnas —código y descripción— donde esos datos existen pero no tienen
+   * columna propia.
+   */
+  const datosEnElNombre = useMemo(() => {
+    const id = mapping?.oficial.nombre_publicado;
+    const col = id ? userCols.find((c) => c.id === id) : null;
+    if (!col) return null;
+    const faltaMarca = !mapping?.oficial.marca_repuesto;
+    const faltaCategoria = !mapping?.oficial.categoria;
+    if (!faltaMarca && !faltaCategoria) return null;
+
+    const { marcasRepuesto, categorias, marcasVehiculo } = esquema.catalogos;
+    let conMarca = 0;
+    let conCategoria = 0;
+    let ejemplo: { texto: string; marca: string | null; categoria: string | null } | null = null;
+    const muestra = userRows.slice(0, 50).map((r) => String((r as unknown[])[col.index] ?? ''));
+    for (const texto of muestra) {
+      if (!texto.trim()) continue;
+      const marca = faltaMarca ? buscarEnTexto(texto, marcasRepuesto, marcasVehiculo) : null;
+      const categoria = faltaCategoria ? buscarEnTexto(texto, categorias) : null;
+      if (marca) conMarca += 1;
+      if (categoria) conCategoria += 1;
+      if (!ejemplo && (marca || categoria)) ejemplo = { texto, marca, categoria };
+    }
+    if (conMarca === 0 && conCategoria === 0) return null;
+    return { col, conMarca, conCategoria, faltaMarca, faltaCategoria, filas: muestra.length, ejemplo };
+  }, [mapping, userCols, userRows, esquema]);
+
+  /** ¿La columna de compatibilidad mete varios vehículos en una misma celda? */
+  const aplicacionesMultiples = useMemo(() => {
+    const id = mapping?.oficial.compatibilidad_modelo ?? mapping?.oficial.compatibilidad_marca;
+    const col = id ? userCols.find((c) => c.id === id) : null;
+    if (!col) return null;
+    const muestra = userRows.slice(0, 50).map((r) => String((r as unknown[])[col.index] ?? ''));
+    const hallazgo = detectarAplicacionesMultiples(muestra, esquema.catalogos.marcasVehiculo);
+    return hallazgo.celdas > 0 ? { col, ...hallazgo } : null;
+  }, [mapping, userCols, userRows, esquema]);
+
   const setColumnaFotos = (id: string | null) => {
     setMapping((prev) => {
       if (!prev) return prev;
@@ -448,7 +495,11 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     });
   };
 
-  const setBandera = (clave: 'parsearAplicacion' | 'agruparPorSku' | 'dividirAnios', valor: boolean) => {
+  const setBandera = (
+    clave: 'parsearAplicacion' | 'agruparPorSku' | 'dividirAnios' | 'separarAplicaciones'
+      | 'deducirDelNombre',
+    valor: boolean,
+  ) => {
     setMapping((prev) => (prev ? { ...prev, [clave]: valor } : prev));
   };
 
@@ -467,8 +518,34 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   };
 
   /** Detecta si un campo se completará automáticamente por un interruptor (ej. rangos de años o aplicación) */
-  const getAutoDerivado = useCallback((key: string): { activo: boolean; descripcion: string; ejemplo?: string } => {
+  const getAutoDerivado = useCallback((key: string): {
+    activo: boolean;
+    descripcion: string;
+    ejemplo?: string;
+    /** Resuelve algunas filas, no todas: el valor fijo sigue haciendo falta para el resto. */
+    parcial?: boolean;
+  } => {
     if (!mapping) return { activo: false, descripcion: '' };
+
+    // Marca y categoría sacadas del nombre del repuesto.
+    if (mapping.deducirDelNombre && datosEnElNombre) {
+      if (key === 'marca_repuesto' && datosEnElNombre.conMarca > 0) {
+        return {
+          activo: true,
+          descripcion: `Se saca del nombre del repuesto, en ${datosEnElNombre.conMarca} de las primeras ${datosEnElNombre.filas} filas`,
+          ejemplo: datosEnElNombre.ejemplo?.marca ?? undefined,
+          parcial: true,
+        };
+      }
+      if (key === 'categoria' && datosEnElNombre.conCategoria > 0) {
+        return {
+          activo: true,
+          descripcion: `Se saca del nombre del repuesto, en ${datosEnElNombre.conCategoria} de las primeras ${datosEnElNombre.filas} filas`,
+          ejemplo: datosEnElNombre.ejemplo?.categoria ?? undefined,
+          parcial: true,
+        };
+      }
+    }
 
     // Año hasta derivado por división de rango en año_desde
     if (key === 'anio_hasta') {
@@ -530,7 +607,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     }
 
     return { activo: false, descripcion: '' };
-  }, [mapping, userCols, userRows, columnaAplicacion]);
+  }, [mapping, userCols, userRows, columnaAplicacion, datosEnElNombre]);
 
   const counts = useMemo(() => {
     if (!mapping) return { asignadas: 0, sinAsignar: 0, aDescripcion: 0, ignoradas: 0 };
@@ -549,6 +626,11 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     };
   }, [mapping, unassignedCols, campos, getAutoDerivado]);
 
+  const requiereValor = useCallback(
+    (campo: CampoMeta): boolean => (mapping ? requiereValorEnPanel(campo, mapping) : campo.required),
+    [mapping],
+  );
+
   /**
    * Obligatorios que siguen sin resolver. Un valor fijo para todas las filas o una
    * derivación automática cuenta como resuelto.
@@ -556,14 +638,14 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const missingRequired = useMemo(
     () => (mapping
       ? campos.filter((c) => {
-        if (!c.required) return false;
+        if (!requiereValor(c)) return false;
         if (mapping.oficial[c.key]) return false;
         if ((mapping.defaults?.[c.key] ?? '').trim()) return false;
         if (getAutoDerivado(c.key).activo) return false;
         return true;
       })
       : []),
-    [mapping, campos, getAutoDerivado],
+    [mapping, campos, getAutoDerivado, requiereValor],
   );
 
   const buildFile = async (): Promise<File> => {
@@ -571,7 +653,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       userRows, userCols, mapping as Mapping, campos, esquema.catalogos,
     );
     const nombre = `plantilla-adaptada_${getIsoTimestampString()}.xlsx`;
-    if (!mapping?.agruparPorSku) return buildOfficialXlsxFile(aoa, nombre, esquema.version);
+    if (!mapping?.agruparPorSku && !mapping?.separarAplicaciones) {
+      return buildOfficialXlsxFile(aoa, nombre, esquema.version);
+    }
     const { inventario, compatibilidades } = separarPorSku(aoa);
     return buildOfficialXlsxFile(inventario, nombre, esquema.version, compatibilidades);
   };
@@ -868,6 +952,17 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   /* --------------------------- Paso 2: relacionar --------------------------- */
   if (paso === 2) {
+    // Cuántas conversiones automáticas encontramos mirando el archivo. El interruptor de
+    // inventario universal no cuenta: eso lo declara el vendedor, no lo detectamos nosotros.
+    const ajustesDetectados = [
+      Boolean(skusRepetidos && skusRepetidos.skus > 0),
+      Boolean(columnaAplicacion),
+      Boolean(aplicacionesMultiples),
+      Boolean(datosEnElNombre),
+      Boolean(columnaFotos),
+      Boolean(columnaAniosConRangos),
+    ].filter(Boolean).length;
+
     return (
       <div className="mapper">
         <div className="mapper-hero compact">
@@ -923,99 +1018,171 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               Todavía falta indicar: <b>{missingRequired.map((c) => c.label).join(', ')}</b>. Son
               datos que RepuesTop necesita para publicar. Elige la columna de tu archivo, o escribe
               al lado el mismo valor para todas las filas.
+              {missingRequired.some((c) => c.key === 'precio') && (
+                <> Si tus repuestos se venden a pedido, pon <b>SOLO_COTIZAR</b> en "Tipo de precio"
+                  y el precio deja de hacer falta.</>
+              )}
             </span>
           </div>
         )}
 
-        {skusRepetidos && skusRepetidos.skus > 0 && (
+        {/*
+          * Los ajustes automaticos van juntos y con titulo: sueltos, el vendedor no
+          * sabe de donde salieron ni que ya vienen decididos por el.
+          */}
+        <section className="mapper-section-group">
+          <div className="mapper-section-header">
+            <div className="mapper-section-title-wrap">
+              <h5>Lo que detectamos en tu archivo</h5>
+              {ajustesDetectados > 0 && (
+                <span className="mapper-section-badge">
+                  {plural(ajustesDetectados, "ajuste", "ajustes")}
+                </span>
+              )}
+            </div>
+            <p className="mapper-section-desc">
+              Miramos tus datos y encontramos estas cosas que podemos arreglar por ti. Marca las
+              que correspondan a tu inventario; si no marcas nada, tus datos van tal como están.
+            </p>
+          </div>
+          {skusRepetidos && skusRepetidos.skus > 0 && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Juntar las filas repetidas del mismo código"
+                checked={mapping.agruparPorSku ?? false}
+                onChange={(e) => setBandera('agruparPorSku', e.target.checked)}
+              />
+              <span>
+                <b>Tu archivo repite el mismo código en varias filas</b>
+                {skusRepetidos.ejemplo ? ` (${skusRepetidos.ejemplo.sku} aparece ${skusRepetidos.ejemplo.veces} veces)` : ''}.
+                Si es porque el mismo repuesto sirve para varios autos, lo publicamos como{' '}
+                <b>un repuesto con varias compatibilidades</b> en vez de {plural(skusRepetidos.filasExtra + skusRepetidos.skus, 'repuesto repetido', 'repuestos repetidos')}.
+              </span>
+            </label>
+          )}
+
+          {columnaAplicacion && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Separar marca, modelo y años de la columna de compatibilidad"
+                checked={mapping.parsearAplicacion ?? false}
+                onChange={(e) => {
+                  // Si la columna todavía no estaba asignada a nada, activarlo también la
+                  // pone donde corresponde: no tiene sentido pedir dos gestos para una idea.
+                  if (e.target.checked && columnaAplicacion.necesitaAsignar) {
+                    setOficial('compatibilidad_modelo', columnaAplicacion.col.id);
+                  }
+                  setBandera('parsearAplicacion', e.target.checked);
+                }}
+              />
+              <span>
+                <b>Tu columna "{columnaAplicacion.col.displayHeader}" trae la marca, el modelo y los años juntos.</b>{' '}
+                Los separamos por ti
+                {columnaAplicacion.partes
+                  ? `: "${columnaAplicacion.ejemplo}" queda como ${columnaAplicacion.partes.marca} · ${columnaAplicacion.partes.modelo}`
+                    + `${columnaAplicacion.partes.anioDesde ? ` · ${columnaAplicacion.partes.anioDesde}${columnaAplicacion.partes.anioHasta ? `-${columnaAplicacion.partes.anioHasta}` : ''}` : ''}`
+                  : ''}
+                . Así el repuesto aparece cuando alguien busca por su auto.
+              </span>
+            </label>
+          )}
+
+          {datosEnElNombre && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Sacar la marca y la categoria del nombre del repuesto"
+                checked={mapping.deducirDelNombre ?? false}
+                onChange={(e) => setBandera('deducirDelNombre', e.target.checked)}
+              />
+              <span>
+                <b>Tu archivo no trae columna de {[
+                  datosEnElNombre.faltaMarca && datosEnElNombre.conMarca > 0 ? 'marca' : '',
+                  datosEnElNombre.faltaCategoria && datosEnElNombre.conCategoria > 0 ? 'categoría' : '',
+                ].filter(Boolean).join(' ni de ')}, pero el nombre del repuesto lo dice.</b>{' '}
+                Lo sacamos de ahí, fila por fila
+                {datosEnElNombre.ejemplo
+                  ? `: "${datosEnElNombre.ejemplo.texto.slice(0, 55)}" queda como ${[datosEnElNombre.ejemplo.marca, datosEnElNombre.ejemplo.categoria].filter(Boolean).join(' · ')}`
+                  : ''}
+                . Lo que no reconozcamos queda vacío y lo puedes completar con un valor común.
+              </span>
+            </label>
+          )}
+
+          {aplicacionesMultiples && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Separar los varios autos que vienen en una misma celda"
+                checked={mapping.separarAplicaciones ?? false}
+                onChange={(e) => setBandera('separarAplicaciones', e.target.checked)}
+              />
+              <span>
+                <b>Tu columna "{aplicacionesMultiples.col.displayHeader}" trae varios autos en la misma celda.</b>{' '}
+                Publicamos un repuesto con sus {aplicacionesMultiples.vehiculos} compatibilidades en vez de
+                uno con un modelo que no existe
+                {aplicacionesMultiples.ejemplo
+                  ? `: "${aplicacionesMultiples.ejemplo.texto}" son ${aplicacionesMultiples.ejemplo.vehiculos.length} autos`
+                  : ''}
+                . Sin esto el repuesto no aparece cuando alguien busca por su auto.
+              </span>
+            </label>
+          )}
+
+          {columnaFotos && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Usar la columna de fotos de mi Excel"
+                checked={!!mapping.columnaFotos}
+                onChange={(e) => setColumnaFotos(e.target.checked ? columnaFotos.col.id : null)}
+              />
+              <span>
+                <b>Tu columna "{columnaFotos.col.displayHeader}" trae las fotos</b>
+                {columnaFotos.tipo === 'url'
+                  ? ' como enlaces de internet. Las traemos por ti después de publicar'
+                  : ' como nombres de archivo. Las buscamos en la carpeta de fotos que subas después'}
+                {columnaFotos.ejemplo ? ` (${columnaFotos.ejemplo.slice(0, 60)})` : ''}.
+              </span>
+            </label>
+          )}
+
           <label className="mapper-switch">
             <input
               type="checkbox"
-              aria-label="Juntar las filas repetidas del mismo código"
-              checked={mapping.agruparPorSku ?? false}
-              onChange={(e) => setBandera('agruparPorSku', e.target.checked)}
+              aria-label="Todo mi inventario es universal"
+              checked={(mapping.defaults?.compatibilidad_general ?? '') === 'SI'}
+              onChange={(e) => setDefault('compatibilidad_general', e.target.checked ? 'SI' : '')}
             />
             <span>
-              <b>Tu archivo repite el mismo código en varias filas</b>
-              {skusRepetidos.ejemplo ? ` (${skusRepetidos.ejemplo.sku} aparece ${skusRepetidos.ejemplo.veces} veces)` : ''}.
-              Si es porque el mismo repuesto sirve para varios autos, lo publicamos como{' '}
-              <b>un repuesto con varias compatibilidades</b> en vez de {plural(skusRepetidos.filasExtra + skusRepetidos.skus, 'repuesto repetido', 'repuestos repetidos')}.
+              <b>Todo mi inventario es universal.</b> Marca esto sólo si tus repuestos sirven para
+              cualquier vehículo; se publican sin compatibilidad por auto.
             </span>
           </label>
-        )}
 
-        {columnaAplicacion && (
-          <label className="mapper-switch">
-            <input
-              type="checkbox"
-              aria-label="Separar marca, modelo y años de la columna de compatibilidad"
-              checked={mapping.parsearAplicacion ?? false}
-              onChange={(e) => {
-                // Si la columna todavía no estaba asignada a nada, activarlo también la
-                // pone donde corresponde: no tiene sentido pedir dos gestos para una idea.
-                if (e.target.checked && columnaAplicacion.necesitaAsignar) {
-                  setOficial('compatibilidad_modelo', columnaAplicacion.col.id);
-                }
-                setBandera('parsearAplicacion', e.target.checked);
-              }}
-            />
-            <span>
-              <b>Tu columna "{columnaAplicacion.col.displayHeader}" trae la marca, el modelo y los años juntos.</b>{' '}
-              Los separamos por ti
-              {columnaAplicacion.partes
-                ? `: "${columnaAplicacion.ejemplo}" queda como ${columnaAplicacion.partes.marca} · ${columnaAplicacion.partes.modelo}`
-                  + `${columnaAplicacion.partes.anioDesde ? ` · ${columnaAplicacion.partes.anioDesde}${columnaAplicacion.partes.anioHasta ? `-${columnaAplicacion.partes.anioHasta}` : ''}` : ''}`
-                : ''}
-              . Así el repuesto aparece cuando alguien busca por su auto.
-            </span>
-          </label>
-        )}
-
-        {columnaFotos && (
-          <label className="mapper-switch">
-            <input
-              type="checkbox"
-              aria-label="Usar la columna de fotos de mi Excel"
-              checked={!!mapping.columnaFotos}
-              onChange={(e) => setColumnaFotos(e.target.checked ? columnaFotos.col.id : null)}
-            />
-            <span>
-              <b>Tu columna "{columnaFotos.col.displayHeader}" trae las fotos</b>
-              {columnaFotos.tipo === 'url'
-                ? ' como enlaces de internet. Las traemos por ti después de publicar'
-                : ' como nombres de archivo. Las buscamos en la carpeta de fotos que subas después'}
-              {columnaFotos.ejemplo ? ` (${columnaFotos.ejemplo.slice(0, 60)})` : ''}.
-            </span>
-          </label>
-        )}
-
-        <label className="mapper-switch">
-          <input
-            type="checkbox"
-            aria-label="Todo mi inventario es universal"
-            checked={(mapping.defaults?.compatibilidad_general ?? '') === 'SI'}
-            onChange={(e) => setDefault('compatibilidad_general', e.target.checked ? 'SI' : '')}
-          />
-          <span>
-            <b>Todo mi inventario es universal.</b> Marca esto sólo si tus repuestos sirven para
-            cualquier vehículo; se publican sin compatibilidad por auto.
-          </span>
-        </label>
-
-        {columnaAniosConRangos && (
-          <label className="mapper-switch">
-            <input
-              type="checkbox"
-              aria-label="Separar el rango de años en año desde y año hasta"
-              checked={mapping.dividirAnios ?? false}
-              onChange={(e) => setDividirAnios(e.target.checked)}
-            />
-            <span>
-              <b>Tu columna de años trae rangos en una sola celda.</b> Los separamos en "año desde"
-              y "año hasta" por ti{ejemploRangoAnios ? `: ${ejemploRangoAnios}` : ''}.
-            </span>
-          </label>
-        )}
+          {columnaAniosConRangos && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Separar el rango de años en año desde y año hasta"
+                checked={mapping.dividirAnios ?? false}
+                onChange={(e) => setDividirAnios(e.target.checked)}
+              />
+              <span>
+                <b>Tu columna de años trae rangos en una sola celda.</b> Los separamos en "año desde"
+                y "año hasta" por ti{ejemploRangoAnios ? `: ${ejemploRangoAnios}` : ''}.
+              </span>
+            </label>
+          )}
+          {ajustesDetectados === 0 && (
+            <p className="mapper-empty">
+              No encontramos nada más que convertir: tus columnas ya vienen como las espera
+              RepuesTop.
+            </p>
+          )}
+        </section>
 
         {/* Guía visual explicativa */}
         <div className="mapper-guide-box">
@@ -1068,7 +1235,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                   const autoDerivado = getAutoDerivado(campo.key);
                   const esAuto = autoDerivado.activo && !value && !tieneDefault;
                   const listo = Boolean(value || tieneDefault || esAuto);
-                  const faltante = campo.required && !listo;
+                  const obligatorio = requiereValor(campo);
+                  const faltante = obligatorio && !listo;
 
                   return (
                     <div
@@ -1080,9 +1248,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         <div className="mapper-card-header-line mapper-row-label">
                           <span className="mapper-card-title">
                             {campo.label}
-                            {campo.required && <b className="req">*</b>}
+                            {obligatorio && <b className="req">*</b>}
                           </span>
-                          {campo.required ? (
+                          {obligatorio ? (
                             <span className="mapper-pill mapper-pill-req">Requerido</span>
                           ) : (
                             <span className="mapper-pill mapper-pill-opt">Opcional</span>
@@ -1167,11 +1335,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                           </div>
                         )}
 
-                        {/* Si no tiene columna ni es auto: asignación de valor fijo */}
-                        {!value && !esAuto && (
+                        {/* Sin columna y sin derivación completa: valor fijo. Una
+                            derivación parcial no lo reemplaza: las filas donde no
+                            reconocimos nada se quedarían vacías y sin salida. */}
+                        {!value && (!esAuto || autoDerivado.parcial) && (
                           <div className={`mapper-default-card ${faltante ? 'default-urgente' : ''}`}>
                             <span className="mapper-default-title">
-                              {campo.required ? (
+                              {esAuto && autoDerivado.parcial ? (
+                                <strong>Para las filas donde no lo encontremos, usa este valor:</strong>
+                              ) : obligatorio ? (
                                 <strong>Dato obligatorio: asigna un valor común para todas las filas:</strong>
                               ) : (
                                 'O asigna el mismo valor fijo para todas las filas:'

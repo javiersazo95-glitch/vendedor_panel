@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { PLANTILLA_COLUMNAS } from './plantillaMapping';
 import {
   COLUMNAS_COMPATIBILIDADES,
+  detectarAplicacionesMultiples,
   detectarSkusRepetidos,
   pareceColumnaDeAplicacion,
   parsearAplicacion,
+  separarAplicaciones,
   separarPorSku,
 } from './plantillaCompatibilidad';
 
@@ -98,5 +100,52 @@ describe('separarPorSku', () => {
   it('sin códigos repetidos la hoja queda sólo con sus títulos y no se escribe', () => {
     const { compatibilidades } = separarPorSku([columnas, fila({}), fila({ sku_proveedor: 'B-2' })]);
     expect(compatibilidades).toHaveLength(1);
+  });
+});
+
+describe('separarAplicaciones', () => {
+  it('separa los vehículos escritos con barra', () => {
+    expect(separarAplicaciones('Toyota Corolla 2014-2018 / Nissan V16 1995-2008', MARCAS))
+      .toEqual(['Toyota Corolla 2014-2018', 'Nissan V16 1995-2008']);
+  });
+
+  it('separa los vehículos escritos en varias líneas o con punto y coma', () => {
+    expect(separarAplicaciones('Toyota Corolla\nNissan V16', MARCAS))
+      .toEqual(['Toyota Corolla', 'Nissan V16']);
+    expect(separarAplicaciones('Toyota Corolla; Nissan V16', MARCAS))
+      .toEqual(['Toyota Corolla', 'Nissan V16']);
+  });
+
+  it('no parte el rango de años escrito con barra', () => {
+    // "2014/2018" son los años de un solo auto: partirlo inventaría un segundo repuesto.
+    expect(separarAplicaciones('Toyota Corolla 2014/2018', MARCAS))
+      .toEqual(['Toyota Corolla 2014/2018']);
+  });
+
+  it('deja entera la celda cuando alguno de los trozos no es un vehículo', () => {
+    expect(separarAplicaciones('Toyota Corolla / delantero', MARCAS))
+      .toEqual(['Toyota Corolla / delantero']);
+  });
+
+  it('la celda con un solo vehículo devuelve un elemento, y la vacía ninguno', () => {
+    expect(separarAplicaciones('Toyota Corolla 2014-2018', MARCAS)).toHaveLength(1);
+    expect(separarAplicaciones('   ', MARCAS)).toEqual([]);
+  });
+});
+
+describe('detectarAplicacionesMultiples', () => {
+  it('cuenta las celdas con varios autos y guarda la más larga como ejemplo', () => {
+    const hallazgo = detectarAplicacionesMultiples([
+      'Toyota Corolla 2014-2018',
+      'Toyota Corolla / Nissan V16',
+      'Toyota Yaris / Nissan Tiida / Chevrolet Sail',
+    ], MARCAS);
+    expect(hallazgo.celdas).toBe(2);
+    expect(hallazgo.vehiculos).toBe(5);
+    expect(hallazgo.ejemplo?.vehiculos).toHaveLength(3);
+  });
+
+  it('no propone nada cuando cada celda trae un solo auto', () => {
+    expect(detectarAplicacionesMultiples(['Toyota Corolla', 'Nissan V16'], MARCAS).celdas).toBe(0);
   });
 });

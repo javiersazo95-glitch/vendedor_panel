@@ -181,3 +181,64 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
 
   return { inventario, compatibilidades, advertencias };
 }
+
+/**
+ * Separadores con los que un vendedor lista varios vehículos en una sola celda. La barra
+ * queda fuera a propósito: también separa años ("2014/2018") y se trata aparte.
+ */
+const SEPARADOR_DURO = /[\n\r;|]+/;
+
+/**
+ * Parte una celda que trae varios vehículos ("Corolla 2014-2018 / Yaris 2015-2019") en un
+ * texto por vehículo. Devuelve un solo elemento cuando la celda trae una aplicación sola,
+ * y ninguno cuando viene vacía.
+ */
+export function separarAplicaciones(texto: string, marcasVehiculo: string[]): string[] {
+  const original = String(texto ?? '').trim();
+  if (!original) return [];
+
+  const partes = original.split(SEPARADOR_DURO).map((t) => t.trim()).filter(Boolean);
+  const finales: string[] = [];
+  for (const parte of partes) {
+    if (!parte.includes('/')) {
+      finales.push(parte);
+      continue;
+    }
+    // La barra sólo separa vehículos si cada trozo es una aplicación reconocible por sí
+    // misma. Así "Corolla 2014/2018" se queda entero y no se convierte en dos repuestos.
+    const trozos = parte.split('/').map((t) => t.trim()).filter(Boolean);
+    const todosValidos = trozos.length > 1
+      && trozos.every((t) => parsearAplicacion(t, marcasVehiculo) !== null);
+    if (todosValidos) finales.push(...trozos);
+    else finales.push(parte);
+  }
+  return finales;
+}
+
+export interface AplicacionesMultiples {
+  /** Cuántas celdas de la muestra traen más de un vehículo. */
+  celdas: number;
+  /** Total de vehículos que aparecerían al separarlas. */
+  vehiculos: number;
+  ejemplo: { texto: string; vehiculos: string[] } | null;
+}
+
+/** Mira una columna de aplicación y dice si vale la pena ofrecer separarla. */
+export function detectarAplicacionesMultiples(
+  valores: string[],
+  marcasVehiculo: string[],
+): AplicacionesMultiples {
+  let celdas = 0;
+  let vehiculos = 0;
+  let ejemplo: AplicacionesMultiples['ejemplo'] = null;
+  for (const valor of valores) {
+    const partes = separarAplicaciones(valor, marcasVehiculo);
+    if (partes.length < 2) continue;
+    celdas += 1;
+    vehiculos += partes.length;
+    if (!ejemplo || partes.length > ejemplo.vehiculos.length) {
+      ejemplo = { texto: valor, vehiculos: partes };
+    }
+  }
+  return { celdas, vehiculos, ejemplo };
+}

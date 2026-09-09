@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   agruparCambios,
   limpiarTexto,
+  numeroConUnidad,
   normalizarCelda,
   normalizarSiNo,
   numeroLimpio,
@@ -136,5 +137,27 @@ describe('limites de lo que el vendedor escribe a mano', () => {
     expect(validarValorFijo('anio_desde', '14', 'Año desde')).toMatch(/4 cifras/);
     expect(validarValorFijo('anio_desde', '1800', 'Año desde')).toMatch(/entre 1900/);
     expect(validarValorFijo('anio_desde', '2014')).toBeNull();
+  });
+});
+
+describe('numeroConUnidad', () => {
+  it('recorta la unidad escrita al lado del número', () => {
+    expect(numeroConUnidad('45.000 c/u')).toBe('45000');
+    expect(numeroConUnidad('3 unid')).toBe('3');
+    expect(numeroConUnidad('10 pzas')).toBe('10');
+    expect(numeroConUnidad('12 unidades disponibles')).toBe('12');
+  });
+
+  it('no inventa un número donde no hay ninguno', () => {
+    // Recortar letras hasta que quede algo sería peor que no interpretar: un precio
+    // "CONSULTAR" convertido en cero se publica mal y nadie lo nota.
+    expect(numeroConUnidad('CONSULTAR')).toBeNull();
+    expect(numeroConUnidad('SIN STOCK')).toBeNull();
+    expect(numeroConUnidad('')).toBeNull();
+  });
+
+  it('deja pasar los números que ya se entendían', () => {
+    expect(numeroConUnidad('$24.990')).toBe('24990');
+    expect(numeroConUnidad('1.234,50')).toBe('1234.5');
   });
 });

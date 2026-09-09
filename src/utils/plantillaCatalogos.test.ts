@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buscarEnCatalogo,
+  buscarEnTexto,
   contarValoresDeColumna,
   decisionesDeCatalogo,
   parecido,
@@ -78,5 +79,52 @@ describe('todasLasSubcategorias', () => {
   it('junta las de todas las categorías, sin repetir', () => {
     expect(todasLasSubcategorias({ Frenos: ['Pastillas', 'Discos'], Motor: ['Pistones', 'Discos'] }))
       .toEqual(['Discos', 'Pastillas', 'Pistones']);
+  });
+});
+
+describe('buscarEnTexto', () => {
+  const CATEGORIAS = ['Frenos', 'Filtros', 'Suspensión', 'Motor'];
+  const MARCAS_PIEZA = ['Bosch', 'Mann', 'Monroe', 'Toyota'];
+  const MARCAS_AUTO = ['Toyota', 'Nissan', 'Hyundai'];
+
+  it('encuentra el nombre del catálogo escrito dentro del texto', () => {
+    expect(buscarEnTexto('PASTILLA FRENO DEL. COROLLA 2014-2018', CATEGORIAS)).toBe('Frenos');
+    expect(buscarEnTexto('FILTRO ACEITE ACCENT', CATEGORIAS)).toBe('Filtros');
+  });
+
+  it('compara raíces, porque el vendedor escribe en singular y el catálogo en plural', () => {
+    expect(buscarEnTexto('CAMBIO DE FILTRO', CATEGORIAS)).toBe('Filtros');
+  });
+
+  it('ignora acentos y mayúsculas', () => {
+    expect(buscarEnTexto('BRAZO DE SUSPENSION DELANTERA', CATEGORIAS)).toBe('Suspensión');
+  });
+
+  it('prefiere la marca que no puede confundirse con la del auto', () => {
+    // "TOYOTA" es el auto al que le sirve; "BOSCH" es quien fabricó la pieza.
+    expect(buscarEnTexto('PASTILLA FRENO TOYOTA COROLLA BOSCH', MARCAS_PIEZA, MARCAS_AUTO))
+      .toBe('Bosch');
+  });
+
+  it('usa la marca ambigua cuando es la única que aparece', () => {
+    // Un repuesto genuino: la marca de la pieza es la del auto, y ahí sí corresponde.
+    expect(buscarEnTexto('FILTRO ACEITE ORIGINAL TOYOTA', MARCAS_PIEZA, MARCAS_AUTO))
+      .toBe('Toyota');
+  });
+
+  it('con dos candidatos igual de específicos no declara ninguno', () => {
+    // Adivinar entre Frenos y Motor sería peor que dejar que lo complete el vendedor.
+    expect(buscarEnTexto('KIT FRENO Y MOTOR', CATEGORIAS)).toBeNull();
+  });
+
+  it('gana el nombre más específico sobre el más general', () => {
+    expect(buscarEnTexto('PASTILLA DE FRENO DELANTERO', ['Frenos', 'Frenos delanteros']))
+      .toBe('Frenos delanteros');
+  });
+
+  it('no encuentra nada donde no hay nada', () => {
+    expect(buscarEnTexto('AMORTIGUADOR TRASERO V16', CATEGORIAS)).toBeNull();
+    expect(buscarEnTexto('', CATEGORIAS)).toBeNull();
+    expect(buscarEnTexto('FRENO', [])).toBeNull();
   });
 });
