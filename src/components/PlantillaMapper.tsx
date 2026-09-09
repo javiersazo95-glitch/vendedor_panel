@@ -1681,12 +1681,20 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       <div className="mapper-counts">
         <span>
           <b>{filasListas.toLocaleString('es-CL')}</b>{' '}
-          {separacion || filasFuera > 0 ? 'filas en tu archivo' : 'repuestos en tu archivo'}
+          {separacion || filasFuera > 0
+            ? `${filasListas === 1 ? 'fila' : 'filas'} en tu archivo`
+            : `${filasListas === 1 ? 'repuesto' : 'repuestos'} en tu archivo`}
         </span>
         {filasFuera > 0 && (
-          <span><b>{filasFuera.toLocaleString('es-CL')}</b> no son repuestos, quedan fuera</span>
+          <span>
+            <b>{filasFuera.toLocaleString('es-CL')}</b>{' '}
+            {filasFuera === 1 ? 'no es un repuesto, queda fuera' : 'no son repuestos, quedan fuera'}
+          </span>
         )}
-        <span className="ok"><b>{(revision?.publicables ?? 0).toLocaleString('es-CL')}</b> se pueden publicar</span>
+        <span className="ok">
+          <b>{(revision?.publicables ?? 0).toLocaleString('es-CL')}</b>{' '}
+          {revision?.publicables === 1 ? 'se puede publicar' : 'se pueden publicar'}
+        </span>
         {(revision?.conError ?? 0) > 0 && (
           <span className="mal"><b>{revision?.conError.toLocaleString('es-CL')}</b> con problemas</span>
         )}
