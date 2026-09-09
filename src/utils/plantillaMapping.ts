@@ -363,6 +363,24 @@ const UNIVERSAL_TRUTHY = new Set(['si', 'sí', 'true', '1', 'universal', 'x', 'y
  */
 export const CAMPO_AGRUPADO_POR: Record<string, string> = { subcategoria: 'categoria' };
 
+export interface GrupoPorCompletar {
+  /** Valor del campo que agrupa ("Frenos"), del que dependen los valores válidos. */
+  clave: string;
+  /** Cuántas filas de ese grupo venían sin el dato. */
+  filas: number;
+  /** Lo que el vendedor eligió para el grupo, si eligió algo. */
+  elegido: string;
+}
+
+export interface CampoPorCompletar {
+  /** Columna oficial que venía vacía. */
+  columna: string;
+  /** Total de filas sin el dato, sumando los grupos. */
+  filas: number;
+  /** Ordenados por cantidad: completar el grupo de 120 vale 120 veces más que el de 1. */
+  grupos: GrupoPorCompletar[];
+}
+
 /** Lo que un vendedor escribe en la columna de precio cuando el repuesto se cotiza. */
 const PRECIO_A_COTIZAR = /^(consultar|consultar precio|a consultar|cotizar|a cotizar|por cotizar|a pedido|preguntar|sin precio|s\/p)$/i;
 
@@ -808,6 +826,8 @@ export function buildOfficialAoADetallado(
   cambios: CambioNormalizacion[];
   /** Por cada fila de datos de `aoa`, de qué fila del vendedor salió (base 0). */
   filasOrigen: number[];
+  /** Datos que quedaron vacíos y que el vendedor puede completar por grupo. */
+  porCompletar: CampoPorCompletar[];
 } {
   const marcasVehiculo = catalogos.marcasVehiculo;
   // El backend busca estos nombres con findByNombreIgnoreCase, que ignora mayusculas
@@ -901,6 +921,8 @@ export function buildOfficialAoADetallado(
   const out: (string | number)[][] = [[...columnas]];
   /** Fila del archivo del vendedor (base 0) de la que sale cada fila de `out`. */
   const filasOrigen: number[] = [];
+  /** campo -> grupo -> cuántas filas venían sin el dato. */
+  const huecos = new Map<string, Map<string, number>>();
 
   for (const fila of filas) {
     const row = fila.row;
@@ -992,11 +1014,19 @@ export function buildOfficialAoADetallado(
 
     // Lo que el vendedor completó por grupo desde el paso 3. Va antes que el valor fijo
     // porque es más específico: una subcategoría por categoría gana a una para todas.
-    for (const [campo, porGrupo] of Object.entries(mapping.completar ?? {})) {
+    //
+    // El conteo de lo que falta se hace acá y no después sobre el archivo terminado: si se
+    // contara después, un grupo desaparecería de la lista apenas el vendedor lo completa y
+    // se quedaría sin poder ver ni cambiar lo que eligió.
+    for (const [campo, campoClave] of Object.entries(CAMPO_AGRUPADO_POR)) {
       if (cells[campo]) continue;
-      const campoClave = CAMPO_AGRUPADO_POR[campo];
-      const valor = porGrupo[campoClave ? cells[campoClave] ?? '' : ''];
-      if (valor) cells[campo] = valor;
+      const clave = cells[campoClave] ?? '';
+      if (!clave) continue;
+      const porCampo = huecos.get(campo) ?? new Map<string, number>();
+      porCampo.set(clave, (porCampo.get(clave) ?? 0) + 1);
+      huecos.set(campo, porCampo);
+      const elegido = mapping.completar?.[campo]?.[clave];
+      if (elegido) cells[campo] = elegido;
     }
 
     // El valor fijo entra donde el archivo no dice nada, sea porque la columna no está
@@ -1024,7 +1054,15 @@ export function buildOfficialAoADetallado(
     filasOrigen.push(fila.origen);
   }
 
-  return { aoa: out, cambios, filasOrigen };
+  const porCompletar: CampoPorCompletar[] = [...huecos.entries()].map(([columna, porGrupo]) => ({
+    columna,
+    filas: [...porGrupo.values()].reduce((n, x) => n + x, 0),
+    grupos: [...porGrupo.entries()]
+      .map(([clave, filas]) => ({ clave, filas, elegido: mapping.completar?.[columna]?.[clave] ?? '' }))
+      .sort((a, b) => b.filas - a.filas || a.clave.localeCompare(b.clave, 'es')),
+  }));
+
+  return { aoa: out, cambios, filasOrigen, porCompletar };
 }
 
 /** Igual que `buildOfficialAoADetallado`, cuando sólo interesa el archivo resultante. */

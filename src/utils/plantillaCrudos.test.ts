@@ -16,13 +16,12 @@ import {
   columnasDeHoja,
   detectarFilaEncabezados,
   ESQUEMA_FALLBACK,
-  CAMPO_AGRUPADO_POR,
   PLANTILLA_CAMPOS,
   requiereValorEnPanel,
 } from './plantillaMapping';
 import { separarPorSku } from './plantillaCompatibilidad';
 import { detectarSegundaTabla } from './plantillaFilas';
-import { camposPorCompletar, revisarAoA } from './plantillaRevision';
+import { revisarAoA } from './plantillaRevision';
 
 /** El camino que recorre el wizard solo, antes de que el vendedor corrija nada. */
 const CATALOGOS: EsquemaPlantilla['catalogos'] = {
@@ -43,7 +42,7 @@ const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
   const filaEncabezados = detectarFilaEncabezados(encontrado.aoa);
   const { cols, rows, filasOriginales } = columnasDeHoja(encontrado.aoa, filaEncabezados);
   const mapping = { ...autoDetectMapping(cols, PLANTILLA_CAMPOS), ...banderas };
-  const { aoa: oficial, filasOrigen } = buildOfficialAoADetallado(
+  const { aoa: oficial, filasOrigen, porCompletar } = buildOfficialAoADetallado(
     rows, cols, mapping, PLANTILLA_CAMPOS, CATALOGOS,
   );
   return {
@@ -60,6 +59,7 @@ const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
         && !(mapping.defaults?.[c.key] ?? '').trim())
       .map((c) => c.key),
     filasOrigen,
+    porCompletar,
     revision: revisarAoA(oficial, PLANTILLA_CAMPOS, {
       maxFilas: 50,
       catalogos: CATALOGOS,
@@ -205,22 +205,32 @@ describe('archivos crudos: lo que ya funciona', () => {
     expect(r.revision.conError).toBe(0);
   });
 
-  it('agrupa por categoría lo que falta completar, y sólo donde hay algo que ofrecer', () => {
+  it('agrupa por categoría lo que falta completar, de lo que más pesa a lo que menos', () => {
     const r = leerComoElPanel('11-sin-subcategoria');
-    const huecos = camposPorCompletar(r.oficial, CAMPO_AGRUPADO_POR);
-    expect(huecos).toHaveLength(1);
-    expect(huecos[0].columna).toBe('subcategoria');
+    expect(r.porCompletar).toHaveLength(1);
+    expect(r.porCompletar[0].columna).toBe('subcategoria');
     // Seis repuestos sin subcategoría: tres de frenos, dos de filtros y uno de suspensión.
-    expect(huecos[0].grupos).toEqual([
-      { clave: 'Frenos', filas: 3 },
-      { clave: 'Filtros', filas: 2 },
-      { clave: 'Suspensión', filas: 1 },
+    expect(r.porCompletar[0].grupos).toEqual([
+      { clave: 'Frenos', filas: 3, elegido: '' },
+      { clave: 'Filtros', filas: 2, elegido: '' },
+      { clave: 'Suspensión', filas: 1, elegido: '' },
     ]);
-    // El panel deja fuera el grupo sin opciones: para Suspensión no hay nada que elegir.
-    const conOpciones = huecos[0].grupos.filter(
-      (g) => (CATALOGOS.subcategoriasPorCategoria[g.clave] ?? []).length > 0,
-    );
-    expect(conOpciones.map((g) => g.clave)).toEqual(['Frenos', 'Filtros']);
+  });
+
+  it('el grupo sigue en la lista después de completarlo, con lo que se eligió', () => {
+    // Si se contara sobre el archivo terminado, el grupo desaparecería apenas se completa
+    // y el vendedor no podría ver ni cambiar lo que eligió.
+    const r = leerComoElPanel('11-sin-subcategoria', {
+      completar: { subcategoria: { Frenos: 'Pastillas' } },
+    });
+    const frenos = r.porCompletar[0].grupos.find((g) => g.clave === 'Frenos');
+    expect(frenos).toEqual({ clave: 'Frenos', filas: 3, elegido: 'Pastillas' });
+  });
+
+  it('no propone nada cuando ni siquiera se sabe la categoría', () => {
+    // Sin categoría no hay lista de subcategorías que ofrecer, y preguntar sin opciones
+    // no ayuda a nadie: esas filas no se cuentan.
+    expect(leerComoElPanel('01-lista-dos-columnas').porCompletar).toEqual([]);
   });
 
   it('completa la subcategoría por grupo, cada categoría con la suya', () => {

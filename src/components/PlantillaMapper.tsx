@@ -27,17 +27,13 @@ import {
   mappedEnumColumns,
   getIsoTimestampString,
   type CampoMeta,
+  type CampoPorCompletar,
   type HojaUsuario,
   type Mapping,
   type UserColumn,
   type EsquemaPlantilla,
 } from '../utils/plantillaMapping';
-import {
-  camposPorCompletar,
-  fichaDesdeFila,
-  revisarAoA,
-  type FilaRevisada,
-} from '../utils/plantillaRevision';
+import { fichaDesdeFila, revisarAoA, type FilaRevisada } from '../utils/plantillaRevision';
 import {
   agruparCambios,
   limiteDeColumna,
@@ -294,9 +290,14 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    */
   const { revision, cambios, separacion, porCompletar } = useMemo(() => {
     if (paso !== 3 || !mapping) {
-      return { revision: null, cambios: [], separacion: null, porCompletar: [] };
+      return {
+        revision: null,
+        cambios: [],
+        separacion: null,
+        porCompletar: [] as CampoPorCompletar[],
+      };
     }
-    const { aoa, cambios: hechos, filasOrigen } = buildOfficialAoADetallado(
+    const { aoa, cambios: hechos, filasOrigen, porCompletar: huecos } = buildOfficialAoADetallado(
       userRows, userCols, mapping, campos, esquema.catalogos,
     );
     // Con el SKU repetido, lo que se revisa es el archivo ya agrupado: es el que se sube.
@@ -312,11 +313,10 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     const origenes = separada ? separada.indices.map((i) => filasOrigen[i]) : filasOrigen;
     return {
       separacion: separada,
-      // Sobre el archivo ya transformado y completo, no sobre las 20 filas que se
-      // muestran: lo que hay que completar casi nunca cabe en la primera pantalla. Se
-      // dejan fuera los grupos sin opciones —una categoría que no está en el catálogo no
-      // tiene subcategorías que ofrecer, y esa fila ya se marca como error aparte.
-      porCompletar: camposPorCompletar(paraRevisar, CAMPO_AGRUPADO_POR)
+      // Los huecos los cuenta la transformación, mirando lo que cada fila traía. Acá sólo
+      // se dejan fuera los grupos sin opciones que ofrecer: una categoría que no está en
+      // el catálogo no tiene subcategorías, y esa fila ya se marca como error aparte.
+      porCompletar: huecos
         .map((campo) => {
           const grupos = campo.grupos.filter(
             (g) => opcionesDeGrupo(campo.columna, g.clave).length > 0,
@@ -1819,9 +1819,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
             {porCompletar.reduce((n, c) => n + c.filas, 0) === 1 ? 'repuesto' : 'repuestos'})
           </span>
           <p className="mapper-hint">
-            Estos repuestos se van a publicar sin este dato. Puedes completarlo acá, por
-            grupo, y no tener que volver a tu Excel. Lo que dejes sin elegir se publica igual,
-            sin el dato.
+            Tu archivo no trae este dato. Elígelo acá por grupo, en vez de llenarlo a mano
+            fila por fila en tu Excel. Abajo puedes ver cómo va quedando.
           </p>
           {porCompletar.map((campo) => {
             const meta = campos.find((c) => c.key === campo.columna);
@@ -1840,7 +1839,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                 <div className="mapper-rows">
                   {campo.grupos.map((grupo) => {
                     const opciones = opcionesDeGrupo(campo.columna, grupo.clave);
-                    const elegido = mapping.completar?.[campo.columna]?.[grupo.clave] ?? '';
+                    const { elegido } = grupo;
                     return (
                       <div className={`mapper-row ${elegido ? 'resuelta' : ''}`} key={grupo.clave}>
                         <div className="mapper-row-label">
