@@ -609,4 +609,25 @@ describe('PlantillaMapper', () => {
     expect(String((aoa[1] as (string | number)[])[stock])).toBe('7');
   });
 
+
+  it('la palabra corregida a mano deja de estar pendiente en el catálogo', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla,Bosh,Frenos,4990,10',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    // "Bosh" no está en el catálogo: aparece como decisión pendiente abajo.
+    expect(screen.getByText(/Tus palabras y las de RepuesTop \(1 sin responder\)/)).toBeInTheDocument();
+
+    // El vendedor lo arregla en la tabla, en esa fila.
+    fireEvent.change(screen.getByLabelText('Marca del repuesto de la fila 2'), {
+      target: { value: 'Bosch' },
+    });
+
+    // Ya no queda ninguna fila con esa palabra: la pregunta se va.
+    await waitFor(() => expect(screen.queryByText(/Tus palabras y las de RepuesTop/)).toBeNull());
+  });
+
 });

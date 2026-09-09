@@ -395,12 +395,18 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         const col = id ? userCols.find((c) => c.id === id) : undefined;
         const catalogo = catalogoDe(key);
         if (!campo || !col || catalogo.length === 0) return null;
-        const decisiones = decisionesDeCatalogo(contarValoresDeColumna(userRows, col.index), catalogo);
+        // Las filas que el vendedor ya corrigió a mano no cuentan: si arregló la única
+        // que decía "Mann", esa palabra dejó de ser una decisión pendiente y seguir
+        // preguntándola hace pensar que la corrección no sirvió.
+        const sinCorregir = userRows.filter(
+          (_, i) => mapping?.parches?.[String(i)]?.[key] === undefined,
+        );
+        const decisiones = decisionesDeCatalogo(contarValoresDeColumna(sinCorregir, col.index), catalogo);
         return decisiones.length ? { campo, columna: col, catalogo, decisiones } : null;
       })
       .filter((b): b is { campo: CampoMeta; columna: UserColumn; catalogo: string[]; decisiones: DecisionCatalogo[] } => !!b);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paso, userRows, userCols, campos, catalogoDe,
+  }, [paso, userRows, userCols, campos, catalogoDe, mapping?.parches,
     mapping?.oficial.categoria, mapping?.oficial.subcategoria, mapping?.oficial.marca_repuesto]);
 
   /** Cuántas decisiones de catálogo siguen sin responder. */
@@ -1851,12 +1857,14 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       {porCompletar.length > 0 && (
         <section className="mapper-section">
           <span className="bulk-purpose-label">
-            Completa lo que falta ({porCompletar.reduce((n, c) => n + c.filas, 0).toLocaleString('es-CL')}{' '}
+            Completa lo que falta, de una vez por categoría{' '}
+            ({porCompletar.reduce((n, c) => n + c.filas, 0).toLocaleString('es-CL')}{' '}
             {porCompletar.reduce((n, c) => n + c.filas, 0) === 1 ? 'repuesto' : 'repuestos'})
           </span>
           <p className="mapper-hint">
-            Tu archivo no trae este dato. Elígelo acá por grupo, en vez de llenarlo a mano
-            fila por fila en tu Excel. Abajo puedes ver cómo va quedando.
+            Tu archivo no trae este dato. Elígelo acá <b>una vez por categoría</b> y se lo
+            ponemos a todos los repuestos de esa categoría, en vez de llenarlo a mano fila por
+            fila. Si a alguna fila le corresponde otro valor, la cambias abajo en la tabla.
           </p>
           {porCompletar.map((campo) => {
             const meta = campos.find((c) => c.key === campo.columna);
