@@ -44,10 +44,12 @@ empieza a fallar es porque arreglamos (o rompimos) algo, y hay que actualizarlo 
   es un número; `CONSULTAR` en la columna de precio se traduce a `SOLO_COTIZAR`, que es lo
   que el vendedor quiso decir.
 - **Datos que existen pero no tienen columna.** La marca y la categoría se buscan dentro del
-  nombre del repuesto contra el catálogo real. Con dos candidatos gana el que no puede
-  confundirse (una marca de vehículo dentro del nombre es el auto, no quien fabricó la
-  pieza); cuando el empate no se puede romper, no se declara nada y lo completa el vendedor
-  con un valor común.
+  nombre del repuesto contra el catálogo real. Los empates se rompen con información, no
+  adivinando: una marca de vehículo dentro del nombre es el auto y no quien fabricó la
+  pieza, gana el nombre más específico ("Soportes de Motor" antes que "Motor"), y entre dos
+  igual de específicos gana el que aparece primero, porque en español el sustantivo
+  principal va adelante y lo que sigue lo califica ("filtro de aceite" es un filtro, no un
+  aceite). Lo que no está en el catálogo se deja vacío para que lo complete el vendedor.
 - **Filas que no son repuestos.** Los subtotales, el total general y el encabezado repetido
   cada vez que empieza una página se reconocen y quedan fuera. El código es lo que los
   delata: la etiqueta del subtotal se escribe donde va el nombre, así que el nombre no

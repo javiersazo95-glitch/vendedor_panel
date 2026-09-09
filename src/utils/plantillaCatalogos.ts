@@ -170,22 +170,31 @@ export function buscarEnTexto(
   const palabras = enRaices(texto);
   if (palabras.length === 0 || catalogo.length === 0) return null;
 
-  const contiene = (nombre: string): boolean => {
+  /** En qué palabra del texto empieza el nombre del catálogo, o -1 si no está. */
+  const posicion = (nombre: string): number => {
     const buscadas = enRaices(nombre);
-    if (buscadas.length === 0) return false;
-    return palabras.some((_, i) => buscadas.every((b, j) => palabras[i + j] === b));
+    if (buscadas.length === 0) return -1;
+    for (let i = 0; i <= palabras.length - buscadas.length; i++) {
+      if (buscadas.every((b, j) => palabras[i + j] === b)) return i;
+    }
+    return -1;
   };
 
-  let candidatos = catalogo.filter(contiene);
+  let candidatos = catalogo
+    .map((nombre) => ({ nombre, largo: enRaices(nombre).length, donde: posicion(nombre) }))
+    .filter((x) => x.donde >= 0);
   if (candidatos.length === 0) return null;
   if (candidatos.length > 1 && ambiguos.length > 0) {
-    const sinAmbiguos = candidatos.filter((c) => !buscarEnCatalogo(c, ambiguos));
+    const sinAmbiguos = candidatos.filter((x) => !buscarEnCatalogo(x.nombre, ambiguos));
     if (sinAmbiguos.length > 0) candidatos = sinAmbiguos;
   }
-  if (candidatos.length === 1) return candidatos[0];
 
-  // Con varios, gana el más específico ("Frenos delanteros" antes que "Frenos"); si dos
-  // son igual de largos no hay forma de decidir y no se declara ninguno.
-  const porLargo = [...candidatos].sort((a, b) => enRaices(b).length - enRaices(a).length);
-  return enRaices(porLargo[0]).length > enRaices(porLargo[1]).length ? porLargo[0] : null;
+  // Gana el más específico ("Soportes de Motor" antes que "Motor"), y entre dos igual de
+  // específicos gana el que aparece primero: en español el sustantivo principal va
+  // adelante y lo que sigue lo califica. "Filtro de aceite" es un filtro, no un aceite;
+  // "Correa de distribución" es una correa. Donde el nombre empieza por algo que no es la
+  // familia ("Kit de freno y motor") la regla se equivoca, pero el valor queda a la vista
+  // en la tabla del paso 3 antes de generar nada.
+  candidatos.sort((a, b) => b.largo - a.largo || a.donde - b.donde);
+  return candidatos[0].nombre;
 }

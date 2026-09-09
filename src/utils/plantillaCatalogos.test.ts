@@ -112,9 +112,18 @@ describe('buscarEnTexto', () => {
       .toBe('Toyota');
   });
 
-  it('con dos candidatos igual de específicos no declara ninguno', () => {
-    // Adivinar entre Frenos y Motor sería peor que dejar que lo complete el vendedor.
-    expect(buscarEnTexto('KIT FRENO Y MOTOR', CATEGORIAS)).toBeNull();
+  it('entre dos igual de específicos gana el que aparece primero', () => {
+    // El sustantivo principal va adelante y lo que sigue lo califica: "filtro de aceite"
+    // es un filtro, no un aceite. El catálogo real tiene las dos como categorías.
+    expect(buscarEnTexto('FILTRO ACEITE ACCENT 2011-2015', ['Filtros', 'Aceite'])).toBe('Filtros');
+    expect(buscarEnTexto('CORREA DISTRIBUCION COROLLA', ['Correas', 'Distribución']))
+      .toBe('Correas');
+  });
+
+  it('la regla se equivoca cuando el nombre no empieza por la familia', () => {
+    // "Kit de freno y motor" no es un freno; es el precio de asumir el sustantivo
+    // principal adelante. El valor queda a la vista en la tabla del paso 3.
+    expect(buscarEnTexto('KIT FRENO Y MOTOR', CATEGORIAS)).toBe('Frenos');
   });
 
   it('gana el nombre más específico sobre el más general', () => {
