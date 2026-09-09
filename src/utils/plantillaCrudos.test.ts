@@ -9,26 +9,32 @@
 import { describe, expect, it } from 'vitest';
 
 import { CASOS_CRUDOS } from '../../pruebas-crudas/casos.mjs';
-import type { Mapping } from './plantillaMapping';
+import type { EsquemaPlantilla, Mapping } from './plantillaMapping';
 import {
   autoDetectMapping,
   buildOfficialAoADetallado,
   columnasDeHoja,
   detectarFilaEncabezados,
   ESQUEMA_FALLBACK,
+  CAMPO_AGRUPADO_POR,
   PLANTILLA_CAMPOS,
   requiereValorEnPanel,
 } from './plantillaMapping';
 import { separarPorSku } from './plantillaCompatibilidad';
 import { detectarSegundaTabla } from './plantillaFilas';
-import { revisarAoA } from './plantillaRevision';
+import { camposPorCompletar, revisarAoA } from './plantillaRevision';
 
 /** El camino que recorre el wizard solo, antes de que el vendedor corrija nada. */
-const CATALOGOS = {
+const CATALOGOS: EsquemaPlantilla['catalogos'] = {
   ...ESQUEMA_FALLBACK.catalogos,
   categorias: ['Frenos', 'Filtros', 'Suspensión', 'Motor'],
   // "Toyota" está a propósito: es marca de repuesto (genuino) y de vehículo a la vez.
-  marcasRepuesto: ['Bosch', 'Mann', 'Monroe', 'NGK', 'Gates', 'Toyota'],
+  marcasRepuesto: ['Bosch', 'Mann', 'Monroe', 'NGK', 'Gates', 'Toyota', 'Brembo'],
+  subcategoriasPorCategoria: {
+    Frenos: ['Pastillas', 'Discos'],
+    Filtros: ['Filtro de aceite', 'Filtro de aire'],
+    // "Suspensión" a propósito sin subcategorías: pasa en el catálogo real.
+  },
 };
 
 const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
@@ -197,6 +203,45 @@ describe('archivos crudos: lo que ya funciona', () => {
     expect(r.oficial.length - 1).toBe(3);
     expect(r.revision.publicables).toBe(3);
     expect(r.revision.conError).toBe(0);
+  });
+
+  it('agrupa por categoría lo que falta completar, y sólo donde hay algo que ofrecer', () => {
+    const r = leerComoElPanel('11-sin-subcategoria');
+    const huecos = camposPorCompletar(r.oficial, CAMPO_AGRUPADO_POR);
+    expect(huecos).toHaveLength(1);
+    expect(huecos[0].columna).toBe('subcategoria');
+    // Seis repuestos sin subcategoría: tres de frenos, dos de filtros y uno de suspensión.
+    expect(huecos[0].grupos).toEqual([
+      { clave: 'Frenos', filas: 3 },
+      { clave: 'Filtros', filas: 2 },
+      { clave: 'Suspensión', filas: 1 },
+    ]);
+    // El panel deja fuera el grupo sin opciones: para Suspensión no hay nada que elegir.
+    const conOpciones = huecos[0].grupos.filter(
+      (g) => (CATALOGOS.subcategoriasPorCategoria[g.clave] ?? []).length > 0,
+    );
+    expect(conOpciones.map((g) => g.clave)).toEqual(['Frenos', 'Filtros']);
+  });
+
+  it('completa la subcategoría por grupo, cada categoría con la suya', () => {
+    const r = leerComoElPanel('11-sin-subcategoria', {
+      completar: { subcategoria: { Frenos: 'Pastillas', Filtros: 'Filtro de aceite' } },
+    });
+    expect(valorEn(r.oficial, 1, 'subcategoria')).toBe('Pastillas');
+    expect(valorEn(r.oficial, 4, 'subcategoria')).toBe('Filtro de aceite');
+    // Suspensión queda sin subcategoría, que es opcional: se publica igual.
+    expect(valorEn(r.oficial, 6, 'subcategoria')).toBe('');
+    expect(r.revision.publicables).toBe(6);
+  });
+
+  it('no pisa la subcategoría que el archivo ya traía', () => {
+    const r = leerComoElPanel('11-sin-subcategoria', {
+      defaults: { subcategoria: 'Discos' },
+      completar: { subcategoria: { Frenos: 'Pastillas' } },
+    });
+    // Lo completado por grupo es más específico que el valor fijo para todas las filas.
+    expect(valorEn(r.oficial, 1, 'subcategoria')).toBe('Pastillas');
+    expect(valorEn(r.oficial, 4, 'subcategoria')).toBe('Discos');
   });
 
   it('reconoce los encabezados abreviados a mano', () => {

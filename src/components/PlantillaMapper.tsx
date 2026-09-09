@@ -9,6 +9,7 @@ import {
   camposDesdeEsquema,
   autoDetectMapping,
   filasNoRepuesto,
+  CAMPO_AGRUPADO_POR,
   reconcileMapping,
   requiereValorEnPanel,
   buildOfficialAoA,
@@ -31,7 +32,12 @@ import {
   type UserColumn,
   type EsquemaPlantilla,
 } from '../utils/plantillaMapping';
-import { revisarAoA, fichaDesdeFila, type FilaRevisada } from '../utils/plantillaRevision';
+import {
+  camposPorCompletar,
+  fichaDesdeFila,
+  revisarAoA,
+  type FilaRevisada,
+} from '../utils/plantillaRevision';
 import {
   agruparCambios,
   limiteDeColumna,
@@ -272,11 +278,24 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   );
 
   /**
+   * Los valores que valen para un grupo, no el catálogo entero: ofrecerle las
+   * subcategorías de motor a un repuesto de frenos es ruido, y el backend igual las
+   * rechaza porque tienen que pertenecer a la categoría del producto.
+   */
+  const opcionesDeGrupo = useCallback((columna: string, clave: string): string[] => (
+    columna === 'subcategoria'
+      ? esquema.catalogos.subcategoriasPorCategoria[clave] ?? []
+      : []
+  ), [esquema]);
+
+  /**
    * Revisión del archivo ya transformado. Se calcula sólo en el paso 3 porque transforma
    * todas las filas, y en los pasos anteriores no se muestra.
    */
-  const { revision, cambios, separacion } = useMemo(() => {
-    if (paso !== 3 || !mapping) return { revision: null, cambios: [], separacion: null };
+  const { revision, cambios, separacion, porCompletar } = useMemo(() => {
+    if (paso !== 3 || !mapping) {
+      return { revision: null, cambios: [], separacion: null, porCompletar: [] };
+    }
     const { aoa, cambios: hechos, filasOrigen } = buildOfficialAoADetallado(
       userRows, userCols, mapping, campos, esquema.catalogos,
     );
@@ -293,6 +312,18 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     const origenes = separada ? separada.indices.map((i) => filasOrigen[i]) : filasOrigen;
     return {
       separacion: separada,
+      // Sobre el archivo ya transformado y completo, no sobre las 20 filas que se
+      // muestran: lo que hay que completar casi nunca cabe en la primera pantalla. Se
+      // dejan fuera los grupos sin opciones —una categoría que no está en el catálogo no
+      // tiene subcategorías que ofrecer, y esa fila ya se marca como error aparte.
+      porCompletar: camposPorCompletar(paraRevisar, CAMPO_AGRUPADO_POR)
+        .map((campo) => {
+          const grupos = campo.grupos.filter(
+            (g) => opcionesDeGrupo(campo.columna, g.clave).length > 0,
+          );
+          return { ...campo, grupos, filas: grupos.reduce((n, g) => n + g.filas, 0) };
+        })
+        .filter((campo) => campo.grupos.length > 0),
       revision: revisarAoA(paraRevisar, campos, {
         maxFilas: 20,
         primeraFilaArchivo: filaEncabezados + 2,
@@ -301,7 +332,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       }),
       cambios: hechos,
     };
-  }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema, filasOriginales]);
+  }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema, filasOriginales,
+    opcionesDeGrupo]);
 
   /** Los arreglos automáticos, agrupados para poder mostrarlos como "antes → después". */
   const arreglos = useMemo(() => agruparCambios(cambios), [cambios]);
@@ -554,6 +586,19 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   const setDividirAnios = (valor: boolean) => {
     setMapping((prev) => (prev ? { ...prev, dividirAnios: valor } : prev));
+  };
+
+  /** Lo que el vendedor elige para un grupo entero desde el paso 3. */
+  const setCompletar = (colKey: string, grupo: string, valor: string) => {
+    setMapping((prev) => {
+      if (!prev) return prev;
+      const completar = { ...(prev.completar ?? {}) };
+      const porGrupo = { ...(completar[colKey] ?? {}) };
+      if (valor) porGrupo[grupo] = valor;
+      else delete porGrupo[grupo];
+      completar[colKey] = porGrupo;
+      return { ...prev, completar };
+    });
   };
 
   const setDefault = (colKey: string, valor: string) => {
@@ -1764,6 +1809,63 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               {ficha.descripcion && <p className="mapper-ficha-desc">{ficha.descripcion}</p>}
             </div>
           </article>
+        </section>
+      )}
+
+      {porCompletar.length > 0 && (
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">
+            Completa lo que falta ({porCompletar.reduce((n, c) => n + c.filas, 0).toLocaleString('es-CL')}{' '}
+            {porCompletar.reduce((n, c) => n + c.filas, 0) === 1 ? 'repuesto' : 'repuestos'})
+          </span>
+          <p className="mapper-hint">
+            Estos repuestos se van a publicar sin este dato. Puedes completarlo acá, por
+            grupo, y no tener que volver a tu Excel. Lo que dejes sin elegir se publica igual,
+            sin el dato.
+          </p>
+          {porCompletar.map((campo) => {
+            const meta = campos.find((c) => c.key === campo.columna);
+            const claveDe = CAMPO_AGRUPADO_POR[campo.columna];
+            const etiquetaClave = campos.find((c) => c.key === claveDe)?.label ?? claveDe;
+            return (
+              <div className="mapper-values-block" key={campo.columna}>
+                <div className="mapper-values-title">
+                  {meta?.label ?? campo.columna}{' '}
+                  <span>
+                    {campo.filas.toLocaleString('es-CL')}{' '}
+                    {campo.filas === 1 ? 'repuesto sin este dato' : 'repuestos sin este dato'},
+                    agrupados por {etiquetaClave.toLowerCase()}
+                  </span>
+                </div>
+                <div className="mapper-rows">
+                  {campo.grupos.map((grupo) => {
+                    const opciones = opcionesDeGrupo(campo.columna, grupo.clave);
+                    const elegido = mapping.completar?.[campo.columna]?.[grupo.clave] ?? '';
+                    return (
+                      <div className={`mapper-row ${elegido ? 'resuelta' : ''}`} key={grupo.clave}>
+                        <div className="mapper-row-label">
+                          {elegido && <Check size={15} className="mapper-row-check" />}
+                          <span>{grupo.clave}</span>
+                          <span className="mapper-sample">
+                            {plural(grupo.filas, 'repuesto', 'repuestos')}
+                          </span>
+                        </div>
+                        <select
+                          className="form-control"
+                          value={elegido}
+                          aria-label={`${meta?.label ?? campo.columna} para ${grupo.clave}`}
+                          onChange={(e) => setCompletar(campo.columna, grupo.clave, e.target.value)}
+                        >
+                          <option value="">dejar sin este dato</option>
+                          {opciones.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </section>
       )}
 

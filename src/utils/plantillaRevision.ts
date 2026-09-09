@@ -276,3 +276,65 @@ export function fichaDesdeFila(columnas: string[], valores: string[]): FichaPrev
     descripcion: v('descripcion'),
   };
 }
+
+export interface GrupoPorCompletar {
+  /** Valor del campo que agrupa ("Frenos"), del que dependen los valores válidos. */
+  clave: string;
+  /** Cuántas filas de ese grupo vienen sin el dato. */
+  filas: number;
+}
+
+export interface CampoPorCompletar {
+  /** Columna oficial que quedó vacía. */
+  columna: string;
+  /** Total de filas sin el dato, sumando todos los grupos. */
+  filas: number;
+  /** Ordenados por cantidad: completar el grupo de 120 vale 120 veces más que el de 1. */
+  grupos: GrupoPorCompletar[];
+}
+
+/**
+ * Datos que quedaron vacíos y que el vendedor puede completar sin volver a su Excel.
+ *
+ * Sólo mira los campos cuyos valores válidos dependen de otro de la misma fila —hoy la
+ * subcategoría, que depende de la categoría—, porque son justamente los que un valor fijo
+ * para todas las filas no puede resolver: la subcategoría de un repuesto de frenos no
+ * sirve para uno de suspensión.
+ *
+ * Las filas cuyo campo de agrupación viene vacío se saltan: sin saber la categoría no hay
+ * lista de subcategorías que ofrecer, y preguntar sin opciones no ayuda a nadie.
+ */
+export function camposPorCompletar(
+  aoa: (string | number)[][],
+  agrupadoPor: Record<string, string>,
+): CampoPorCompletar[] {
+  const columnas = (aoa[0] ?? []).map(String);
+  const indice = new Map(columnas.map((c, i) => [c, i]));
+  const salida: CampoPorCompletar[] = [];
+
+  for (const [columna, campoClave] of Object.entries(agrupadoPor)) {
+    const iCol = indice.get(columna);
+    const iClave = indice.get(campoClave);
+    if (iCol === undefined || iClave === undefined) continue;
+
+    const cuenta = new Map<string, number>();
+    let filas = 0;
+    for (let i = 1; i < aoa.length; i++) {
+      if (String(aoa[i][iCol] ?? '').trim()) continue;
+      const clave = String(aoa[i][iClave] ?? '').trim();
+      if (!clave) continue;
+      cuenta.set(clave, (cuenta.get(clave) ?? 0) + 1);
+      filas += 1;
+    }
+    if (filas === 0) continue;
+
+    salida.push({
+      columna,
+      filas,
+      grupos: [...cuenta.entries()]
+        .map(([clave, n]) => ({ clave, filas: n }))
+        .sort((a, b) => b.filas - a.filas || a.clave.localeCompare(b.clave, 'es')),
+    });
+  }
+  return salida;
+}

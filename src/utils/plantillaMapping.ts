@@ -356,6 +356,13 @@ export const PLANTILLA_CAMPOS: CampoMeta[] = camposDesdeEsquema(ESQUEMA_FALLBACK
 
 const UNIVERSAL_TRUTHY = new Set(['si', 'sí', 'true', '1', 'universal', 'x', 'yes']);
 
+/**
+ * Campos cuyos valores válidos dependen de otro campo de la misma fila. Es lo que hace
+ * que un valor fijo para todas las filas no alcance: la subcategoría que corresponde no es
+ * la misma para un repuesto de frenos que para uno de suspensión.
+ */
+export const CAMPO_AGRUPADO_POR: Record<string, string> = { subcategoria: 'categoria' };
+
 /** Lo que un vendedor escribe en la columna de precio cuando el repuesto se cotiza. */
 const PRECIO_A_COTIZAR = /^(consultar|consultar precio|a consultar|cotizar|a cotizar|por cotizar|a pedido|preguntar|sin precio|s\/p)$/i;
 
@@ -420,6 +427,12 @@ export interface Mapping {
    * menciona ("PASTILLA FRENO ... BOSCH"). Se sacan de ahí contra el catálogo real.
    */
   deducirDelNombre?: boolean;
+  /**
+   * Lo que el vendedor completó desde el paso 3, por campo y por grupo:
+   * `completar.subcategoria['Frenos'] = 'Pastillas'` llena la subcategoría de todos los
+   * repuestos de frenos que venían sin ella. Es lo que un valor fijo no puede hacer.
+   */
+  completar?: Record<string, Record<string, string>>;
   /**
    * La hoja trae filas que no son repuestos —subtotales, el total general, el encabezado
    * repetido cada vez que empieza una página— y hay que dejarlas fuera.
@@ -975,6 +988,15 @@ export function buildOfficialAoADetallado(
       cambios.push({ columna: 'tipo_precio', antes: cells.precio, despues: 'SOLO_COTIZAR' });
       cells.tipo_precio = 'SOLO_COTIZAR';
       cells.precio = '';
+    }
+
+    // Lo que el vendedor completó por grupo desde el paso 3. Va antes que el valor fijo
+    // porque es más específico: una subcategoría por categoría gana a una para todas.
+    for (const [campo, porGrupo] of Object.entries(mapping.completar ?? {})) {
+      if (cells[campo]) continue;
+      const campoClave = CAMPO_AGRUPADO_POR[campo];
+      const valor = porGrupo[campoClave ? cells[campoClave] ?? '' : ''];
+      if (valor) cells[campo] = valor;
     }
 
     // El valor fijo entra donde el archivo no dice nada, sea porque la columna no está

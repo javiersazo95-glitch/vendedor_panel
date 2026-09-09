@@ -471,4 +471,67 @@ describe('PlantillaMapper', () => {
     expect(await screen.findByText(/Debajo de esa fila no hay datos/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Siguiente/ })).toBeDisabled();
   });
+
+  it('completa por grupo lo que falta, sin volver al Excel', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    // Tres repuestos sin subcategoría: dos de frenos y uno de filtros. Un valor fijo no
+    // sirve —la subcategoría de frenos no vale para un filtro— y ésa es la razón de que
+    // esto se pueda completar acá y no en el paso 2.
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla delantera,Brembo,Frenos,4990,10',
+      'A-2,Pastilla trasera,Brembo,Frenos,5990,8',
+      'A-3,Filtro de aceite,Bosch,Filtros,3990,30',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    expect(screen.getByText(/Completa lo que falta/)).toBeInTheDocument();
+    expect(screen.getByText(/3 repuestos sin este dato/)).toBeInTheDocument();
+
+    // Cada grupo ofrece sólo las subcategorías de su categoría.
+    const deFrenos = screen.getByLabelText('Subcategoría para Frenos');
+    expect([...deFrenos.querySelectorAll('option')].map((o) => o.textContent))
+      .toEqual(['dejar sin este dato', 'Pastillas']);
+
+    fireEvent.change(deFrenos, { target: { value: 'Pastillas' } });
+    fireEvent.change(screen.getByLabelText('Subcategoría para Filtros'), {
+      target: { value: 'Filtro de aceite' },
+    });
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalled());
+    const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
+    const sub = (aoa[0] as string[]).indexOf('subcategoria');
+    // Cada fila queda con la subcategoría de su propia categoría, no con una para todas.
+    expect((aoa[1] as string[])[sub]).toBe('Pastillas');
+    expect((aoa[2] as string[])[sub]).toBe('Pastillas');
+    expect((aoa[3] as string[])[sub]).toBe('Filtro de aceite');
+  });
+
+  it('lo que se deja sin elegir se publica igual, sin el dato', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla delantera,Brembo,Frenos,4990,10',
+      'A-3,Filtro de aceite,Bosch,Filtros,3990,30',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    fireEvent.change(screen.getByLabelText('Subcategoría para Frenos'), {
+      target: { value: 'Pastillas' },
+    });
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalled());
+    const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
+    const sub = (aoa[0] as string[]).indexOf('subcategoria');
+    expect((aoa[1] as string[])[sub]).toBe('Pastillas');
+    // La subcategoría es opcional: dejarla vacía no impide publicar.
+    expect((aoa[2] as string[])[sub] ?? '').toBe('');
+  });
+
 });

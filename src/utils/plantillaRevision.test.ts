@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { PLANTILLA_CAMPOS, PLANTILLA_COLUMNAS } from './plantillaMapping';
-import { fichaDesdeFila, normalizarNumero, revisarAoA } from './plantillaRevision';
+import {
+  camposPorCompletar,
+  fichaDesdeFila,
+  normalizarNumero,
+  revisarAoA,
+} from './plantillaRevision';
 
 const columnas = [...PLANTILLA_COLUMNAS] as string[];
 
@@ -215,5 +220,49 @@ describe('revisarAoA contra los catálogos', () => {
     const r = revisar([filaBase({ categoria: 'Cualquier cosa', marca_repuesto: 'Marca X' })]);
     expect(r.conError).toBe(0);
     expect(r.filas[0].problemas).toEqual([]);
+  });
+});
+
+describe('camposPorCompletar', () => {
+  const AGRUPADO = { subcategoria: 'categoria' };
+
+  it('agrupa por categoría las filas sin subcategoría, de la que más pesa a la que menos', () => {
+    const huecos = camposPorCompletar([
+      columnas,
+      filaBase({ categoria: 'Frenos', subcategoria: '' }),
+      filaBase({ categoria: 'Suspensión', subcategoria: '' }),
+      filaBase({ categoria: 'Frenos', subcategoria: '' }),
+      filaBase({ categoria: 'Frenos', subcategoria: 'Pastillas' }),
+    ], AGRUPADO);
+
+    expect(huecos).toHaveLength(1);
+    expect(huecos[0].columna).toBe('subcategoria');
+    // La fila que ya trae subcategoría no cuenta.
+    expect(huecos[0].filas).toBe(3);
+    expect(huecos[0].grupos).toEqual([
+      { clave: 'Frenos', filas: 2 },
+      { clave: 'Suspensión', filas: 1 },
+    ]);
+  });
+
+  it('salta las filas sin categoría: no hay lista que ofrecer', () => {
+    const huecos = camposPorCompletar([
+      columnas,
+      filaBase({ categoria: '', subcategoria: '' }),
+      filaBase({ categoria: 'Frenos', subcategoria: '' }),
+    ], AGRUPADO);
+    expect(huecos[0].filas).toBe(1);
+    expect(huecos[0].grupos).toEqual([{ clave: 'Frenos', filas: 1 }]);
+  });
+
+  it('no propone nada cuando no falta ninguno', () => {
+    expect(camposPorCompletar([
+      columnas,
+      filaBase({ categoria: 'Frenos', subcategoria: 'Pastillas' }),
+    ], AGRUPADO)).toEqual([]);
+  });
+
+  it('ignora un campo que la hoja no trae', () => {
+    expect(camposPorCompletar([['nombre_publicado'], ['Filtro']], AGRUPADO)).toEqual([]);
   });
 });

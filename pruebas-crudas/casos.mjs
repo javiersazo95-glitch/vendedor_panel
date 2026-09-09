@@ -147,4 +147,18 @@ export const CASOS_CRUDOS = [
       ['', 'SUBTOTAL', '', 31980, ''],
     ],
   },
+  {
+    id: '11-sin-subcategoria',
+    titulo: 'Catálogo ordenado, pero sin subcategoría',
+    prueba: 'El archivo está bien: sólo le falta un dato cuyos valores válidos dependen de la categoría.',
+    aoa: [
+      ['sku', 'nombre', 'marca', 'categoria', 'precio', 'stock'],
+      ['PF-201', 'Pastilla freno delantera', 'Bosch', 'Frenos', 24990, 12],
+      ['PF-202', 'Pastilla freno trasera', 'Bosch', 'Frenos', 21990, 8],
+      ['DF-300', 'Disco freno ventilado', 'Brembo', 'Frenos', 39990, 5],
+      ['FA-110', 'Filtro de aceite', 'Bosch', 'Filtros', 6990, 30],
+      ['FA-111', 'Filtro de aire', 'Bosch', 'Filtros', 8990, 20],
+      ['AM-045', 'Amortiguador trasero', 'Monroe', 'Suspensión', 45000, 3],
+    ],
+  },
 ];
