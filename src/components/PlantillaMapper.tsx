@@ -43,7 +43,7 @@ import {
   partirRangoAnios,
   validarValorFijo,
 } from '../utils/plantillaNormalizacion';
-import { buscarEnCatalogo, buscarEnTexto } from '../utils/plantillaCatalogos';
+import { buscarEnCatalogo, buscarEnTexto, sugerirDelCatalogo } from '../utils/plantillaCatalogos';
 import { detectarBandas, detectarSegundaTabla } from '../utils/plantillaFilas';
 import { fotosPorSku, tipoColumnaFotos, type TipoColumnaFotos } from '../utils/plantillaFotos';
 import {
@@ -370,6 +370,21 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     if (columna === 'compatibilidad_marca') return esquema.catalogos.marcasVehiculo;
     return [];
   }, [esquema, campos]);
+
+  /**
+   * Los pocos nombres del catálogo que se parecen a lo que trae la celda. Sólo tiene
+   * sentido cuando la celda dice algo que no está en el catálogo —un "Mann" que debería
+   * ser "Mann-Filter"—; con la celda vacía no hay de qué partir y se muestra la lista
+   * entera, que además ahí suele ser corta.
+   */
+  const sugerenciasDeCelda = useCallback((
+    columna: string, valor: string, categoriaDeLaFila: string,
+  ): string[] => {
+    if (!valor.trim()) return [];
+    const opciones = opcionesDeCelda(columna, categoriaDeLaFila);
+    if (opciones.length <= 12 || buscarEnCatalogo(valor, opciones)) return [];
+    return sugerirDelCatalogo(valor, opciones);
+  }, [opcionesDeCelda]);
 
   const catalogoDe = useMemo(() => {
     const subcategorias = todasLasSubcategorias(esquema.catalogos.subcategoriasPorCategoria);
@@ -1958,6 +1973,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                               <CeldaRevision
                                 valor={valor}
                                 opciones={opcionesDeCelda(c, categoriaDeLaFila)}
+                                sugerencias={sugerenciasDeCelda(c, valor, categoriaDeLaFila)}
                                 etiqueta={`${meta?.label ?? c} de la fila ${fila.numeroFila}`}
                                 onCambio={(nuevo) => setParche(fila.clave, c, nuevo)}
                               />

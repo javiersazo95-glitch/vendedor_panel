@@ -630,4 +630,37 @@ describe('PlantillaMapper', () => {
     await waitFor(() => expect(screen.queryByText(/Tus palabras y las de RepuesTop/)).toBeNull());
   });
 
+
+  it('la celda con una marca desconocida ofrece los parecidos antes que el catálogo entero', async () => {
+    const esquema = {
+      ...ESQUEMA_CON_CATALOGOS,
+      catalogos: {
+        ...ESQUEMA_CON_CATALOGOS.catalogos,
+        // Un catálogo largo: es cuando recorrerlo entero cuesta.
+        marcasRepuesto: [
+          'Bosch', 'Brembo', 'Mann-Filter', 'Monroe', 'NGK', 'Gates', 'Valeo', 'Denso',
+          'SKF', 'Mahle', 'Febi', 'Sachs', 'TRW',
+        ],
+      },
+    };
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={esquema} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla,Mann,Frenos,4990,10',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    const celda = screen.getByLabelText('Marca del repuesto de la fila 2');
+    const textos = () => [...celda.querySelectorAll('option')].map((o) => o.textContent);
+    // Lo que trae la celda, el parecido y la salida al catálogo entero. Nada más.
+    expect(textos()).toEqual(['— sin dato —', 'Mann', 'Mann-Filter — parecido', 'ver todas…']);
+
+    fireEvent.change(celda, { target: { value: '__ver_todas__' } });
+    // Con el catálogo entero, y el valor actual sigue en la lista aunque no exista en él.
+    await waitFor(() => expect(textos()).toContain('Valeo'));
+    // "Ver todas" no elige nada por sí solo: la celda sigue con lo que decía.
+    expect((celda as HTMLSelectElement).value).toBe('Mann');
+  });
+
 });
