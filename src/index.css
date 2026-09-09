@@ -4414,3 +4414,15 @@ h1, h2, h3, h4, h5, h6 {
   background: #fff;
   outline: none;
 }
+
+/* Quitar un vehículo agregado a mano: discreto, para que no compita con los datos. */
+.mapper-quitar {
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: transparent;
+  color: #b91c1c;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.mapper-quitar:hover { background: rgba(220, 38, 38, 0.08); }

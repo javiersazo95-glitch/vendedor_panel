@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
-  UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check, Image as ImageIcon,
+  UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check, Image as ImageIcon, Plus,
 } from 'lucide-react';
 import {
   ESQUEMA_FALLBACK,
@@ -61,6 +61,7 @@ import {
   pareceColumnaDeAplicacion,
   parsearAplicacion,
   detectarAplicacionesMultiples,
+  COLUMNAS_COMPATIBILIDADES,
   separarPorSku,
 } from '../utils/plantillaCompatibilidad';
 import { MARCAS_VEHICULO_BASE } from '../utils/marcasVehiculoBase';
@@ -92,9 +93,6 @@ const BIG_FILE_ROWS = 5000;
 const VALUE_MAP_CAP = 20;
 /** Filas crudas que se muestran para que el vendedor confirme dónde están sus títulos. */
 const PREVIEW_ROWS = 6;
-
-/** Cuántas filas de la hoja de compatibilidades se muestran: son de apoyo, no el plato. */
-const COMPAT_VISIBLES = 12;
 
 /** Los años que se pueden elegir, del más nuevo al más viejo, como en la carga 1:1. */
 const ANIOS = aniosDisponibles();
@@ -320,16 +318,19 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    * Revisión del archivo ya transformado. Se calcula sólo en el paso 3 porque transforma
    * todas las filas, y en los pasos anteriores no se muestra.
    */
-  const { revision, cambios, separacion, porCompletar } = useMemo(() => {
+  const { revision, cambios, separacion, porCompletar, filasOrigenCompat } = useMemo(() => {
     if (paso !== 3 || !mapping) {
       return {
         revision: null,
         cambios: [],
         separacion: null,
         porCompletar: [] as CampoPorCompletar[],
+        filasOrigenCompat: [] as number[],
       };
     }
-    const { aoa, cambios: hechos, filasOrigen, porCompletar: huecos } = buildOfficialAoADetallado(
+    const {
+      aoa, cambios: hechos, filasOrigen, clavesParche, porCompletar: huecos,
+    } = buildOfficialAoADetallado(
       userRows, userCols, mapping, campos, esquema.catalogos, modelosPorMarca,
     );
     // Con el SKU repetido, lo que se revisa es el archivo ya agrupado: es el que se sube.
@@ -343,8 +344,14 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     // la posición en el archivo generado: entre medio se sacan subtotales y bandas, se
     // duplica por vehículo y se juntan los códigos repetidos.
     const origenes = separada ? separada.indices.map((i) => filasOrigen[i]) : filasOrigen;
+    const claves = separada ? separada.indices.map((i) => clavesParche[i]) : clavesParche;
     return {
       separacion: separada,
+      // Por cada fila de la hoja de compatibilidades, la fila del archivo del vendedor de
+      // la que salió: es la clave con la que se guarda una corrección hecha ahí.
+      filasOrigenCompat: separada
+        ? separada.indicesCompatibilidades.map((i) => clavesParche[i])
+        : [],
       // Los huecos los cuenta la transformación, mirando lo que cada fila traía. Acá sólo
       // se dejan fuera los grupos sin opciones que ofrecer: una categoría que no está en
       // el catálogo no tiene subcategorías, y esa fila ya se marca como error aparte.
@@ -361,7 +368,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         primeraFilaArchivo: filaEncabezados + 2,
         catalogos: esquema.catalogos,
         numerosDeFila: origenes.map((i) => (filasOriginales[i] ?? i) + 1),
-        clavesDeFila: origenes,
+        clavesDeFila: claves,
       }),
       cambios: hechos,
     };
@@ -487,9 +494,14 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         // Las filas que el vendedor ya corrigió a mano no cuentan: si arregló la única
         // que decía "Mann", esa palabra dejó de ser una decisión pendiente y seguir
         // preguntándola hace pensar que la corrección no sirvió.
-        const sinCorregir = userRows.filter(
-          (_, i) => mapping?.parches?.[String(i)]?.[key] === undefined,
+        // Una fila corregida cuenta como resuelta aunque se haya separado en varios autos:
+        // la clave lleva sufijo y hay que mirar todas las que empiecen por ese número.
+        const corregidas = new Set(
+          Object.entries(mapping?.parches ?? {})
+            .filter(([, cols]) => cols[key] !== undefined)
+            .map(([clave]) => Number(clave.split(':')[0])),
         );
+        const sinCorregir = userRows.filter((_, i) => !corregidas.has(i));
         const decisiones = decisionesDeCatalogo(contarValoresDeColumna(sinCorregir, col.index), catalogo);
         return decisiones.length ? { campo, columna: col, catalogo, decisiones } : null;
       })
@@ -503,6 +515,25 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     (total, b) => total + b.decisiones.filter((d) => !mapping?.valueMap[b.campo.key]?.[d.valor]).length,
     0,
   ), [bloquesCatalogo, mapping]);
+
+  /**
+   * Las filas de la hoja de compatibilidades, con el rastro de cada una: las que salen de
+   * una fila del archivo se corrigen como cualquier celda del paso 3, y las que el vendedor
+   * agregó a mano viven en el mapping y se pueden borrar.
+   */
+  const filasCompatibilidad = useMemo(() => {
+    const delArchivo = (separacion?.compatibilidades ?? []).slice(1).map((fila, i) => ({
+      valores: fila.map(String),
+      clave: filasOrigenCompat[i] ?? null,
+      extra: null as number | null,
+    }));
+    const agregadas = (mapping?.compatibilidadesExtra ?? []).map((fila, i) => ({
+      valores: COLUMNAS_COMPATIBILIDADES.map((c) => fila[c] ?? ''),
+      clave: null,
+      extra: i,
+    }));
+    return [...delArchivo, ...agregadas];
+  }, [separacion, filasOrigenCompat, mapping?.compatibilidadesExtra]);
 
   /** El primer repuesto que sí se puede publicar: es el que vale la pena mostrar armado. */
   const ficha = useMemo(() => {
@@ -710,13 +741,36 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    * significara "olvida esto", el valor que pusimos al completar por grupo la volvería a
    * llenar y el vendedor no tendría cómo dejar una fila sin el dato.
    */
-  const setParche = (clave: number, columna: string, valor: string) => {
+  const setParche = (clave: string, columna: string, valor: string) => {
     setMapping((prev) => {
       if (!prev) return prev;
       const parches = { ...(prev.parches ?? {}) };
-      parches[String(clave)] = { ...(parches[String(clave)] ?? {}), [columna]: valor };
+      parches[clave] = { ...(parches[clave] ?? {}), [columna]: valor };
       return { ...prev, parches };
     });
+  };
+
+  /** Una celda de un vehículo agregado a mano. */
+  const setExtraCompat = (indice: number, columna: string, valor: string) => {
+    setMapping((prev) => {
+      if (!prev) return prev;
+      const filas = [...(prev.compatibilidadesExtra ?? [])];
+      filas[indice] = { ...filas[indice], [columna]: valor };
+      return { ...prev, compatibilidadesExtra: filas };
+    });
+  };
+
+  /** Agrega un vehículo vacío, con el código del primer repuesto como punto de partida. */
+  const agregarCompat = (sku: string) => {
+    setMapping((prev) => (prev
+      ? { ...prev, compatibilidadesExtra: [...(prev.compatibilidadesExtra ?? []), { sku_proveedor: sku }] }
+      : prev));
+  };
+
+  const quitarCompat = (indice: number) => {
+    setMapping((prev) => (prev
+      ? { ...prev, compatibilidadesExtra: (prev.compatibilidadesExtra ?? []).filter((_, i) => i !== indice) }
+      : prev));
   };
 
   /** Lo que el vendedor elige para un grupo entero desde el paso 3. */
@@ -888,11 +942,21 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       userRows, userCols, mapping as Mapping, campos, esquema.catalogos, modelosPorMarca,
     );
     const nombre = `plantilla-adaptada_${getIsoTimestampString()}.xlsx`;
+    // Los vehículos que el vendedor agregó a mano no salen de ninguna fila del archivo,
+    // así que se suman al final de la hoja. Si son los únicos, la hoja igual se escribe:
+    // es lo que hace que agregar un auto sirva de algo en un archivo sin códigos repetidos.
+    const agregados = (mapping?.compatibilidadesExtra ?? [])
+      .filter((fila) => (fila.sku_proveedor ?? '').trim())
+      .map((fila) => COLUMNAS_COMPATIBILIDADES.map((c) => fila[c] ?? ''));
+
     if (!mapping?.agruparPorSku && !mapping?.separarAplicaciones) {
-      return buildOfficialXlsxFile(aoa, nombre, esquema.version);
+      return buildOfficialXlsxFile(aoa, nombre, esquema.version,
+        agregados.length > 0 ? [[...COLUMNAS_COMPATIBILIDADES], ...agregados] : undefined);
     }
     const { inventario, compatibilidades } = separarPorSku(aoa);
-    return buildOfficialXlsxFile(inventario, nombre, esquema.version, compatibilidades);
+    return buildOfficialXlsxFile(
+      inventario, nombre, esquema.version, [...compatibilidades, ...agregados],
+    );
   };
 
   /**
@@ -1818,6 +1882,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   /* ---------------------------- Paso 3: revisar ---------------------------- */
   const filasListas = userRows.length;
+  /** El código del primer repuesto: una fila de compatibilidad nueva empieza por ahí. */
+  const primerSku = revision?.filas[0]?.valores[revision.columnas.indexOf('sku_proveedor')] ?? '';
   /**
    * Filas de la hoja que se dejaron fuera por no ser repuestos. Sin este numero los
    * contadores no cuadran —"5 en tu archivo, 3 se pueden publicar" hace pensar que dos
@@ -2086,44 +2152,87 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         </section>
       )}
 
-      {separacion && separacion.compatibilidades.length > 1 && (
+      {revision && revision.filas.length > 0 && (
         <section className="mapper-section">
           <span className="bulk-purpose-label">
-            Los otros vehículos de cada repuesto ({plural(
-              separacion.compatibilidades.length - 1, 'compatibilidad', 'compatibilidades',
-            )})
+            Compatibilidades: los demás autos de cada repuesto
           </span>
           <p className="mapper-hint">
-            El archivo lleva dos hojas: arriba va un repuesto por código, y acá los demás
-            vehículos que le sirven a cada uno. Es la hoja "compatibilidades" del Excel, y
-            así es como la va a leer RepuesTop.
+            En la tabla de arriba cada repuesto lleva un auto. Acá van los demás, y es la
+            segunda hoja del Excel que se genera. Puedes corregir lo que haya y agregar los
+            autos que falten: el mismo repuesto aparecerá en la búsqueda de cada uno.
           </p>
+
           <div className="mapper-preview-wrap">
             <table className="mapper-preview revisada">
               <thead>
                 <tr>
-                  {separacion.compatibilidades[0].map((c) => (
-                    <th key={String(c)}>
-                      {campos.find((campo) => campo.key === String(c))?.label ?? String(c)}
-                    </th>
+                  {COLUMNAS_COMPATIBILIDADES.map((c) => (
+                    <th key={c}>{campos.find((campo) => campo.key === c)?.label ?? c}</th>
                   ))}
+                  <th className="motivo">&nbsp;</th>
                 </tr>
               </thead>
               <tbody>
-                {separacion.compatibilidades.slice(1, COMPAT_VISIBLES + 1).map((fila, i) => (
-                  <tr key={`${String(fila[0])}-${i}`}>
-                    {fila.map((celda, j) => <td key={j}>{celda}</td>)}
+                {filasCompatibilidad.map((fila, i) => {
+                  const dato = (columna: string) =>
+                    fila.valores[(COLUMNAS_COMPATIBILIDADES as readonly string[]).indexOf(columna)] ?? '';
+                  const contexto: ContextoDeFila = {
+                    categoria: '',
+                    marcaVehiculo: dato('compatibilidad_marca'),
+                    anioDesde: dato('anio_desde'),
+                  };
+                  return (
+                    <tr key={fila.extra === null ? `f${fila.clave}-${i}` : `extra-${fila.extra}`}>
+                      {COLUMNAS_COMPATIBILIDADES.map((c) => (
+                        <td key={c}>
+                          <CeldaRevision
+                            valor={dato(c)}
+                            columna={c}
+                            opciones={opcionesDeCelda(c, contexto)}
+                            sugerencias={sugerenciasDeCelda(c, dato(c), contexto)}
+                            etiqueta={`${campos.find((campo) => campo.key === c)?.label ?? c}, auto ${i + 1}`}
+                            destacada={!dato(c) && c !== 'motor' && c !== 'referencia_oem'}
+                            onCambio={(nuevo) => (fila.extra !== null
+                              ? setExtraCompat(fila.extra, c, nuevo)
+                              : setParche(fila.clave as string, c, nuevo))}
+                          />
+                        </td>
+                      ))}
+                      <td className="motivo">
+                        {fila.extra !== null && (
+                          <button
+                            type="button"
+                            className="mapper-quitar"
+                            title="Quitar este vehículo"
+                            onClick={() => quitarCompat(fila.extra as number)}
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filasCompatibilidad.length === 0 && (
+                  <tr>
+                    <td colSpan={COLUMNAS_COMPATIBILIDADES.length + 1} className="mapper-empty">
+                      Ningún repuesto tiene más de un auto. Si alguno sirve para varios,
+                      agrégalos acá.
+                    </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
-          {separacion.compatibilidades.length - 1 > COMPAT_VISIBLES && (
-            <p className="mapper-hint">
-              Mostramos las primeras {COMPAT_VISIBLES}; el archivo lleva{' '}
-              {(separacion.compatibilidades.length - 1).toLocaleString('es-CL')}.
-            </p>
-          )}
+
+          <button
+            type="button"
+            className="btn btn-secondary mapper-btn"
+            onClick={() => agregarCompat(primerSku)}
+          >
+            <Plus size={16} /> Agregar un auto
+          </button>
         </section>
       )}
 

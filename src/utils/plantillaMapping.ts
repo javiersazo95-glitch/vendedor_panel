@@ -363,6 +363,14 @@ const UNIVERSAL_TRUTHY = new Set(['si', 'sí', 'true', '1', 'universal', 'x', 'y
  */
 export const CAMPO_AGRUPADO_POR: Record<string, string> = { subcategoria: 'categoria' };
 
+/**
+ * La clave con la que se guarda la corrección de una fila. Es el número de fila del
+ * archivo del vendedor, salvo cuando esa fila trajo varios autos en una celda: ahí cada
+ * auto es una fila distinta del archivo generado y necesita su propia clave.
+ */
+export const claveDeParche = (origen: number, sub = 0): string =>
+  (sub === 0 ? String(origen) : `${origen}:${sub}`);
+
 export interface GrupoPorCompletar {
   /** Valor del campo que agrupa ("Frenos"), del que dependen los valores válidos. */
   clave: string;
@@ -463,6 +471,12 @@ export interface Mapping {
    * repuesto que el vendedor estaba mirando.
    */
   parches?: Record<string, Record<string, string>>;
+  /**
+   * Vehículos que el vendedor agregó a mano en la tabla de compatibilidades del paso 3.
+   * No salen de ninguna fila de su archivo —por eso van aparte de `parches`— y se suman al
+   * final de la hoja `compatibilidades` del archivo generado.
+   */
+  compatibilidadesExtra?: Record<string, string>[];
   /**
    * La hoja trae filas que no son repuestos —subtotales, el total general, el encabezado
    * repetido cada vez que empieza una página— y hay que dejarlas fuera.
@@ -844,6 +858,8 @@ export function buildOfficialAoADetallado(
   cambios: CambioNormalizacion[];
   /** Por cada fila de datos de `aoa`, de qué fila del vendedor salió (base 0). */
   filasOrigen: number[];
+  /** Por cada fila de datos, la clave con la que se guarda su corrección. */
+  clavesParche: string[];
   /** Datos que quedaron vacíos y que el vendedor puede completar por grupo. */
   porCompletar: CampoPorCompletar[];
 } {
@@ -904,6 +920,11 @@ export function buildOfficialAoADetallado(
     row: unknown[];
     /** Índice en el archivo del vendedor (base 0). Sobrevive a que se saquen o dupliquen filas. */
     origen: number;
+    /**
+     * Cuál de los autos de esa fila es, cuando la celda traía varios. Sin esto, corregir
+     * el modelo de un auto se lo cambiaría a todos los que salieron de la misma fila.
+     */
+    sub: number;
     /** Título de la banda que la agrupaba, si la lista viene agrupada por familia. */
     banda: string;
   }
@@ -917,7 +938,7 @@ export function buildOfficialAoADetallado(
       return;
     }
     if (fueraPorTotales.has(i)) return;
-    utiles.push({ row: fila as unknown[], origen: i, banda: bandaActual });
+    utiles.push({ row: fila as unknown[], origen: i, sub: 0, banda: bandaActual });
   });
 
   // Varios vehículos en una celda: la fila se repite una vez por vehículo antes de
@@ -929,16 +950,18 @@ export function buildOfficialAoADetallado(
   const filas: FilaConOrigen[] = idxAplicacion === undefined ? utiles : utiles.flatMap((f) => {
     const vehiculos = separarAplicaciones(String(f.row[idxAplicacion] ?? ''), marcasVehiculo);
     if (vehiculos.length < 2) return [f];
-    return vehiculos.map((vehiculo) => {
+    return vehiculos.map((vehiculo, k) => {
       const copia = [...f.row];
       copia[idxAplicacion] = vehiculo;
-      return { ...f, row: copia };
+      return { ...f, row: copia, sub: k };
     });
   });
 
   const out: (string | number)[][] = [[...columnas]];
   /** Fila del archivo del vendedor (base 0) de la que sale cada fila de `out`. */
   const filasOrigen: number[] = [];
+  /** La clave con la que se corrige cada fila de `out`, que puede no ser única por fila. */
+  const clavesParche: string[] = [];
   /** campo -> grupo -> cuántas filas venían sin el dato, y cuántas se corrigieron sueltas. */
   const huecos = new Map<string, Map<string, { filas: number; propios: number }>>();
 
@@ -1060,7 +1083,9 @@ export function buildOfficialAoADetallado(
       const porCampo = huecos.get(campo) ?? new Map<string, { filas: number; propios: number }>();
       const cuenta = porCampo.get(clave) ?? { filas: 0, propios: 0 };
       cuenta.filas += 1;
-      if (mapping.parches?.[String(fila.origen)]?.[campo] !== undefined) cuenta.propios += 1;
+      if (mapping.parches?.[claveDeParche(fila.origen, fila.sub)]?.[campo] !== undefined) {
+        cuenta.propios += 1;
+      }
       porCampo.set(clave, cuenta);
       huecos.set(campo, porCampo);
       const elegido = mapping.completar?.[campo]?.[clave];
@@ -1087,7 +1112,7 @@ export function buildOfficialAoADetallado(
     // lo más explícito que hizo: le gana a lo deducido, a lo completado por grupo y al
     // valor fijo. Se limpia igual que cualquier celda, para que un "$ 1.000" escrito acá
     // llegue como número al backend.
-    const parche = mapping.parches?.[String(fila.origen)];
+    const parche = mapping.parches?.[claveDeParche(fila.origen, fila.sub)];
     if (parche) {
       for (const [columna, valor] of Object.entries(parche)) {
         // Un parche vacío se aplica igual: es el vendedor diciendo "esta fila va sin dato".
@@ -1105,6 +1130,7 @@ export function buildOfficialAoADetallado(
 
     out.push(columnas.map((key) => cells[key]));
     filasOrigen.push(fila.origen);
+    clavesParche.push(claveDeParche(fila.origen, fila.sub));
   }
 
   const porCompletar: CampoPorCompletar[] = [...huecos.entries()].map(([columna, porGrupo]) => ({
@@ -1120,7 +1146,7 @@ export function buildOfficialAoADetallado(
       .sort((a, b) => b.filas - a.filas || a.clave.localeCompare(b.clave, 'es')),
   }));
 
-  return { aoa: out, cambios, filasOrigen, porCompletar };
+  return { aoa: out, cambios, filasOrigen, clavesParche, porCompletar };
 }
 
 /** Igual que `buildOfficialAoADetallado`, cuando sólo interesa el archivo resultante. */

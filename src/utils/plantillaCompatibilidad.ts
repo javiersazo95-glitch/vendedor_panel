@@ -125,6 +125,11 @@ export interface SeparacionPorSku {
    * después de juntar los códigos repetidos.
    */
   indices: number[];
+  /**
+   * Lo mismo para la hoja `compatibilidades`: de qué fila del AoA salió cada una. Sin esto,
+   * corregir un modelo en esa tabla no tendría dónde guardarse.
+   */
+  indicesCompatibilidades: number[];
 }
 
 /** Campos del repuesto que no deberían cambiar entre las filas de un mismo SKU. */
@@ -145,6 +150,7 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
   const inventario: (string | number)[][] = [[...columnas]];
   const indices: number[] = [];
   const compatibilidades: (string | number)[][] = [[...COLUMNAS_COMPATIBILIDADES]];
+  const indicesCompatibilidades: number[] = [];
   const advertencias: string[] = [];
   const primeraPorSku = new Map<string, (string | number)[]>();
   const diferencias = new Map<string, Set<string>>();
@@ -167,6 +173,7 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
       }
     }
 
+    indicesCompatibilidades.push(i - 1);
     compatibilidades.push([
       col(fila, 'sku_proveedor'),
       col(fila, 'compatibilidad_marca'),
@@ -187,7 +194,7 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
     );
   }
 
-  return { inventario, compatibilidades, advertencias, indices };
+  return { inventario, compatibilidades, advertencias, indices, indicesCompatibilidades };
 }
 
 /**

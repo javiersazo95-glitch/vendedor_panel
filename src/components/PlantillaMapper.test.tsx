@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import * as XLSX from 'xlsx';
 import { PlantillaMapper } from './PlantillaMapper';
 import { ESQUEMA_FALLBACK, PLANTILLA_COLUMNAS, type EsquemaPlantilla } from '../utils/plantillaMapping';
+import { COLUMNAS_COMPATIBILIDADES } from '../utils/plantillaCompatibilidad';
 
 /** Esquema como el que devuelve el backend, con catálogos de verdad. */
 const ESQUEMA_CON_CATALOGOS: EsquemaPlantilla = {
@@ -747,12 +748,61 @@ describe('PlantillaMapper', () => {
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
-    // La segunda hoja se veía sólo al abrir el Excel: ahora está en la pantalla.
-    expect(screen.getByText(/Los otros vehículos de cada repuesto/)).toBeInTheDocument();
-    const tablas = document.querySelectorAll('.mapper-preview.revisada');
-    const compat = tablas[tablas.length - 1];
-    expect(compat.querySelector('tbody')?.textContent).toContain('Nissan');
-    expect(compat.querySelector('tbody')?.textContent).toContain('V16');
+    // La segunda hoja se veía sólo al abrir el Excel: ahora está en la pantalla, y sus
+    // celdas se corrigen como las de arriba.
+    expect(screen.getByText(/Compatibilidades: los demás autos/)).toBeInTheDocument();
+    expect((screen.getByLabelText('Marca del vehículo, auto 1') as HTMLSelectElement).value)
+      .toBe('Nissan');
+    // Sin catálogo de modelos cargado la celda es texto, y el texto que ya está bien se
+    // muestra como texto hasta que se usa.
+    expect(screen.getByTitle(/^Modelo del vehículo, auto 1/).textContent).toBe('V16');
+  });
+
+
+  it('deja agregar un auto a mano y lo escribe en la hoja de compatibilidades', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    // Un archivo sin códigos repetidos: no hay segunda hoja, y aun así el vendedor puede
+    // decir que este repuesto también le sirve a otro auto.
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument();
+
+    clic(/Agregar un auto/);
+    await screen.findByLabelText('Marca del vehículo, auto 1');
+    fireEvent.change(screen.getByLabelText('Marca del vehículo, auto 1'), {
+      target: { value: 'Nissan' },
+    });
+    // La celda viene vacía, así que ya es un campo: no hay que hacerle clic primero.
+    const modelo = screen.getByLabelText('Modelo del vehículo, auto 1');
+    fireEvent.change(modelo, { target: { value: 'V16' } });
+    fireEvent.blur(modelo);
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalled());
+    const wb = await readGeneratedWorkbook(onGenerated.mock.calls[0][0] as File);
+    const compat = XLSX.utils.sheet_to_json(wb.Sheets.compatibilidades, { header: 1, defval: '' });
+    expect(compat[0]).toEqual([...COLUMNAS_COMPATIBILIDADES]);
+    expect(compat[1]).toEqual(['A-1', 'Nissan', 'V16', '', '', '', '']);
+  });
+
+  it('el auto agregado se puede quitar', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    clic(/Agregar un auto/);
+    await screen.findByLabelText('Marca del vehículo, auto 1');
+    fireEvent.click(screen.getByTitle('Quitar este vehículo'));
+    await waitFor(() => expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument());
   });
 
 });
