@@ -9,7 +9,21 @@
  */
 import { useState } from 'react';
 
-import { limiteDeColumna, validarValorFijo } from '../utils/plantillaNormalizacion';
+import {
+  limiteDeColumna,
+  validarValorFijo,
+  type LimiteColumna,
+} from '../utils/plantillaNormalizacion';
+
+/**
+ * Recorta lo que no puede ir en la columna mientras se escribe. Un año son cuatro cifras y
+ * nada más; un precio o un stock admiten el punto y la coma con que se escriben en Chile.
+ */
+const soloLoQueCabe = (texto: string, tipo: LimiteColumna['tipo']): string => {
+  if (tipo === 'anio') return texto.replace(/\D/g, '');
+  if (tipo === 'numero') return texto.replace(/[^\d.,]/g, '');
+  return texto;
+};
 
 interface Props {
   valor: string;
@@ -91,8 +105,9 @@ export const CeldaRevision = ({
 
   // El texto que ya está bien se muestra como texto y se vuelve campo al usarlo. Dentro de
   // un input, un nombre largo se ve cortado y la tabla deja de servir para lo que es: mirar
-  // cómo quedó el archivo.
-  if (!destacada && !editando) {
+  // cómo quedó el archivo. Con un valor que no sirve el campo se queda: si volviera a
+  // texto, lo escrito desaparecería sin decir nada y el vendedor creería que se guardó.
+  if (!destacada && !editando && !error) {
     return (
       <span
         className="mapper-celda-texto"
@@ -121,7 +136,10 @@ export const CeldaRevision = ({
         aria-label={etiqueta}
         aria-invalid={error ? true : undefined}
         autoFocus={editando}
-        onChange={(e) => setBorrador(e.target.value)}
+        // En una columna que el backend lee como número, las letras no llegan a escribirse.
+        // Avisar después de tipearlas es peor que no dejarlas entrar, y el punto y la coma
+        // sí pasan porque un precio se escribe "24.990" o "1.234,50".
+        onChange={(e) => setBorrador(soloLoQueCabe(e.target.value, tipo))}
         // El texto se confirma al salir del campo y no en cada tecla: cada cambio rehace la
         // transformación del archivo completo, y hacerlo por letra se siente pesado con
         // listas largas. Un valor que no sirve no se guarda: se queda a la vista con su

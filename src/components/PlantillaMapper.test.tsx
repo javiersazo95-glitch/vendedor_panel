@@ -666,4 +666,46 @@ describe('PlantillaMapper', () => {
     await waitFor(() => expect((screen.getByLabelText('Marca del repuesto de la fila 2') as HTMLSelectElement).value).toBe('Mann-Filter'));
   });
 
+
+  it('en una columna de números las letras no llegan a escribirse', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla,Brembo,Frenos,4990,10',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // El stock ya está bien, así que se ve como texto hasta que se usa.
+    fireEvent.click(screen.getByTitle(/^Stock de la fila 2/));
+    const campo = screen.getByLabelText('Stock de la fila 2') as HTMLInputElement;
+
+    fireEvent.change(campo, { target: { value: '12abc' } });
+    // Avisar después de tipear las letras es peor que no dejarlas entrar.
+    expect(campo.value).toBe('12');
+    // El punto y la coma sí pasan: un precio se escribe "24.990" o "1.234,50".
+    fireEvent.change(campo, { target: { value: '1.234,50' } });
+    expect(campo.value).toBe('1.234,50');
+  });
+
+  it('un valor que no sirve se queda a la vista, no se borra al salir del campo', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Años',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,2014',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    fireEvent.click(screen.getByTitle(/^Año desde de la fila 2/));
+    const campo = screen.getByLabelText('Año desde de la fila 2') as HTMLInputElement;
+    fireEvent.change(campo, { target: { value: '19' } });
+    fireEvent.blur(campo);
+
+    // Si volviera a texto, lo escrito desaparecería sin decir nada y el vendedor creería
+    // que se guardó. El campo se queda, con su motivo.
+    await waitFor(() => expect(screen.getByText(/año de 4 cifras/)).toBeInTheDocument());
+    expect((screen.getByLabelText('Año desde de la fila 2') as HTMLInputElement).value).toBe('19');
+  });
+
 });
