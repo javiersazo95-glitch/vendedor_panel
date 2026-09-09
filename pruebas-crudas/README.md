@@ -23,7 +23,7 @@ Excel del vendedor.
 | --- | --- | --- |
 | 01 lista de dos columnas | ✅ **Arreglado.** La columna descriptiva va al nombre (obligatorio) y no a la descripción (opcional), y con el interruptor "sacar del nombre" salen la marca y la categoría escritas dentro del texto | 2, 3, 4 |
 | 02 encabezados abreviados | ✅ **Arreglado.** Las seis columnas se reconocen: se sumaron las abreviaturas de mostrador y la primera pasada prueba término por término | 2, 3 |
-| 03 precios sucios | ✅ **Arreglado.** 3 de 5 publicables. Se recorta la unidad (`45.000 c/u`, `3 unid`), `CONSULTAR` pasa a `SOLO_COTIZAR` y `6,990` ya no se lee como 6,99. Lo que queda (`SIN STOCK`, stock vacío) no se puede inventar | 2–6 |
+| 03 precios sucios | ✅ **Arreglado.** 3 de 5 publicables. Se recorta la unidad (`45.000 c/u`, `3 unid`), `CONSULTAR` pasa a `SOLO_COTIZAR` y `6,990` ya no se lee como 6,99. Lo que queda (`SIN STOCK`, stock vacío, un precio con decimales) no se puede inventar | 2–6 |
 | 04 títulos bajo el membrete | ✅ 2 de 2 publicables, ya funcionaba | 6, 7 |
 | 05 subtotales intercalados | ✅ **Arreglado.** 3 de 3 publicables. El subtotal, el total general y el encabezado repetido se reconocen y quedan fuera | 2, 3, 7 |
 | 06 dos tablas apiladas | ⚠️ **Avisado, no arreglado.** Sigue leyéndose sólo la primera tabla, pero el paso 2 dice que la hoja tiene más de una y no deja avanzar | — |
@@ -73,6 +73,30 @@ Excel del vendedor.
 - **Los contadores cuadran.** Al sacar filas, el paso 3 decía "5 repuestos en tu archivo · 3
   se pueden publicar", como si dos hubieran fallado. Ahora las filas que no son repuestos se
   cuentan aparte, y los contadores van en singular cuando va uno.
+- **Un precio o un stock con decimales no se publica.** En pesos chilenos los precios son
+  enteros; un "1.234,50" es casi siempre un error de tipeo, y un stock de 2,5 unidades no
+  existe. Los dos retienen la fila y proponen el entero más cercano.
+
+## Retener o avisar
+
+Un problema que retiene la fila no la publica; uno que avisa la deja pasar. Dónde va cada
+cosa no es obvio, y el criterio quedó así después de discutirlo con un caso concreto:
+
+**Se retiene cuando el dato casi seguro está mal, aunque sea posible.** El precio con
+decimales entró primero como aviso —un decimal es sospechoso, no imposible: puede venir de
+una lista en otra moneda— y terminó como error por quién va a usar esto. Los vendedores del
+panel son gente mayor que no va a revisar una lista de avisos: dan a publicar y siguen. Un
+precio mal publicado se pierde en cada venta hasta que alguien lo note, y corregirlo acá
+cuesta un clic en la tabla. La asimetría manda: molestar de más es barato, publicar mal no.
+
+**Se avisa cuando el dato puede estar bien y sólo hay que mirarlo.** Una marca que no está
+en el catálogo se crea, y eso es legítimo; el panel lo dice y sugiere la parecida, pero no
+frena. Lo mismo con el punto que se leyó como separador de miles: se muestra el número con
+el que va a quedar y el vendedor confirma de un vistazo.
+
+**Y hay una tercera categoría: lo que no se decide.** Cuando faltan datos que ninguna
+conversión puede inventar —el precio, el stock— el paso 2 no deja avanzar, en vez de dejar
+recorrer el asistente entero para llegar a cero publicables.
 
 ## Lo que queda
 
