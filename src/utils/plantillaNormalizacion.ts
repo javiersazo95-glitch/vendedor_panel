@@ -185,7 +185,7 @@ export function agruparCambios(cambios: CambioNormalizacion[], maxEjemplos = 8):
  * Los largos son los de las columnas reales (ProveedorProducto y Repuesto en el backend).
  * ------------------------------------------------------------------------ */
 
-export type TipoDeDato = 'texto' | 'numero' | 'anio';
+export type TipoDeDato = 'texto' | 'numero' | 'entero' | 'anio';
 
 export interface LimiteColumna {
   maxLength: number;
@@ -206,7 +206,9 @@ const LIMITES: Record<string, LimiteColumna> = {
   // le sirve a nadie y engorda el archivo.
   descripcion: { maxLength: 2000, tipo: 'texto' },
   precio: { maxLength: 15, tipo: 'numero' },
-  stock: { maxLength: 9, tipo: 'numero' },
+  // Entero y no "numero": el precio con decimales es sospechoso pero posible, un stock
+  // con decimales no existe. Media pastilla de freno no se puede vender.
+  stock: { maxLength: 9, tipo: 'entero' },
   anio_desde: { maxLength: 4, tipo: 'anio' },
   anio_hasta: { maxLength: 4, tipo: 'anio' },
 };
@@ -234,10 +236,13 @@ export function validarValorFijo(columna: string, valor: string, etiqueta = 'Est
     return `${etiqueta} no puede pasar de ${maxLength} caracteres (escribiste ${texto.length}).`;
   }
 
-  if (tipo === 'numero') {
+  if (tipo === 'numero' || tipo === 'entero') {
     const { numero } = normalizarNumero(texto);
     if (numero === null) return `${etiqueta} tiene que ser un número.`;
     if (numero < 0) return `${etiqueta} no puede ser negativo.`;
+    if (tipo === 'entero' && !Number.isInteger(numero)) {
+      return `${etiqueta} tiene que ser un número entero.`;
+    }
   }
 
   if (tipo === 'anio') {

@@ -21,6 +21,9 @@ import {
  */
 const soloLoQueCabe = (texto: string, tipo: LimiteColumna['tipo']): string => {
   if (tipo === 'anio') return texto.replace(/\D/g, '');
+  // El stock admite el punto de miles ("1.000") pero no la coma: con ella el vendedor
+  // estaría escribiendo un decimal, y de unidades no hay medias.
+  if (tipo === 'entero') return texto.replace(/[^\d.]/g, '');
   if (tipo === 'numero') return texto.replace(/[^\d.,]/g, '');
   return texto;
 };

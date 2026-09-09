@@ -218,3 +218,30 @@ describe('revisarAoA contra los catálogos', () => {
   });
 });
 
+describe('decimales donde no corresponden', () => {
+  it('el precio con decimales avisa, pero se publica', () => {
+    // En pesos los precios son enteros, pero un decimal es sospechoso y no imposible:
+    // retener la fila por una sospecha deja al vendedor sin publicar por algo que quizá
+    // era correcto. Se avisa y él decide.
+    const { filas, publicables, conError } = revisar([filaBase({ precio: '1234.5' })]);
+    expect(conError).toBe(0);
+    expect(publicables).toBe(1);
+    expect(filas[0].problemas[0].severidad).toBe('aviso');
+    expect(filas[0].problemas[0].mensaje).toContain('los precios son enteros');
+  });
+
+  it('el stock con decimales es un error: no se vende media unidad', () => {
+    const { filas, conError } = revisar([filaBase({ stock: '2.5' })]);
+    expect(conError).toBe(1);
+    expect(filas[0].problemas[0]).toEqual({
+      columna: 'stock',
+      severidad: 'error',
+      mensaje: 'Stock no puede tener decimales: "2.5".',
+    });
+  });
+
+  it('un precio entero no dice nada', () => {
+    expect(revisar([filaBase({ precio: '24990' })]).filas[0].problemas).toEqual([]);
+  });
+});
+

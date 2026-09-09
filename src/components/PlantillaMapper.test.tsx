@@ -683,9 +683,15 @@ describe('PlantillaMapper', () => {
     fireEvent.change(campo, { target: { value: '12abc' } });
     // Avisar después de tipear las letras es peor que no dejarlas entrar.
     expect(campo.value).toBe('12');
-    // El punto y la coma sí pasan: un precio se escribe "24.990" o "1.234,50".
-    fireEvent.change(campo, { target: { value: '1.234,50' } });
-    expect(campo.value).toBe('1.234,50');
+    // El stock no admite la coma: de unidades no hay medias.
+    fireEvent.change(campo, { target: { value: '2,5' } });
+    expect(campo.value).toBe('25');
+
+    // El precio sí, porque se escribe "24.990" o "1.234,50".
+    fireEvent.click(screen.getByTitle(/^Precio de la fila 2/));
+    const precio = screen.getByLabelText('Precio de la fila 2') as HTMLInputElement;
+    fireEvent.change(precio, { target: { value: '1.234,50' } });
+    expect(precio.value).toBe('1.234,50');
   });
 
   it('un valor que no sirve se queda a la vista, no se borra al salir del campo', async () => {

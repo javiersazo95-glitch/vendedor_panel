@@ -147,6 +147,18 @@ export function revisarAoA(
         agregar(key, 'error', `"${bruto}" no es un número.`);
       } else if (numero < 0) {
         agregar(key, 'error', `${etiquetaDe(campos, key)} no puede ser negativo.`);
+      } else if (!Number.isInteger(numero)) {
+        // En pesos chilenos los precios son enteros: un decimal casi siempre es un error
+        // de tipeo. Casi siempre, no siempre, así que se avisa y se publica igual; el
+        // vendedor lo corrige en la tabla si no era lo que quería. El resto de las
+        // columnas numéricas sí es un imposible —no se vende media unidad— y no pasa.
+        if (key === 'precio') {
+          agregar(key, 'aviso', `En pesos los precios son enteros: "${bruto}" se va a `
+            + `publicar como ${numero.toLocaleString('es-CL')}. Revisa que sea lo que querías.`);
+        } else {
+          agregar(key, 'error',
+            `${etiquetaDe(campos, key)} no puede tener decimales: "${bruto}".`);
+        }
       } else if (comoMiles) {
         agregar(key, 'aviso', `"${bruto}" se va a publicar como ${numero.toLocaleString('es-CL')}.`);
       }
