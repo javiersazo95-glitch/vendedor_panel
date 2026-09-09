@@ -34,6 +34,12 @@ export interface Problema {
 export interface FilaRevisada {
   /** Número de fila en el Excel del vendedor, para que pueda ir a buscarla. */
   numeroFila: number;
+  /**
+   * Índice de la fila en el archivo leído (base 0). Es la clave con la que se guarda una
+   * corrección hecha sobre esta fila; el número de arriba es para mostrar, éste para
+   * identificar.
+   */
+  clave: number;
   valores: string[];
   problemas: Problema[];
   tieneError: boolean;
@@ -92,9 +98,13 @@ export function revisarAoA(
      * esto el número que se muestra apunta a la fila equivocada.
      */
     numerosDeFila?: number[];
+    /** Índice en el archivo leído de cada fila de datos, para poder corregirla. */
+    clavesDeFila?: number[];
   } = {},
 ): RevisionArchivo {
-  const { maxFilas = 20, primeraFilaArchivo = 2, catalogos, numerosDeFila } = opciones;
+  const {
+    maxFilas = 20, primeraFilaArchivo = 2, catalogos, numerosDeFila, clavesDeFila,
+  } = opciones;
   // Sin catálogos —porque el esquema no respondió— no se revisa nada contra ellos: es
   // preferible no decir nada a inventar un error con una copia local desactualizada.
   const categorias = catalogos?.categorias ?? [];
@@ -211,6 +221,7 @@ export function revisarAoA(
     if (filas.length < maxFilas) {
       filas.push({
         numeroFila: numerosDeFila?.[i - 1] ?? primeraFilaArchivo + i - 1,
+        clave: clavesDeFila?.[i - 1] ?? i - 1,
         valores,
         problemas,
         tieneError,

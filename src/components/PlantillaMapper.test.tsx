@@ -534,4 +534,79 @@ describe('PlantillaMapper', () => {
     expect((aoa[2] as string[])[sub] ?? '').toBe('');
   });
 
+
+  it('corrige una celda suelta desde la tabla, sin tocar las demás', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    // Dos repuestos de frenos: uno es pastilla y el otro no. Completar por grupo les pone
+    // lo mismo a los dos, y esta corrección es la que arregla al que quedó mal.
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla delantera,Brembo,Frenos,4990,10',
+      'A-2,Disco ventilado,Brembo,Frenos,9990,4',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    fireEvent.change(screen.getByLabelText('Subcategoría para Frenos'), {
+      target: { value: 'Pastillas' },
+    });
+    // El disco quedó como "Pastillas" porque el grupo es toda la categoría Frenos. La
+    // celda se puede afinar: dejarla sin dato es una decisión, no un olvido.
+    fireEvent.change(screen.getByLabelText('Subcategoría de la fila 3'), {
+      target: { value: '' },
+    });
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalled());
+    const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
+    const sub = (aoa[0] as string[]).indexOf('subcategoria');
+    expect((aoa[1] as string[])[sub]).toBe('Pastillas');
+    expect((aoa[2] as string[])[sub] ?? '').toBe('');
+  });
+
+  it('la corrección de una celda le gana a lo completado por grupo', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla delantera,Brembo,Frenos,4990,10',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // La celda viene vacía, así que es editable de entrada.
+    fireEvent.change(screen.getByLabelText('Subcategoría de la fila 2'), {
+      target: { value: 'Pastillas' },
+    });
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalled());
+    const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
+    const sub = (aoa[0] as string[]).indexOf('subcategoria');
+    expect((aoa[1] as string[])[sub]).toBe('Pastillas');
+  });
+
+  it('corrige un número que la revisión no pudo leer', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla delantera,Brembo,Frenos,4990,SIN STOCK',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    expect(screen.getByText(/"SIN STOCK" no es un número/)).toBeInTheDocument();
+
+    const celda = screen.getByLabelText('Stock de la fila 2');
+    fireEvent.change(celda, { target: { value: '7' } });
+    fireEvent.blur(celda);
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalled());
+    const aoa = await readGeneratedFile(onGenerated.mock.calls[0][0] as File);
+    const stock = (aoa[0] as string[]).indexOf('stock');
+    expect(String((aoa[1] as (string | number)[])[stock])).toBe('7');
+  });
+
 });

@@ -4363,3 +4363,22 @@ h1, h2, h3, h4, h5, h6 {
 .inventory-grid-content { display: grid; gap: .35rem; padding: .8rem .85rem .7rem; }.grid-sku { overflow: hidden; color: hsl(var(--primary)); font-family: var(--font-mono); font-size: .67rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }.inventory-grid-content h3 { overflow: hidden; min-height: 2.35em; margin: 0; color: var(--text-primary); font-size: .86rem; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }.grid-details { display: flex; align-items: baseline; justify-content: space-between; gap: .4rem; color: var(--text-secondary); font-size: .72rem; }.grid-details strong { overflow: hidden; color: var(--text-primary); font-size: .84rem; text-overflow: ellipsis; white-space: nowrap; }
 .inventory-grid-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem; margin-top: auto; padding: .65rem .85rem .8rem; border-top: 1px solid var(--border-color); }.grid-action { display: inline-flex; justify-content: center; align-items: center; min-height: 32px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); cursor: pointer; }.grid-action:hover { background: #f1f5f9; color: hsl(var(--primary)); }.grid-action-top { color: #a27212; }.grid-action-top:hover { border-color: #eed273; background: #fff9e7; color: #8a5b00; }.grid-action-danger:hover { border-color: #fca5a5; background: #fef2f2; color: #dc2626; }.inventory-grid-empty { display: grid; justify-items: center; gap: .55rem; padding: 3rem; color: var(--text-secondary); }.inventory-grid-empty h3, .inventory-grid-empty p { margin: 0; }
 @media (max-width: 1280px) { .inventory-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } } @media (max-width: 900px) { .inventory-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (max-width: 560px) { .inventory-view-toolbar { align-items: flex-start; flex-direction: column; }.inventory-grid { grid-template-columns: 1fr; }.inventory-grid-image { height: 180px; } }
+
+/* --- Celda corregible de la tabla del paso 3 --- */
+/* Se distingue de una celda normal por el fondo, no por un borde grueso: la tabla se
+   sigue leyendo de un vistazo y lo editable salta igual. */
+.mapper-celda-edit {
+  width: 100%;
+  min-width: 120px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  border: 1px dashed rgba(79, 70, 229, 0.45);
+  background: rgba(79, 70, 229, 0.05);
+  border-radius: 6px;
+}
+.mapper-celda-edit:focus {
+  border-style: solid;
+  background: #fff;
+}
+.mapper-preview.revisada td:has(.mapper-celda-edit) { padding: 0.2rem 0.3rem; }

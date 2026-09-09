@@ -34,6 +34,7 @@ import {
   type EsquemaPlantilla,
 } from '../utils/plantillaMapping';
 import { fichaDesdeFila, revisarAoA, type FilaRevisada } from '../utils/plantillaRevision';
+import { CeldaRevision } from './CeldaRevision';
 import {
   agruparCambios,
   limiteDeColumna,
@@ -329,6 +330,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         primeraFilaArchivo: filaEncabezados + 2,
         catalogos: esquema.catalogos,
         numerosDeFila: origenes.map((i) => (filasOriginales[i] ?? i) + 1),
+        clavesDeFila: origenes,
       }),
       cambios: hechos,
     };
@@ -345,12 +347,30 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
    */
   const columnasVisibles = useMemo(() => {
     if (!revision) return [];
-    return revision.columnas.filter((col, i) =>
-      revision.filas.some((f) => (f.valores[i] ?? '').trim() !== '' || f.problemas.some((p) => p.columna === col)),
-    );
-  }, [revision]);
+    const completables = new Set(porCompletar.map((c) => c.columna));
+    return revision.columnas.filter((col, i) => completables.has(col) || revision.filas.some(
+      (f) => (f.valores[i] ?? '').trim() !== '' || f.problemas.some((p) => p.columna === col),
+    ));
+  }, [revision, porCompletar]);
 
   /** El catálogo real que le corresponde a una columna, o vacío si no tiene. */
+  /**
+   * Qué se puede elegir en una celda de la tabla. La subcategoría depende de la categoría
+   * **de esa fila**: ofrecer las de motor a un repuesto de frenos es ruido y el backend
+   * las rechaza igual. Lo que no tiene lista es texto libre.
+   */
+  const opcionesDeCelda = useCallback((columna: string, categoriaDeLaFila: string): string[] => {
+    if (columna === 'subcategoria') {
+      return esquema.catalogos.subcategoriasPorCategoria[categoriaDeLaFila] ?? [];
+    }
+    const campo = campos.find((c) => c.key === columna);
+    if (campo?.enumHint?.length) return campo.enumHint;
+    if (columna === 'categoria') return esquema.catalogos.categorias;
+    if (columna === 'marca_repuesto') return esquema.catalogos.marcasRepuesto;
+    if (columna === 'compatibilidad_marca') return esquema.catalogos.marcasVehiculo;
+    return [];
+  }, [esquema, campos]);
+
   const catalogoDe = useMemo(() => {
     const subcategorias = todasLasSubcategorias(esquema.catalogos.subcategoriasPorCategoria);
     return (key: string): string[] => {
@@ -586,6 +606,22 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   const setDividirAnios = (valor: boolean) => {
     setMapping((prev) => (prev ? { ...prev, dividirAnios: valor } : prev));
+  };
+
+  /**
+   * Una corrección sobre una celda de la tabla del paso 3.
+   *
+   * Dejar la celda vacía también es una corrección y se guarda como tal: si borrarla
+   * significara "olvida esto", el valor que pusimos al completar por grupo la volvería a
+   * llenar y el vendedor no tendría cómo dejar una fila sin el dato.
+   */
+  const setParche = (clave: number, columna: string, valor: string) => {
+    setMapping((prev) => {
+      if (!prev) return prev;
+      const parches = { ...(prev.parches ?? {}) };
+      parches[String(clave)] = { ...(parches[String(clave)] ?? {}), [columna]: valor };
+      return { ...prev, parches };
+    });
   };
 
   /** Lo que el vendedor elige para un grupo entero desde el paso 3. */
@@ -1886,15 +1922,38 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               </thead>
               <tbody>
                 {revision.filas.map((fila: FilaRevisada) => {
+                  const completables = new Set(porCompletar.map((x) => x.columna));
                   const porColumna = new Map(fila.problemas.map((p) => [p.columna, p]));
+                  const iCategoria = revision.columnas.indexOf('categoria');
+                  const categoriaDeLaFila = iCategoria >= 0
+                    ? (fila.valores[iCategoria] ?? '').trim()
+                    : '';
                   return (
                     <tr key={fila.numeroFila} className={fila.tieneError ? 'con-error' : fila.problemas.length ? 'con-aviso' : ''}>
                       <th scope="row">{fila.numeroFila}</th>
                       {columnasVisibles.map((c) => {
                         const problema = porColumna.get(c);
+                        const valor = fila.valores[revision.columnas.indexOf(c)] ?? '';
+                        const meta = campos.find((campo) => campo.key === c);
+                        // Se corrige lo que falta, lo que la revisión marcó, y lo que
+                        // pusimos nosotros al completar por grupo: ahí el valor es el de
+                        // toda la categoría y puede no calzarle a esta fila en particular.
+                        // Lo que el vendedor escribió en su Excel se deja como está.
+                        const editable = !valor || Boolean(problema) || completables.has(c);
                         return (
-                          <td key={c} className={problema ? `celda-${problema.severidad}` : ''} title={problema?.mensaje}>
-                            {fila.valores[revision.columnas.indexOf(c)]}
+                          <td
+                            key={c}
+                            className={problema ? `celda-${problema.severidad}` : ''}
+                            title={problema?.mensaje}
+                          >
+                            {editable ? (
+                              <CeldaRevision
+                                valor={valor}
+                                opciones={opcionesDeCelda(c, categoriaDeLaFila)}
+                                etiqueta={`${meta?.label ?? c} de la fila ${fila.numeroFila}`}
+                                onCambio={(nuevo) => setParche(fila.clave, c, nuevo)}
+                              />
+                            ) : valor}
                           </td>
                         );
                       })}

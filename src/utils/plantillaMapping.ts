@@ -452,6 +452,13 @@ export interface Mapping {
    */
   completar?: Record<string, Record<string, string>>;
   /**
+   * Correcciones de una celda suelta, hechas sobre la tabla del paso 3. La clave es la
+   * fila del archivo del vendedor (base 0), no la posición en el archivo generado: entre
+   * medio se sacan filas y se duplican, y una corrección tiene que seguir apuntando al
+   * repuesto que el vendedor estaba mirando.
+   */
+  parches?: Record<string, Record<string, string>>;
+  /**
    * La hoja trae filas que no son repuestos —subtotales, el total general, el encabezado
    * repetido cada vez que empieza una página— y hay que dejarlas fuera.
    */
@@ -1044,6 +1051,21 @@ export function buildOfficialAoADetallado(
       .filter(Boolean);
     const bloques = [cells.descripcion, extraLines.join('\n')].filter(Boolean);
     cells.descripcion = bloques.join('\n\n');
+
+    // Lo que el vendedor corrigió a mano en la tabla del paso 3. Va al final porque es
+    // lo más explícito que hizo: le gana a lo deducido, a lo completado por grupo y al
+    // valor fijo. Se limpia igual que cualquier celda, para que un "$ 1.000" escrito acá
+    // llegue como número al backend.
+    const parche = mapping.parches?.[String(fila.origen)];
+    if (parche) {
+      for (const [columna, valor] of Object.entries(parche)) {
+        // Un parche vacío se aplica igual: es el vendedor diciendo "esta fila va sin dato".
+        if (!columnas.includes(columna)) continue;
+        const { valor: limpio, cambio } = normalizarCelda(columna, valor);
+        cells[columna] = limpio;
+        if (cambio) cambios.push(cambio);
+      }
+    }
 
     // Blanqueo universal.
     if (UNIVERSAL_TRUTHY.has(normalizeHeader(cells.compatibilidad_general ?? ''))) {
