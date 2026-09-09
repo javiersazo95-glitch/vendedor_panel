@@ -20,6 +20,7 @@ import {
   requiereValorEnPanel,
 } from './plantillaMapping';
 import { separarPorSku } from './plantillaCompatibilidad';
+import { detectarSegundaTabla } from './plantillaFilas';
 import { revisarAoA } from './plantillaRevision';
 
 /** El camino que recorre el wizard solo, antes de que el vendedor corrija nada. */
@@ -153,6 +154,28 @@ describe('archivos crudos: lo que ya funciona', () => {
     expect(r.revision.publicables).toBe(3);
   });
 
+  it('usa la fila de título como categoría de los repuestos que vienen debajo', () => {
+    const r = leerComoElPanel('07-categoria-como-banda', { usarBandasComoCategoria: true });
+    expect(r.oficial.length - 1).toBe(3);
+    // El título va escrito como en la lista impresa ("FRENOS") y sale con el nombre del
+    // catálogo: el backend ignora mayúsculas pero no tildes.
+    expect(valorEn(r.oficial, 1, 'categoria')).toBe('Frenos');
+    expect(valorEn(r.oficial, 3, 'categoria')).toBe('Filtros');
+    expect(r.revision.publicables).toBe(3);
+    expect(r.revision.conError).toBe(0);
+  });
+
+  it('deja fuera los subtotales y los títulos repetidos a mitad de tabla', () => {
+    const crudo = leerComoElPanel('05-subtotales');
+    // Seis filas de datos, de las que sólo tres son repuestos.
+    expect(crudo.rows.length).toBe(6);
+
+    const r = leerComoElPanel('05-subtotales', { quitarFilasDeTotales: true });
+    expect(r.oficial.length - 1).toBe(3);
+    expect(r.revision.publicables).toBe(3);
+    expect(r.revision.conError).toBe(0);
+  });
+
   it('reconoce los encabezados abreviados a mano', () => {
     const r = leerComoElPanel('02-nombres-raros');
     // "Cod. Art.", "Detalle", "Mca.", "P.U.", "Exist." y "Rubro": las seis.
@@ -199,39 +222,25 @@ describe('archivos crudos: lo que ya funciona', () => {
 });
 
 describe('archivos crudos: lo que todavía falla', () => {
-  it('GAP: los subtotales y los títulos repetidos se leen como repuestos', () => {
-    const r = leerComoElPanel('05-subtotales');
-    expect(r.rows.length).toBe(6);
-    // 3 repuestos de verdad; las otras 3 filas son subtotal, total y el encabezado repetido.
-    expect(r.revision.publicables).toBe(3);
-    expect(r.revision.conError).toBe(3);
-    expect(valorEn(r.oficial, 4, 'precio')).toBe('precio');
-  });
-
-  it('GAP: con dos tablas apiladas sólo se lee la primera y la segunda se desalinea', () => {
+  it('GAP: con dos tablas apiladas sólo se lee la primera, pero ahora se avisa', () => {
     const r = leerComoElPanel('06-dos-tablas');
-    // Los títulos de la segunda tabla ("codigo", "producto", "valor"…) entran como datos, y
-    // su columna extra "observacion" se pierde: la hoja se lee con las 4 columnas de arriba.
+    // Sigue leyéndose mal —la segunda tabla tiene otras columnas y no hay forma de
+    // encajarlas—, pero el paso 2 lo dice en vez de dejar que el vendedor lo descubra.
+    const encabezado: string[] = [];
+    for (const c of r.cols) encabezado[c.index] = c.rawHeader;
+    const segunda = detectarSegundaTabla(r.rows, encabezado);
+    expect(segunda?.titulos).toEqual(['codigo', 'producto', 'valor', 'cantidad', 'observacion']);
     expect(r.cols.length).toBe(4);
-    expect(valorEn(r.oficial, 4, 'precio')).toBe('valor');
     expect(r.revision.publicables).toBe(0);
   });
 
-  it('GAP: la categoría escrita como fila de banda no llega a ninguna columna', () => {
-    const r = leerComoElPanel('07-categoria-como-banda');
-    expect(r.faltanObligatorios).toEqual(['categoria']);
-    // Las bandas "FRENOS" y "FILTROS" además se cuentan como dos repuestos rotos.
-    expect(r.rows.length).toBe(5);
-    expect(r.revision.publicables).toBe(0);
-  });
-
-  it('GAP: al archivo pesimista sólo le queda faltando la categoría, y el subtotal', () => {
-    const r = leerComoElPanel('10-todo-junto');
+  it('GAP: al archivo pesimista sólo le queda faltando la categoría', () => {
+    const r = leerComoElPanel('10-todo-junto', { quitarFilasDeTotales: true });
     expect(r.filaEncabezados).toBe(2);
-    // Los encabezados abreviados ya se reconocen; la categoría no está en ninguna columna.
+    // Los encabezados abreviados ya se reconocen y el subtotal queda fuera; la categoría
+    // no está en ninguna columna ni en el nombre, y "sin stock" no es un número.
     expect(r.faltanEnElPaso2).toEqual(['categoria']);
-    // La fila del subtotal se sigue leyendo como un repuesto roto.
+    expect(r.oficial.length - 1).toBe(2);
     expect(r.revision.publicables).toBe(0);
-    expect(r.revision.conError).toBe(3);
   });
 });

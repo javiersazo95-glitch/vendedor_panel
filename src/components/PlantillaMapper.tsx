@@ -8,6 +8,7 @@ import {
   SECCIONES_MAPPER,
   camposDesdeEsquema,
   autoDetectMapping,
+  filasNoRepuesto,
   reconcileMapping,
   requiereValorEnPanel,
   buildOfficialAoA,
@@ -40,6 +41,7 @@ import {
   validarValorFijo,
 } from '../utils/plantillaNormalizacion';
 import { buscarEnTexto } from '../utils/plantillaCatalogos';
+import { detectarBandas, detectarSegundaTabla } from '../utils/plantillaFilas';
 import { fotosPorSku, tipoColumnaFotos, type TipoColumnaFotos } from '../utils/plantillaFotos';
 import {
   detectarSkusRepetidos,
@@ -446,6 +448,38 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   }, [mapping, userCols, userRows]);
 
   /**
+   * ¿Más abajo empieza otra tabla? No hay interruptor: la segunda tabla tiene otras
+   * columnas y no se puede leer con los títulos de arriba. Lo único que corresponde es
+   * avisarlo antes de que el vendedor recorra el asistente con medio archivo mal leído.
+   */
+  const segundaTabla = useMemo(() => {
+    const encabezado: string[] = [];
+    for (const col of userCols) encabezado[col.index] = col.rawHeader;
+    return detectarSegundaTabla(userRows, encabezado);
+  }, [userCols, userRows]);
+
+  /** ¿La hoja agrupa los repuestos con una fila de título en vez de una columna? */
+  const bandas = useMemo(() => {
+    if (!mapping || mapping.oficial.categoria) return null;
+    const encontradas = detectarBandas(userRows, userCols.length);
+    if (encontradas.length === 0) return null;
+    return { total: encontradas.length, titulos: encontradas.map((b) => b.titulo) };
+  }, [mapping, userCols, userRows]);
+
+  /** ¿La hoja trae subtotales, totales o el encabezado repetido entre los repuestos? */
+  const filasDeTotales = useMemo(() => {
+    if (!mapping) return null;
+    const fuera = filasNoRepuesto(userRows, userCols, mapping);
+    if (fuera.length === 0) return null;
+    return {
+      total: fuera.length,
+      totales: fuera.filter((f) => f.motivo === 'totales').length,
+      encabezados: fuera.filter((f) => f.motivo === 'encabezado').length,
+      ejemplo: fuera[0].texto,
+    };
+  }, [mapping, userCols, userRows]);
+
+  /**
    * ¿El nombre del repuesto trae escrita la marca o la categoría? Es la salida de la
    * lista de dos columnas —código y descripción— donde esos datos existen pero no tienen
    * columna propia.
@@ -497,7 +531,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   const setBandera = (
     clave: 'parsearAplicacion' | 'agruparPorSku' | 'dividirAnios' | 'separarAplicaciones'
-      | 'deducirDelNombre',
+      | 'deducirDelNombre' | 'quitarFilasDeTotales' | 'usarBandasComoCategoria',
     valor: boolean,
   ) => {
     setMapping((prev) => (prev ? { ...prev, [clave]: valor } : prev));
@@ -526,6 +560,16 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     parcial?: boolean;
   } => {
     if (!mapping) return { activo: false, descripcion: '' };
+
+    // Categoría sacada de las filas de título que agrupan la lista.
+    if (key === 'categoria' && mapping.usarBandasComoCategoria && bandas) {
+      return {
+        activo: true,
+        descripcion: `Se toma de las ${bandas.total} filas de título que agrupan tu lista`,
+        ejemplo: bandas.titulos[0],
+        parcial: true,
+      };
+    }
 
     // Marca y categoría sacadas del nombre del repuesto.
     if (mapping.deducirDelNombre && datosEnElNombre) {
@@ -607,7 +651,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     }
 
     return { activo: false, descripcion: '' };
-  }, [mapping, userCols, userRows, columnaAplicacion, datosEnElNombre]);
+  }, [mapping, userCols, userRows, columnaAplicacion, datosEnElNombre, bandas]);
 
   const counts = useMemo(() => {
     if (!mapping) return { asignadas: 0, sinAsignar: 0, aDescripcion: 0, ignoradas: 0 };
@@ -959,6 +1003,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       Boolean(columnaAplicacion),
       Boolean(aplicacionesMultiples),
       Boolean(datosEnElNombre),
+      Boolean(filasDeTotales),
+      Boolean(bandas),
       Boolean(columnaFotos),
       Boolean(columnaAniosConRangos),
     ].filter(Boolean).length;
@@ -988,6 +1034,17 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           </div>
         )}
         {parseError && <div className="mapper-alert error"><AlertTriangle size={15} /> {parseError}</div>}
+        {segundaTabla && (
+          <div className="mapper-alert warn">
+            <AlertTriangle size={15} />
+            <span>
+              Parece que tu hoja tiene <b>más de una tabla</b>: más abajo empiezan otros
+              títulos ({segundaTabla.titulos.slice(0, 4).join(', ')}). Sólo vamos a leer la
+              primera; lo de abajo va a salir mal porque no tiene las mismas columnas.
+              Conviene dejar cada tabla en su propia hoja y subirlas de a una.
+            </span>
+          </div>
+        )}
         {bigFile && (
           <div className="mapper-alert info">
             Archivo grande ({plural(userRows.length, 'fila', 'filas')}): generar el Excel puede
@@ -1085,6 +1142,45 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                     + `${columnaAplicacion.partes.anioDesde ? ` · ${columnaAplicacion.partes.anioDesde}${columnaAplicacion.partes.anioHasta ? `-${columnaAplicacion.partes.anioHasta}` : ''}` : ''}`
                   : ''}
                 . Así el repuesto aparece cuando alguien busca por su auto.
+              </span>
+            </label>
+          )}
+
+          {bandas && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Usar las filas de titulo como categoria"
+                checked={mapping.usarBandasComoCategoria ?? false}
+                onChange={(e) => setBandera('usarBandasComoCategoria', e.target.checked)}
+              />
+              <span>
+                <b>Tu lista agrupa los repuestos con filas de título</b>{' '}
+                ({bandas.titulos.slice(0, 3).join(', ')}
+                {bandas.total > 3 ? ' y ' + (bandas.total - 3) + ' más' : ''}), y no tiene
+                columna de categoría. Usamos cada título como la categoría de los repuestos
+                que vienen debajo, y la fila del título no se publica.
+              </span>
+            </label>
+          )}
+
+          {filasDeTotales && (
+            <label className="mapper-switch">
+              <input
+                type="checkbox"
+                aria-label="Dejar fuera las filas que no son repuestos"
+                checked={mapping.quitarFilasDeTotales ?? false}
+                onChange={(e) => setBandera('quitarFilasDeTotales', e.target.checked)}
+              />
+              <span>
+                <b>
+                  Tu lista trae {plural(filasDeTotales.total, 'fila que no es un repuesto', 'filas que no son repuestos')}
+                </b>
+                {filasDeTotales.totales > 0 && filasDeTotales.encabezados > 0
+                  ? ' (subtotales y los títulos repetidos a mitad de tabla)'
+                  : filasDeTotales.totales > 0 ? ' (subtotales o totales)' : ' (los títulos repetidos a mitad de tabla)'}
+                {filasDeTotales.ejemplo ? `, como "${filasDeTotales.ejemplo.slice(0, 45)}"` : ''}
+                . Las dejamos fuera para que no aparezcan como repuestos con problemas.
               </span>
             </label>
           )}

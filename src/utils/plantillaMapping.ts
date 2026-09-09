@@ -5,6 +5,13 @@ import {
 } from './plantillaNormalizacion';
 import { buscarEnCatalogo, buscarEnTexto } from './plantillaCatalogos';
 import { parsearAplicacion, separarAplicaciones } from './plantillaCompatibilidad';
+import {
+  detectarBandas,
+  detectarFilasNoRepuesto,
+  quitarFilasNoRepuesto,
+  repartirBandas,
+  type FilaDescartada,
+} from './plantillaFilas';
 import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
 
 /**
@@ -416,6 +423,16 @@ export interface Mapping {
    */
   deducirDelNombre?: boolean;
   /**
+   * La hoja trae filas que no son repuestos —subtotales, el total general, el encabezado
+   * repetido cada vez que empieza una página— y hay que dejarlas fuera.
+   */
+  quitarFilasDeTotales?: boolean;
+  /**
+   * La categoría está escrita como una fila de título que agrupa a las de abajo ("FRENOS"
+   * y debajo los repuestos de frenos), en vez de en una columna.
+   */
+  usarBandasComoCategoria?: boolean;
+  /**
    * El archivo repite el mismo SKU una vez por vehículo. En vez de tratarlos como
    * duplicados —que el backend rechaza— se convierten en un repuesto con varias
    * compatibilidades, en la hoja `compatibilidades` de la plantilla.
@@ -444,6 +461,24 @@ export function requiereValorEnPanel(campo: CampoMeta, mapping: Mapping): boolea
   // Con una columna de tipo de precio la decisión es fila por fila y la toma el paso 3.
   if (mapping.oficial.tipo_precio) return false;
   return (mapping.defaults?.tipo_precio ?? '').toUpperCase() !== 'SOLO_COTIZAR';
+}
+
+/**
+ * Las filas de la hoja que no son repuestos, según el mapeo actual. Vive acá porque es el
+ * único lugar que sabe qué columna del vendedor quedó como código.
+ */
+export function filasNoRepuesto(
+  rows: unknown[][],
+  userCols: UserColumn[],
+  mapping: Mapping,
+): FilaDescartada[] {
+  const encabezado: string[] = [];
+  const indicesCodigo: number[] = [];
+  for (const col of userCols) {
+    encabezado[col.index] = col.rawHeader;
+    if (mapping.oficial.sku_proveedor === col.id) indicesCodigo.push(col.index);
+  }
+  return detectarFilasNoRepuesto(rows, encabezado, indicesCodigo);
 }
 
 /** Letra de columna estilo Excel (0 -> A, 26 -> AA). */
@@ -784,13 +819,29 @@ export function buildOfficialAoADetallado(
     return table[value] ?? value;
   };
 
+  // Las bandas se reparten antes que nada: son filas de la hoja original y hay que
+  // leerlas en su posición, antes de que se saque o se duplique ninguna otra. El título
+  // viaja en una celda extra al final, en un índice que ninguna columna del vendedor usa.
+  const idxBanda = userCols.reduce((max, c) => Math.max(max, c.index), -1) + 1;
+  const filasSinBandas = mapping.usarBandasComoCategoria
+    ? repartirBandas(rows, detectarBandas(rows, userCols.length), idxBanda)
+    : rows;
+
+  // Las filas que no son repuestos salen después: nada de lo que viene luego tiene
+  // sentido sobre un subtotal, y expandirlo o limpiarlo sería trabajo perdido.
+  const filasUtiles = mapping.quitarFilasDeTotales
+    ? quitarFilasNoRepuesto(
+      filasSinBandas, filasNoRepuesto(filasSinBandas, userCols, mapping),
+    )
+    : filasSinBandas;
+
   // Varios vehículos en una celda: la fila se repite una vez por vehículo antes de
   // transformarla, así cada copia recorre el resto del pipeline como una fila normal.
   const colAplicacion = mapping.separarAplicaciones
     ? mapping.oficial.compatibilidad_modelo ?? mapping.oficial.compatibilidad_marca ?? null
     : null;
   const idxAplicacion = colAplicacion ? idToIndex.get(colAplicacion) : undefined;
-  const filas = idxAplicacion === undefined ? rows : rows.flatMap((raw) => {
+  const filas = idxAplicacion === undefined ? filasUtiles : filasUtiles.flatMap((raw) => {
     const row = raw as unknown[];
     const vehiculos = separarAplicaciones(String(row[idxAplicacion] ?? ''), marcasVehiculo);
     if (vehiculos.length < 2) return [row];
@@ -855,6 +906,17 @@ export function buildOfficialAoADetallado(
         cambios.push({ columna: key, antes: cells[key], despues: canonico });
         cells[key] = canonico;
       }
+    }
+
+    // El título de la banda es la categoría de todas las filas que venían abajo. Va
+    // antes que la deducción por nombre: lo que el vendedor agrupó a mano manda sobre lo
+    // que nosotros creamos leer en el texto.
+    if (mapping.usarBandasComoCategoria && !cells.categoria) {
+      const titulo = String(row[idxBanda] ?? '').trim();
+      // El título viene escrito como en una lista impresa, en mayúsculas y sin tildes. Se
+      // escribe con el nombre del catálogo porque el backend busca ignorando mayúsculas
+      // pero NO tildes: "SUSPENSION" no encuentra a "Suspensión" y la fila se rechaza.
+      if (titulo) cells.categoria = buscarEnCatalogo(titulo, catalogos.categorias) ?? titulo;
     }
 
     // Marca y categoría escondidas en el nombre. Van antes que el valor fijo: lo que

@@ -21,14 +21,14 @@ empieza a fallar es porque arreglamos (o rompimos) algo, y hay que actualizarlo 
 | 02 encabezados abreviados | ✅ **Arreglado.** Las seis columnas se reconocen: se sumaron las abreviaturas de mostrador y la primera pasada prueba término por término |
 | 03 precios sucios | ✅ **Arreglado.** 3 de 5 publicables. Se recorta la unidad (`45.000 c/u`, `3 unid`), `CONSULTAR` pasa a `SOLO_COTIZAR` y `6,990` ya no se lee como 6,99. Lo que queda (`SIN STOCK`, stock vacío) no se puede inventar |
 | 04 títulos bajo el membrete | ✅ 2 de 2 publicables, ya funcionaba |
-| 05 subtotales intercalados | ⚠️ 3 de 6. El subtotal, el total y el encabezado repetido se leen como repuestos rotos |
-| 06 dos tablas apiladas | ❌ 0 publicables. Sólo se lee la primera tabla; la segunda se desalinea y pierde su columna extra |
-| 07 categoría como banda | ❌ 0 publicables. La categoría no está en ninguna columna y las bandas se cuentan como repuestos |
+| 05 subtotales intercalados | ✅ **Arreglado.** 3 de 3 publicables. El subtotal, el total general y el encabezado repetido se reconocen y quedan fuera |
+| 06 dos tablas apiladas | ⚠️ **Avisado, no arreglado.** Sigue leyéndose sólo la primera tabla, pero el paso 2 dice que la hoja tiene más de una y sugiere separarlas |
+| 07 categoría como banda | ✅ **Arreglado.** 3 de 3 publicables. Cada fila de título es la categoría de los repuestos que vienen debajo, escrita con el nombre del catálogo |
 | 08 sin precio ni stock | ✅ **Arreglado.** El paso 2 exige el precio además de los obligatorios del esquema, y ofrece `SOLO_COTIZAR` como salida en vez de obligar a inventar un precio |
 | 09 varios autos por celda | ✅ **Arreglado.** Con el interruptor "varios autos en la misma celda" se publica un repuesto con una compatibilidad por auto; sin activarlo, la revisión avisa en vez de pasar en verde |
-| 10 todo junto | ⚠️ 0 publicables, pero ya sólo por la categoría (que no está en ninguna columna) y por la fila de subtotal |
+| 10 todo junto | ⚠️ 0 publicables, pero ya sólo porque la categoría no está en ninguna parte y por un "sin stock" que no es número |
 
-**6 arreglados, 1 que ya andaba, 3 pendientes.**
+**8 arreglados, 1 que ya andaba, 1 avisado.**
 
 ## Qué se arregló
 
@@ -48,15 +48,28 @@ empieza a fallar es porque arreglamos (o rompimos) algo, y hay que actualizarlo 
   confundirse (una marca de vehículo dentro del nombre es el auto, no quien fabricó la
   pieza); cuando el empate no se puede romper, no se declara nada y lo completa el vendedor
   con un valor común.
+- **Filas que no son repuestos.** Los subtotales, el total general y el encabezado repetido
+  cada vez que empieza una página se reconocen y quedan fuera. El código es lo que los
+  delata: la etiqueta del subtotal se escribe donde va el nombre, así que el nombre no
+  sirve para distinguirlos, pero un subtotal nunca trae código.
+- **Datos escritos como estructura.** Una fila de título que agrupa ("FRENOS" y debajo los
+  repuestos de frenos) pasa a ser la categoría de las filas que vienen abajo. Lo que quede
+  arriba de la primera banda se queda sin categoría: no hay título que le corresponda y
+  prestarle el siguiente sería inventar.
 - **Avisar antes, no después.** El paso 2 ya no deja avanzar sin precio, que era la causa de
-  recorrer el asistente entero para llegar a cero publicables.
+  recorrer el asistente entero para llegar a cero publicables, y avisa cuando la hoja trae
+  más de una tabla.
 
 ## Lo que queda
 
-Los tres pendientes (05, 06, 07) piden entender la **estructura** de la hoja, no sólo los
-valores: distinguir una fila de subtotal de un repuesto, ver que más abajo empieza otra
-tabla, o darse cuenta de que una fila de una sola celda es el título de un grupo. Conviene
-mirarlos recién con archivos de vendedores reales en la mano.
+**Dos tablas apiladas en una hoja (06) no se arregla, se avisa.** La segunda tabla trae
+otras columnas, en otro orden y a veces una de más: no hay forma de leerla con los títulos
+de arriba sin inventar a qué campo va cada dato. Se detecta y el paso 2 lo dice, con la
+salida concreta —dejar cada tabla en su propia hoja y subirlas de a una—, que es mejor que
+adivinar y publicar mal la mitad del archivo.
+
+De ahí en adelante conviene esperar archivos de vendedores reales antes de seguir
+afinando: todo lo que sigue serían casos imaginados por nosotros.
 
 ## Pendiente fuera de este repo
 
