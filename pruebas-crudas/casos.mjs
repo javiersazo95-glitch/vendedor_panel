@@ -161,4 +161,30 @@ export const CASOS_CRUDOS = [
       ['AM-045', 'Amortiguador trasero', 'Monroe', 'Suspensión', 45000, 3],
     ],
   },
+  {
+    id: '12-prueba-guiada',
+    titulo: 'Todo lo que hay que mirar, en un solo archivo',
+    prueba: 'No es un caso mas: junta a proposito lo que conviene revisar a mano en el paso 3.',
+    aoa: [
+      ['sku', 'nombre', 'marca', 'categoria', 'precio', 'stock', 'aplicacion'],
+      // Subcategoria faltante en toda una categoria: se completa de una vez por Frenos,
+      // y el disco se afina en su fila porque no es una pastilla.
+      ['PF-201', 'Pastilla freno delantera', 'Bosch', 'Frenos', 24990, 12, 'TOYOTA COROLLA 2014-2018'],
+      ['PF-202', 'Pastilla freno trasera', 'Bosch', 'Frenos', 21990, 8, 'TOYOTA YARIS 2015-2019'],
+      ['DF-300', 'Disco freno ventilado', 'Brembo', 'Frenos', 39990, 5, 'TOYOTA COROLLA 2014-2018'],
+      // Marca parecida a una del catalogo: la celda deberia sugerir la correcta primero.
+      ['FA-110', 'Filtro de aceite', 'Mann', 'Filtros', 6990, 30, 'HYUNDAI ACCENT 2011-2015'],
+      // Precio con decimales: retiene la fila y propone el entero.
+      ['CO-500', 'Correa distribucion', 'Gates', 'Motor', '1.234,50', 4, 'KIA RIO 2012-2016'],
+      // Stock que no es un numero: retiene la fila, y se corrige escribiendo en la celda.
+      ['BJ-300', 'Bujia iridium', 'NGK', 'Motor', 8990, 'SIN STOCK', 'NISSAN V16 1995-2008'],
+      // Modelo escrito distinto del catalogo: tiene que salir con el nombre del catalogo.
+      ['AM-045', 'Amortiguador trasero', 'Monroe', 'Suspension', '45.000 c/u', '3 unid', 'chevrolet SAIL 2013-2017'],
+      // Varios autos en una celda: se separan en la hoja de compatibilidades.
+      ['KT-900', 'Kit distribucion', 'Gates', 'Motor', 89990, 6,
+        'TOYOTA COROLLA 2014-2018 / TOYOTA YARIS 2015-2019 / KIA RIO 2012-2016'],
+      // Fila que no es un repuesto: el subtotal de la lista impresa.
+      ['', 'SUBTOTAL', '', '', 237930, 68, ''],
+    ],
+  },
 ];

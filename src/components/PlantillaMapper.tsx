@@ -330,7 +330,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       };
     }
     const { aoa, cambios: hechos, filasOrigen, porCompletar: huecos } = buildOfficialAoADetallado(
-      userRows, userCols, mapping, campos, esquema.catalogos,
+      userRows, userCols, mapping, campos, esquema.catalogos, modelosPorMarca,
     );
     // Con el SKU repetido, lo que se revisa es el archivo ya agrupado: es el que se sube.
     // Separar una celda con varios vehículos también genera códigos repetidos, así que
@@ -366,7 +366,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       cambios: hechos,
     };
   }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema, filasOriginales,
-    opcionesDeGrupo]);
+    opcionesDeGrupo, modelosPorMarca]);
 
   // Las marcas se piden al llegar a revisar y no antes: es el único paso que las usa, y
   // pedirlas al abrir el asistente cargaría el catálogo a quien sólo viene a mapear.
@@ -885,7 +885,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   const buildFile = async (): Promise<File> => {
     const aoa = buildOfficialAoA(
-      userRows, userCols, mapping as Mapping, campos, esquema.catalogos,
+      userRows, userCols, mapping as Mapping, campos, esquema.catalogos, modelosPorMarca,
     );
     const nombre = `plantilla-adaptada_${getIsoTimestampString()}.xlsx`;
     if (!mapping?.agruparPorSku && !mapping?.separarAplicaciones) {

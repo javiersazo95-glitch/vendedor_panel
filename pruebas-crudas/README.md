@@ -15,7 +15,7 @@ empieza a fallar es porque arreglamos (o rompimos) algo, y hay que actualizarlo 
 
 ## Estado al 2026-09-09
 
-Los diez se probaron además por la interfaz, subiendo el `.xlsx` al panel contra los
+Los doce se probaron además por la interfaz, subiendo el `.xlsx` al panel contra los
 catálogos reales del backend (25 categorías). Los números de fila de la tabla son los del
 Excel del vendedor.
 
@@ -31,8 +31,10 @@ Excel del vendedor.
 | 08 sin precio ni stock | ✅ **Arreglado.** El paso 2 exige el precio además de los obligatorios del esquema, y ofrece `SOLO_COTIZAR` como salida en vez de obligar a inventar un precio | 2, 3 |
 | 09 varios autos por celda | ✅ **Arreglado.** Con el interruptor "varios autos en la misma celda" salen 2 repuestos con 3 compatibilidades extra; sin activarlo, la revisión avisa en vez de pasar en verde | 2, 3 |
 | 10 todo junto | ⚠️ 1 de 2 publicables. Ya sólo falla por un "sin stock" que no es número | 4, 6 |
+| 11 sin subcategoría | ✅ 6 de 6 publicables. Un catálogo ordenado al que sólo le falta un dato cuyos valores dependen de la categoría: es el que prueba "Completa lo que falta" | 2–7 |
+| 12 prueba guiada | 🧪 **Para probar a mano.** No es un caso más: junta a propósito lo que conviene revisar en el paso 3 —subcategoría por completar, marca parecida, precio con decimales, stock que no es número, modelo escrito distinto del catálogo, varios autos en una celda y un subtotal—. 6 de 8 publicables | 2–9 |
 
-**8 arreglados, 1 que ya andaba, 1 avisado.**
+**8 arreglados, 1 que ya andaba, 1 avisado, y dos que se sumaron para probar lo del paso 3.**
 
 ## Qué se arregló
 
@@ -73,6 +75,13 @@ Excel del vendedor.
 - **Los contadores cuadran.** Al sacar filas, el paso 3 decía "5 repuestos en tu archivo · 3
   se pueden publicar", como si dos hubieran fallado. Ahora las filas que no son repuestos se
   cuentan aparte, y los contadores van en singular cuando va uno.
+- **El modelo del vehículo sale con el nombre del catálogo.** Antes era texto libre, así que
+  un "COROLLA" quedaba tal cual y un modelo inventado no hacía aparecer el repuesto en la
+  búsqueda por vehículo. Ahora se elige de la lista de modelos de su marca —la misma que usa
+  la carga 1:1— y lo que ya venía escrito se normaliza contra el catálogo. Los años también
+  se eligen, y el año hasta arranca en el año desde de su propia fila.
+- **La hoja de compatibilidades se ve en pantalla.** El archivo generado siempre llevó dos
+  hojas; la segunda sólo se veía abriendo el Excel.
 - **Un precio o un stock con decimales no se publica.** En pesos chilenos los precios son
   enteros; un "1.234,50" es casi siempre un error de tipeo, y un stock de 2,5 unidades no
   existe. Los dos retienen la fila y proponen el entero más cercano.

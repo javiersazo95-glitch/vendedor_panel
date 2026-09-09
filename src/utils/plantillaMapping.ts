@@ -3,7 +3,7 @@ import {
   partirRangoAnios,
   type CambioNormalizacion,
 } from './plantillaNormalizacion';
-import { buscarEnCatalogo, buscarEnTexto } from './plantillaCatalogos';
+import { buscarEnCatalogo, buscarEnTexto, normalizarParaComparar } from './plantillaCatalogos';
 import { parsearAplicacion, separarAplicaciones } from './plantillaCompatibilidad';
 import {
   detectarBandas,
@@ -833,6 +833,12 @@ export function buildOfficialAoADetallado(
   campos: CampoMeta[] = PLANTILLA_CAMPOS,
   /** Catálogos reales: para partir la aplicación y para escribir los nombres tal cual. */
   catalogos: EsquemaPlantilla['catalogos'] = ESQUEMA_FALLBACK.catalogos,
+  /**
+   * Modelos de vehículo por marca (la marca normalizada como clave). No vienen en el
+   * esquema: cuelgan del id de cada marca y se piden aparte, así que llegan por separado y
+   * pueden llegar vacíos mientras se cargan.
+   */
+  modelosPorMarca: Record<string, string[]> = {},
 ): {
   aoa: (string | number)[][];
   cambios: CambioNormalizacion[];
@@ -1024,6 +1030,23 @@ export function buildOfficialAoADetallado(
       cells.precio = '';
     }
 
+    // El modelo se escribe con el nombre del catálogo de su marca, no como lo tipeó el
+    // vendedor. Es el mismo motivo que en las otras columnas de catálogo: el backend busca
+    // ignorando mayúsculas pero no tildes, y un "CITROEN" no encuentra a "Citroën". La
+    // marca ya quedó canónica en el paso anterior, así que sirve de llave.
+    if (cells.compatibilidad_modelo) {
+      const modelos = modelosPorMarca[normalizarParaComparar(cells.compatibilidad_marca)] ?? [];
+      const canonico = buscarEnCatalogo(cells.compatibilidad_modelo, modelos);
+      if (canonico && canonico !== cells.compatibilidad_modelo) {
+        cambios.push({
+          columna: 'compatibilidad_modelo',
+          antes: cells.compatibilidad_modelo,
+          despues: canonico,
+        });
+        cells.compatibilidad_modelo = canonico;
+      }
+    }
+
     // Lo que el vendedor completó por grupo desde el paso 3. Va antes que el valor fijo
     // porque es más específico: una subcategoría por categoría gana a una para todas.
     //
@@ -1107,8 +1130,11 @@ export function buildOfficialAoA(
   mapping: Mapping,
   campos: CampoMeta[] = PLANTILLA_CAMPOS,
   catalogos: EsquemaPlantilla['catalogos'] = ESQUEMA_FALLBACK.catalogos,
+  modelosPorMarca: Record<string, string[]> = {},
 ): (string | number)[][] {
-  return buildOfficialAoADetallado(rows, userCols, mapping, campos, catalogos).aoa;
+  return buildOfficialAoADetallado(
+    rows, userCols, mapping, campos, catalogos, modelosPorMarca,
+  ).aoa;
 }
 
 /**
