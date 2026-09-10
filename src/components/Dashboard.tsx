@@ -411,12 +411,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         balance={walletBalance}
         loading={walletLoading}
         summary={topSummary}
-        products={products}
         celebrar={rechargeReturn === 'exitosa'}
         pendiente={rechargeReturn === 'pendiente'}
         onCelebracionLista={() => setRechargeReturn(null)}
         onBalance={setWalletBalance}
-        onManageTop={(product) => { setWalletOpen(false); openTop(product); }}
         onClose={() => { setWalletOpen(false); setRechargeReturn(null); }}
       />}
     </div>

@@ -2192,13 +2192,6 @@ h1, h2, h3, h4, h5, h6 {
 .wallet-card-copy { display: grid; gap: .1rem; }.wallet-card-copy span { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: #bcd6f8; }.wallet-card-copy strong { font-size: 1.9rem; line-height: 1.1; }.wallet-card-copy small { font-size: .74rem; color: #cfe0f4; }
 .wallet-card-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .55rem; justify-content: flex-end; }.wallet-card-actions .btn { display: inline-flex; align-items: center; gap: .4rem; }
 
-/* Anuncios Top vigentes. */
-.wallet-tops h3 { display: flex; align-items: center; gap: .45rem; margin: 0 0 .55rem; }.wallet-tops-count { margin-left: auto; font-size: .74rem; font-weight: 600; color: var(--text-secondary); }
-.wallet-tops-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
-.wallet-tops-list li { display: flex; align-items: center; gap: .75rem; padding: .6rem .75rem; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); }
-.wallet-tops-list li > div { display: grid; gap: .1rem; min-width: 0; }.wallet-tops-list strong { font-size: .84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.wallet-tops-list span { font-size: .74rem; color: #9a6800; }
-.wallet-tops-list li.is-expired span { color: #b42318; }.wallet-tops-list li.is-expired { background: #fff8f7; border-color: #f3d1cc; }
-.wallet-tops-list .btn { margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: .35rem; font-size: .76rem; padding: .4rem .7rem; }
 .wallet-explainer-icon { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: #ede9fe; color: #5b21b6; flex: 0 0 auto; }
 .wallet-pending { display: flex; gap: .55rem; margin: 0; padding: .8rem .9rem; border-radius: 10px; border-left: 3px solid #b45309; background: #fffaf0; color: #7c4a03; font-size: .82rem; line-height: 1.5; }.wallet-pending svg { flex: 0 0 auto; margin-top: .1rem; }
 .recharge-subtitle { display: block; font-size: .75rem; font-weight: 600; color: var(--text-secondary); }
