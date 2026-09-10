@@ -210,10 +210,11 @@ describe('archivos crudos: lo que ya funciona', () => {
     expect(r.porCompletar).toHaveLength(1);
     expect(r.porCompletar[0].columna).toBe('subcategoria');
     // Seis repuestos sin subcategoría: tres de frenos, dos de filtros y uno de suspensión.
+    // Nada elegido todavía: lo que faltaba sigue faltando.
     expect(r.porCompletar[0].grupos).toEqual([
-      { clave: 'Frenos', filas: 3, elegido: '', propios: 0 },
-      { clave: 'Filtros', filas: 2, elegido: '', propios: 0 },
-      { clave: 'Suspensión', filas: 1, elegido: '', propios: 0 },
+      { clave: 'Frenos', filas: 3, pendientes: 3, elegido: '', propios: 0 },
+      { clave: 'Filtros', filas: 2, pendientes: 2, elegido: '', propios: 0 },
+      { clave: 'Suspensión', filas: 1, pendientes: 1, elegido: '', propios: 0 },
     ]);
   });
 
@@ -224,7 +225,22 @@ describe('archivos crudos: lo que ya funciona', () => {
       completar: { subcategoria: { Frenos: 'Pastillas' } },
     });
     const frenos = r.porCompletar[0].grupos.find((g) => g.clave === 'Frenos');
-    expect(frenos).toEqual({ clave: 'Frenos', filas: 3, elegido: 'Pastillas', propios: 0 });
+    // Sigue diciendo que tres no la traían, pero ya no falta ninguna.
+    expect(frenos).toEqual({
+      clave: 'Frenos', filas: 3, pendientes: 0, elegido: 'Pastillas', propios: 0,
+    });
+  });
+
+  it('un grupo lleno fila por fila deja de pedir que lo completen', () => {
+    // Era lo que confundía: el grupo seguía diciendo "1 repuesto sin este dato" con el
+    // selector en "dejar sin este dato", aunque el vendedor ya lo hubiera llenado abajo.
+    const r = leerComoElPanel('11-sin-subcategoria', {
+      parches: { 3: { subcategoria: 'Filtro de aceite' }, 4: { subcategoria: 'Filtro de aire' } },
+    });
+    const filtros = r.porCompletar[0].grupos.find((g) => g.clave === 'Filtros');
+    expect(filtros).toEqual({
+      clave: 'Filtros', filas: 2, pendientes: 0, elegido: '', propios: 2,
+    });
   });
 
   it('el grupo cuenta aparte las filas que se corrigieron una por una', () => {
@@ -235,7 +251,9 @@ describe('archivos crudos: lo que ya funciona', () => {
       parches: { 2: { subcategoria: 'Discos' } },
     });
     const frenos = r.porCompletar[0].grupos.find((g) => g.clave === 'Frenos');
-    expect(frenos).toEqual({ clave: 'Frenos', filas: 3, elegido: 'Pastillas', propios: 1 });
+    expect(frenos).toEqual({
+      clave: 'Frenos', filas: 3, pendientes: 0, elegido: 'Pastillas', propios: 1,
+    });
     expect(valorEn(r.oficial, 3, 'subcategoria')).toBe('Discos');
   });
 

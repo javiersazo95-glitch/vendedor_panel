@@ -489,7 +489,7 @@ describe('PlantillaMapper', () => {
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
     expect(screen.getByText(/Completa lo que falta/)).toBeInTheDocument();
-    expect(screen.getByText(/3 repuestos sin este dato/)).toBeInTheDocument();
+    expect(screen.getByText(/3 repuestos que no la traían/)).toBeInTheDocument();
 
     // Cada grupo ofrece sólo las subcategorías de su categoría.
     const deFrenos = screen.getByLabelText('Subcategoría para Frenos');
@@ -803,6 +803,39 @@ describe('PlantillaMapper', () => {
     await screen.findByLabelText('Marca del vehículo, compatibilidad 1');
     fireEvent.click(screen.getByTitle('Quitar esta compatibilidad'));
     await waitFor(() => expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument());
+  });
+
+
+  it('quita una compatibilidad que venía del archivo', async () => {
+    const onGenerated = vi.fn();
+    render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    // El mismo código en tres filas, una por vehículo.
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Nissan,V16',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Yaris',
+    ].join('\n'));
+    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // Dos compatibilidades: la primera fila de cada código define el repuesto.
+    expect(screen.getByLabelText('Marca del vehículo, compatibilidad 1')).toHaveValue('Nissan');
+    expect(screen.getByLabelText('Marca del vehículo, compatibilidad 2')).toHaveValue('Toyota');
+
+    fireEvent.click(screen.getAllByTitle('Quitar esta compatibilidad')[0]);
+    // La que queda es la otra, no un hueco: la lista se rearma.
+    await waitFor(() => expect(screen.getByLabelText('Marca del vehículo, compatibilidad 1')).toHaveValue('Toyota'));
+    expect(screen.queryByLabelText('Marca del vehículo, compatibilidad 2')).toBeNull();
+
+    clic(/Generar y continuar/);
+    await waitFor(() => expect(onGenerated).toHaveBeenCalled());
+    const wb = await readGeneratedWorkbook(onGenerated.mock.calls[0][0] as File);
+    const compat = XLSX.utils.sheet_to_json(wb.Sheets.compatibilidades, { header: 1, defval: '' });
+    // La quitada tampoco está en el archivo, que es lo que de verdad importa.
+    expect(compat).toHaveLength(2);
+    expect((compat[1] as string[])[2]).toBe('Yaris');
   });
 
 });

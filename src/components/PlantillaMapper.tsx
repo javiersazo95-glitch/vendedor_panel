@@ -773,6 +773,17 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       : prev));
   };
 
+  /**
+   * Saca una compatibilidad que venía del archivo. Se guarda por la clave de la fila y no
+   * por su posición: la lista se rearma en cada cambio, y una posición no sobrevive a que
+   * se saque otra.
+   */
+  const quitarCompatDelArchivo = (clave: string) => {
+    setMapping((prev) => (prev
+      ? { ...prev, compatibilidadesQuitadas: [...(prev.compatibilidadesQuitadas ?? []), clave] }
+      : prev));
+  };
+
   /** Lo que el vendedor elige para un grupo entero desde el paso 3. */
   const setCompletar = (colKey: string, grupo: string, valor: string) => {
     setMapping((prev) => {
@@ -1882,6 +1893,12 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   /* ---------------------------- Paso 3: revisar ---------------------------- */
   const filasListas = userRows.length;
+  /** Cuántos repuestos siguen sin uno de los datos que se completan por grupo. */
+  const pendientesPorCompletar = porCompletar.reduce(
+    (total, campo) => total + campo.grupos.reduce((n, g) => n + g.pendientes, 0),
+    0,
+  );
+
   /** El código del primer repuesto: una fila de compatibilidad nueva empieza por ahí. */
   const primerSku = revision?.filas[0]?.valores[revision.columnas.indexOf('sku_proveedor')] ?? '';
   /**
@@ -2012,14 +2029,24 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       {porCompletar.length > 0 && (
         <section className="mapper-section">
           <span className="bulk-purpose-label">
-            Completa lo que falta, de una vez por categoría{' '}
-            ({porCompletar.reduce((n, c) => n + c.filas, 0).toLocaleString('es-CL')}{' '}
-            {porCompletar.reduce((n, c) => n + c.filas, 0) === 1 ? 'repuesto' : 'repuestos'})
+            {pendientesPorCompletar > 0
+              ? `Completa lo que falta, de una vez por categoría (${plural(pendientesPorCompletar, 'repuesto', 'repuestos')})`
+              : 'Lo que faltaba, ya completo'}
           </span>
           <p className="mapper-hint">
-            Tu archivo no trae este dato. Elígelo acá <b>una vez por categoría</b> y se lo
-            ponemos a todos los repuestos de esa categoría, en vez de llenarlo a mano fila por
-            fila. Si a alguna fila le corresponde otro valor, la cambias abajo en la tabla.
+            {pendientesPorCompletar > 0 ? (
+              <>
+                Tu archivo no trae este dato. Elígelo acá <b>una vez por categoría</b> y se lo
+                ponemos a todos los repuestos de esa categoría, en vez de llenarlo a mano fila
+                por fila. Si a alguna fila le corresponde otro valor, la cambias abajo en la
+                tabla.
+              </>
+            ) : (
+              <>
+                Ya no queda ninguno sin este dato. Puedes cambiar lo que elegiste para una
+                categoría entera acá, o una fila suelta abajo en la tabla.
+              </>
+            )}
           </p>
           {porCompletar.map((campo) => {
             const meta = campos.find((c) => c.key === campo.columna);
@@ -2030,8 +2057,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                 <div className="mapper-values-title">
                   {meta?.label ?? campo.columna}{' '}
                   <span>
-                    {campo.filas.toLocaleString('es-CL')}{' '}
-                    {campo.filas === 1 ? 'repuesto sin este dato' : 'repuestos sin este dato'},
+                    {plural(campo.filas, 'repuesto', 'repuestos')} que no la traían,
                     agrupados por {etiquetaClave.toLowerCase()}
                   </span>
                 </div>
@@ -2039,15 +2065,20 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                   {campo.grupos.map((grupo) => {
                     const opciones = opcionesDeGrupo(campo.columna, grupo.clave);
                     const { elegido } = grupo;
+                    // Un grupo está resuelto si se eligió algo para él o si ya no le falta
+                    // ninguna fila, porque el vendedor las llenó una por una en la tabla.
+                    const resuelto = Boolean(elegido) || grupo.pendientes === 0;
                     return (
-                      <div className={`mapper-row ${elegido ? 'resuelta' : ''}`} key={grupo.clave}>
+                      <div className={`mapper-row ${resuelto ? 'resuelta' : ''}`} key={grupo.clave}>
                         <div className="mapper-row-label">
-                          {elegido && <Check size={15} className="mapper-row-check" />}
+                          {resuelto && <Check size={15} className="mapper-row-check" />}
                           <span>{grupo.clave}</span>
                           <span className="mapper-sample">
-                            {plural(grupo.filas, 'repuesto', 'repuestos')}
+                            {grupo.pendientes > 0
+                              ? `${plural(grupo.pendientes, 'repuesto', 'repuestos')} sin este dato`
+                              : 'todos con este dato'}
                             {grupo.propios > 0
-                              ? ` · ${grupo.propios} con valor propio`
+                              ? ` · ${grupo.propios} que cambiaste en su fila`
                               : ''}
                           </span>
                         </div>
@@ -2200,16 +2231,16 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         </td>
                       ))}
                       <td className="motivo">
-                        {fila.extra !== null && (
-                          <button
-                            type="button"
-                            className="mapper-quitar"
-                            title="Quitar esta compatibilidad"
-                            onClick={() => quitarCompat(fila.extra as number)}
-                          >
-                            Quitar
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="mapper-quitar"
+                          title="Quitar esta compatibilidad"
+                          onClick={() => (fila.extra !== null
+                            ? quitarCompat(fila.extra)
+                            : quitarCompatDelArchivo(fila.clave as string))}
+                        >
+                          Quitar
+                        </button>
                       </td>
                     </tr>
                   );

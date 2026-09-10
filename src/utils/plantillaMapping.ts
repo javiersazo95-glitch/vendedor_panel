@@ -383,6 +383,12 @@ export interface GrupoPorCompletar {
    * el grupo dice "3 repuestos" y arriba se ve un valor que ya no es el de los tres.
    */
   propios: number;
+  /**
+   * Cuántas siguen sin el dato una vez aplicado todo. Es el número que dice si queda algo
+   * por hacer: sin él, el grupo seguía pidiendo completar algo que el vendedor ya llenó
+   * fila por fila en la tabla.
+   */
+  pendientes: number;
 }
 
 export interface CampoPorCompletar {
@@ -477,6 +483,12 @@ export interface Mapping {
    * final de la hoja `compatibilidades` del archivo generado.
    */
   compatibilidadesExtra?: Record<string, string>[];
+  /**
+   * Compatibilidades que venían del archivo y el vendedor sacó. Se guardan por la clave de
+   * la fila (`claveDeParche`), no por su posición: la lista se rearma en cada cambio y una
+   * posición no sobrevive a que se saque otra.
+   */
+  compatibilidadesQuitadas?: string[];
   /**
    * La hoja trae filas que no son repuestos —subtotales, el total general, el encabezado
    * repetido cada vez que empieza una página— y hay que dejarlas fuera.
@@ -957,15 +969,22 @@ export function buildOfficialAoADetallado(
     });
   });
 
+  const quitadas = new Set(mapping.compatibilidadesQuitadas ?? []);
+  const filasFinales = quitadas.size === 0
+    ? filas
+    : filas.filter((f) => !quitadas.has(claveDeParche(f.origen, f.sub)));
+
   const out: (string | number)[][] = [[...columnas]];
   /** Fila del archivo del vendedor (base 0) de la que sale cada fila de `out`. */
   const filasOrigen: number[] = [];
   /** La clave con la que se corrige cada fila de `out`, que puede no ser única por fila. */
   const clavesParche: string[] = [];
-  /** campo -> grupo -> cuántas filas venían sin el dato, y cuántas se corrigieron sueltas. */
-  const huecos = new Map<string, Map<string, { filas: number; propios: number }>>();
+  /** campo -> grupo -> cuántas venían sin el dato, cuántas se corrigieron y cuántas faltan. */
+  const huecos = new Map<
+    string, Map<string, { filas: number; propios: number; pendientes: number }>
+  >();
 
-  for (const fila of filas) {
+  for (const fila of filasFinales) {
     const row = fila.row;
 
     // Valor base por columna oficial.
@@ -1070,6 +1089,10 @@ export function buildOfficialAoADetallado(
       }
     }
 
+    // Lo que faltaba en esta fila y hay que volver a mirar al final, cuando ya se aplicó
+    // todo lo que puede llenarlo.
+    const aRevisar: [string, { pendientes: number }][] = [];
+
     // Lo que el vendedor completó por grupo desde el paso 3. Va antes que el valor fijo
     // porque es más específico: una subcategoría por categoría gana a una para todas.
     //
@@ -1080,9 +1103,13 @@ export function buildOfficialAoADetallado(
       if (cells[campo]) continue;
       const clave = cells[campoClave] ?? '';
       if (!clave) continue;
-      const porCampo = huecos.get(campo) ?? new Map<string, { filas: number; propios: number }>();
-      const cuenta = porCampo.get(clave) ?? { filas: 0, propios: 0 };
+      const porCampo = huecos.get(campo)
+        ?? new Map<string, { filas: number; propios: number; pendientes: number }>();
+      const cuenta = porCampo.get(clave) ?? { filas: 0, propios: 0, pendientes: 0 };
       cuenta.filas += 1;
+      // Se anota para volver a mirarla al final de la fila: acá todavía no pasó el valor
+      // fijo ni la corrección de la celda, y con eso puede dejar de faltar.
+      aRevisar.push([campo, cuenta]);
       if (mapping.parches?.[claveDeParche(fila.origen, fila.sub)]?.[campo] !== undefined) {
         cuenta.propios += 1;
       }
@@ -1128,6 +1155,10 @@ export function buildOfficialAoADetallado(
       for (const key of universalBlankKeys) cells[key] = '';
     }
 
+    for (const [campo, cuenta] of aRevisar) {
+      if (!cells[campo]) cuenta.pendientes += 1;
+    }
+
     out.push(columnas.map((key) => cells[key]));
     filasOrigen.push(fila.origen);
     clavesParche.push(claveDeParche(fila.origen, fila.sub));
@@ -1137,10 +1168,11 @@ export function buildOfficialAoADetallado(
     columna,
     filas: [...porGrupo.values()].reduce((n, x) => n + x.filas, 0),
     grupos: [...porGrupo.entries()]
-      .map(([clave, { filas, propios }]) => ({
+      .map(([clave, { filas, propios, pendientes }]) => ({
         clave,
         filas,
         propios,
+        pendientes,
         elegido: mapping.completar?.[columna]?.[clave] ?? '',
       }))
       .sort((a, b) => b.filas - a.filas || a.clave.localeCompare(b.clave, 'es')),
