@@ -2,10 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { Edit2, Trash2, EyeOff, ChevronLeft, ChevronRight, PauseCircle, PlayCircle, Check, X, Loader2, Star } from 'lucide-react';
 import type { Product } from '../db';
 import { getProductTopStatus, topLabel } from '../utils/productTop';
+import { ETIQUETAS_GRUPO, type GrupoInventario } from '../utils/inventoryOrder';
 import topVentasBadge from '../assets/top-ventas-badge-transparent.png';
 
 interface InventoryTableProps {
   products: Product[];
+  /**
+   * A qué grupo del orden recomendado pertenece cada producto, para dibujar los separadores.
+   * Sin esto la tabla se comporta como siempre: una lista corrida, sin encabezados.
+   */
+  grupos?: Map<string, GrupoInventario>;
   onEdit: (product: Product) => void;
   onDelete: (id: string) => void;
   onTogglePause: (product: Product) => void;
@@ -204,7 +210,7 @@ const QuickEditCell: React.FC<QuickEditCellProps> = ({ product, field, onSave, r
   );
 };
 
-export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit, onDelete, onTogglePause, onManageTop, onQuickUpdate }) => {
+export const InventoryTable: React.FC<InventoryTableProps> = ({ products, grupos, onEdit, onDelete, onTogglePause, onManageTop, onQuickUpdate }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(15);
 
@@ -215,6 +221,26 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
     const end = start + itemsPerPage;
     return products.slice(start, end);
   }, [products, currentPage, itemsPerPage]);
+
+  /**
+   * Dónde va cada separador de grupo dentro de la página que se está mostrando.
+   *
+   * Se calcula por página y no sobre la lista entera: la primera fila de la página SIEMPRE lleva
+   * su encabezado, aunque su grupo haya empezado en la página anterior. Sin eso, la página 2 de
+   * "Resto del inventario" aparecería sin decir qué es.
+   */
+  const separadores = useMemo(() => {
+    if (!grupos) return new Map<string, GrupoInventario>();
+    const marcas = new Map<string, GrupoInventario>();
+    let anterior: GrupoInventario | null = null;
+    paginatedProducts.forEach((product, indice) => {
+      const grupo = grupos.get(product.id);
+      if (!grupo) return;
+      if (indice === 0 || grupo !== anterior) marcas.set(product.id, grupo);
+      anterior = grupo;
+    });
+    return marcas;
+  }, [grupos, paginatedProducts]);
 
   const getStockBadge = (stock: number) => {
     if (stock === 0) {
@@ -262,7 +288,12 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
             <tbody>
               {paginatedProducts.map((p) => {
                 const topStatus = getProductTopStatus(p);
-                return <tr key={p.id} className={topStatus.state === 'active' ? 'inventory-row-top' : topStatus.state === 'expired' ? 'inventory-row-top-expired' : ''} style={p.pausado ? { opacity: 0.62, background: 'var(--bg-app)' } : undefined}>
+                const separador = separadores.get(p.id);
+                return <React.Fragment key={p.id}>
+                {separador && <tr className={`inventory-group-row is-${separador}`}>
+                  <th colSpan={10} scope="colgroup">{ETIQUETAS_GRUPO[separador]}</th>
+                </tr>}
+                <tr className={topStatus.state === 'active' ? 'inventory-row-top' : topStatus.state === 'expired' ? 'inventory-row-top-expired' : ''} style={p.pausado ? { opacity: 0.62, background: 'var(--bg-app)' } : undefined}>
                   <td className="col-sku" title={p.sku}>
                     {p.sku}
                   </td>
@@ -352,7 +383,8 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, onEdit
                       </button>
                     </div>
                   </td>
-                </tr>;
+                </tr>
+                </React.Fragment>;
               })}
             </tbody>
           </table>

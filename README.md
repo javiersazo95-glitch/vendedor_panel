@@ -47,13 +47,43 @@ npm run preview   # sirve el build de dist/ localmente
   filas se van a publicar y cómo se verá su primer repuesto, y genera el archivo en formato
   oficial, todo en el navegador. El plan de mejoras de este flujo está en
   [PLAN_CARGA_MASIVA_PLANTILLA.md](PLAN_CARGA_MASIVA_PLANTILLA.md).
-- **Inventario** (`src/components/InventoryTable.tsx`, `src/components/Dashboard.tsx`): listado, filtros, pausar/reanudar y eliminar productos.
+- **Inventario** (`src/components/InventoryTable.tsx`, `src/components/Dashboard.tsx`): listado,
+  filtros, pausar/reanudar y eliminar productos. El orden por defecto lo decide
+  `src/utils/inventoryOrder.ts` — ver la sección siguiente.
 - **Monedero de Monedas RepuesTop** (`src/components/WalletModal.tsx`): saldo, productos Top
   vigentes con lo que le queda a cada uno, recarga por Flow (`RechargeModal.tsx`), historial de
   movimientos (`WalletHistoryModal.tsx`) y la boleta o factura de cada recarga
   (`DocumentViewerModal.tsx`). Ver la sección siguiente.
 - **Producto Top** (`src/components/TopModal.tsx`): activar o renovar la insignia Top Ventas de
   un repuesto por 30 días, con los cupos gratuitos y el costo que informa el backend.
+
+## El orden del Inventario General
+
+Hasta septiembre de 2026 el panel **no ordenaba nada**: mostraba el orden en que llegaban los
+productos del backend (`updatedAt DESC`), o sea arriba lo último que el vendedor tocó. Ahora hay
+dos modos, y el selector vive en la barra de la vista de inventario.
+
+**Recomendado** (por defecto) agrupa en cinco tramos, definidos en `src/utils/inventoryOrder.ts`:
+
+| # | Grupo | Por qué está ahí |
+| :-- | :--- | :--- |
+| 1 | Top vencido | Es lo único que YA está costando plata: pagó una posición que dejó de tener |
+| 2 | Top vigente, el que menos días le quedan primero | "Los Top primero" a secas dejaba al que vence mañana en cualquier parte de la lista |
+| 3 | Necesitan atención: sin stock y pausados | Nadie los puede comprar así |
+| 4 | Stock bajo (menos de 10) | Se venden, solo hay que reponer |
+| 5 | El resto, por última modificación | Es el orden que el panel tenía siempre |
+
+**El stock bajo va aparte del grupo 3 a propósito.** Con un catálogo real — 149 repuestos, 54 de
+ellos bajo 10 unidades — meterlo en "necesitan atención" marcaba como urgente a más de un tercio
+del inventario, y un grupo que ocupa un tercio de la lista ya no señala nada.
+
+**Los grupos se muestran con un separador**, en la tabla y en la cuadrícula. Un reordenamiento
+silencioso se lee como "se me desordenó el inventario"; el encabezado le pone nombre a algo que
+las filas ya distinguen por color. En la tabla el separador se recalcula por página, así que la
+página 2 de un grupo largo repite su encabezado en vez de empezar sin decir qué es.
+
+**Última modificación** es la salida para el día de la carga masiva: recién subidas 150 filas, lo
+que el vendedor quiere ver es lo que acaba de subir, no sus productos Top.
 
 ## El monedero y la recarga de Monedas
 
@@ -116,6 +146,8 @@ vive en `HANDOFF_BOLETAS_Y_RECARGA.md` del repo del backend.
   (`/inventario/excel/mapeos`), con `localStorage` como espejo local.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
+- `src/utils/inventoryOrder.ts` — los grupos y el orden del Inventario General. Función pura:
+  recibe los productos y devuelve la lista ordenada más a qué grupo quedó cada uno.
 - `src/utils/rut.ts` — formato y dígito verificador (módulo 11) del RUT chileno. Mismo
   algoritmo que el market web y la app: si el panel fuera más permisivo, el vendedor se
   enteraría del error recién después de apretar "Pagar".

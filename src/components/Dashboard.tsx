@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
@@ -12,6 +12,7 @@ import { BulkUpload } from './BulkUpload';
 import { TopModal } from './TopModal';
 import { WalletModal } from './WalletModal';
 import { RepuestopCoin } from './RepuestopCoin';
+import { ordenarInventario, type OrdenInventario } from '../utils/inventoryOrder';
 
 interface DashboardProps {
   userEmail: string;
@@ -32,6 +33,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAssigningImages, setIsAssigningImages] = useState(false);
   const [inventoryView, setInventoryView] = useState<'table' | 'grid'>('table');
+  const [inventoryOrder, setInventoryOrder] = useState<OrdenInventario>('recomendado');
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletLoading, setWalletLoading] = useState(false);
@@ -231,6 +233,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
     return matchesSearch && matchesCategory && matchesPartBrand && matchesVehicleBrand && matchesYear;
   });
 
+  /**
+   * El orden de la lista.
+   *
+   * Antes no había ninguno: se mostraba el orden en que el backend devolvía los productos
+   * (`updatedAt DESC`), o sea arriba quedaba lo último que el vendedor tocó. El orden recomendado
+   * pone adelante lo que cuesta plata -- los Top, primero el vencido y después el que está por
+   * vencer -- y lo que no se puede vender. Las reglas viven en `utils/inventoryOrder.ts`.
+   */
+  const { productos: sortedProducts, grupos: inventoryGroups } = useMemo(
+    () => ordenarInventario(filteredProducts, inventoryOrder),
+    // `filteredProducts` se recalcula en cada render, así que las dependencias son lo que de
+    // verdad lo determina; con el array mismo, el memo no serviría de nada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [products, searchQuery, categoryFilter, partBrandFilter, vehicleBrandFilter, yearFilter, inventoryOrder],
+  );
+
   const closeSidebarOnMobile = () => setIsSidebarOpen(false);
 
   return (
@@ -377,7 +395,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             />
 
             <div className="inventory-view-toolbar">
-              <div><strong>Vista de inventario</strong><span>{filteredProducts.length.toLocaleString('es-CL')} repuestos encontrados</span></div>
+              <div><strong>Vista de inventario</strong><span>{sortedProducts.length.toLocaleString('es-CL')} repuestos encontrados</span></div>
+              {/* La salida para el día de la carga masiva: recién subidas 150 filas, lo que el
+                  vendedor quiere ver es lo que acaba de subir, no sus productos Top. */}
+              <label className="inventory-order-select">
+                Ordenar por
+                <select value={inventoryOrder} onChange={(event) => setInventoryOrder(event.target.value as OrdenInventario)}>
+                  <option value="recomendado">Recomendado</option>
+                  <option value="reciente">Última modificación</option>
+                </select>
+              </label>
               <div className="inventory-view-switch" role="group" aria-label="Cambiar vista de inventario">
                 <button type="button" className={inventoryView === 'table' ? 'active' : ''} onClick={() => setInventoryView('table')} aria-pressed={inventoryView === 'table'} title="Vista de tabla"><List size={17} /> Tabla</button>
                 <button type="button" className={inventoryView === 'grid' ? 'active' : ''} onClick={() => setInventoryView('grid')} aria-pressed={inventoryView === 'grid'} title="Vista de cuadrícula"><Grid2X2 size={17} /> Cuadrícula</button>
@@ -386,14 +413,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
 
             {/* Main High Density Inventory Table */}
             {inventoryView === 'table' ? <InventoryTable
-              key={`${searchQuery}-${categoryFilter}-${partBrandFilter}-${vehicleBrandFilter}-${yearFilter}`}
-              products={filteredProducts}
+              key={`${searchQuery}-${categoryFilter}-${partBrandFilter}-${vehicleBrandFilter}-${yearFilter}-${inventoryOrder}`}
+              products={sortedProducts}
+              grupos={inventoryGroups}
               onEdit={handleOpenEditModal}
               onDelete={handleDeleteProduct}
               onTogglePause={handleTogglePauseProduct}
               onManageTop={openTop}
               onQuickUpdate={handleQuickUpdateProduct}
-            /> : <InventoryGrid products={filteredProducts} onEdit={handleOpenEditModal} onDelete={handleDeleteProduct} onTogglePause={handleTogglePauseProduct} onManageTop={openTop} />}
+            /> : <InventoryGrid products={sortedProducts} grupos={inventoryGroups} onEdit={handleOpenEditModal} onDelete={handleDeleteProduct} onTogglePause={handleTogglePauseProduct} onManageTop={openTop} />}
           </>
         )}
       </main>
