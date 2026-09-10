@@ -183,6 +183,9 @@ export const CASOS_CRUDOS = [
       // Varios autos en una celda: se separan en la hoja de compatibilidades.
       ['KT-900', 'Kit distribucion', 'Gates', 'Motor', 89990, 6,
         'TOYOTA COROLLA 2014-2018 / TOYOTA YARIS 2015-2019 / KIA RIO 2012-2016'],
+      // El mismo codigo repetido, una fila por vehiculo: la otra forma de traer varias
+      // compatibilidades, y la que ofrece el interruptor de juntar filas repetidas.
+      ['PF-201', 'Pastilla freno delantera', 'Bosch', 'Frenos', 24990, 12, 'NISSAN V16 1995-2008'],
       // Fila que no es un repuesto: el subtotal de la lista impresa.
       ['', 'SUBTOTAL', '', '', 237930, 68, ''],
     ],

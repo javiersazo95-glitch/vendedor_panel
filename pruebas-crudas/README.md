@@ -32,7 +32,7 @@ Excel del vendedor.
 | 09 varios autos por celda | ✅ **Arreglado.** Con el interruptor "varios autos en la misma celda" salen 2 repuestos con 3 compatibilidades extra; sin activarlo, la revisión avisa en vez de pasar en verde | 2, 3 |
 | 10 todo junto | ⚠️ 1 de 2 publicables. Ya sólo falla por un "sin stock" que no es número | 4, 6 |
 | 11 sin subcategoría | ✅ 6 de 6 publicables. Un catálogo ordenado al que sólo le falta un dato cuyos valores dependen de la categoría: es el que prueba "Completa lo que falta" | 2–7 |
-| 12 prueba guiada | 🧪 **Para probar a mano.** No es un caso más: junta a propósito lo que conviene revisar en el paso 3 —subcategoría por completar, marca parecida, precio con decimales, stock que no es número, modelo escrito distinto del catálogo, varios autos en una celda y un subtotal—. 6 de 8 publicables | 2–9 |
+| 12 prueba guiada | 🧪 **Para probar a mano.** No es un caso más: junta a propósito lo que conviene revisar en el paso 3 —subcategoría por completar, marca parecida, precio con decimales, stock que no es número, modelo escrito distinto del catálogo, varios autos en una celda, el mismo código repetido y un subtotal—. Los pasos para recorrerlo están más abajo | 2–10 |
 
 **8 arreglados, 1 que ya andaba, 1 avisado, y dos que se sumaron para probar lo del paso 3.**
 
@@ -80,11 +80,42 @@ Excel del vendedor.
   búsqueda por vehículo. Ahora se elige de la lista de modelos de su marca —la misma que usa
   la carga 1:1— y lo que ya venía escrito se normaliza contra el catálogo. Los años también
   se eligen, y el año hasta arranca en el año desde de su propia fila.
-- **La hoja de compatibilidades se ve en pantalla.** El archivo generado siempre llevó dos
-  hojas; la segunda sólo se veía abriendo el Excel.
+- **La hoja de compatibilidades se edita y se le agregan autos.** El archivo generado siempre
+  llevó dos hojas, y la segunda sólo se veía abriendo el Excel. Ahora está en pantalla, cada
+  celda se corrige con los mismos desplegables y validaciones que la tabla de arriba, y hay
+  un botón para sumar las que falten. La sección aparece aunque ningún repuesto tenga más de
+  un auto: es lo que hace que agregar una sirva en un archivo sin códigos repetidos.
+- **Una corrección apunta a un auto, no a una fila.** La clave con la que se guarda era el
+  número de fila del archivo, pero una fila que trae varios autos en una celda se separa en
+  varias y todas compartían ese número: corregir la marca de un auto se la cambiaba a todos
+  los de esa fila. Ahora la clave lleva de cuál se trata (`7:1`).
 - **Un precio o un stock con decimales no se publica.** En pesos chilenos los precios son
   enteros; un "1.234,50" es casi siempre un error de tipeo, y un stock de 2,5 unidades no
   existe. Los dos retienen la fila y proponen el entero más cercano.
+
+## Cómo recorrer el flujo a mano
+
+Con `12-prueba-guiada.xlsx`, en "Adaptar mi plantilla". Está armado para que cada paso
+tenga algo que mirar.
+
+**Paso 2.** Marca los tres ajustes que ofrece: juntar las filas repetidas, separar los
+varios autos de una celda, y dejar fuera las filas que no son repuestos. Cada uno cambia el
+conteo de arriba, que es la forma de ver que hizo algo.
+
+**Paso 3, de arriba abajo:**
+
+1. **Arreglos que hicimos por ti** — tienen que aparecer `COROLLA → Corolla`, `45.000 c/u →
+   45000` y `3 unid → 3`.
+2. **Completa lo que falta** — Frenos tiene cuatro repuestos sin subcategoría. Elige una para
+   el grupo y baja a la tabla: el disco quedó como pastilla. Cámbialo en su fila y mira que
+   el grupo pase a decir "1 con valor propio".
+3. **La tabla** — la fila del precio con decimales y la del stock `SIN STOCK` no se
+   publican, y las dos se arreglan ahí mismo. Prueba a escribir letras en el stock: no
+   tienen que entrar.
+4. **Compatibilidades** — corrige la marca de una y comprueba que las otras no cambian.
+   Agrega una con el botón, elige marca y modelo, y quítala para ver que se va.
+5. **Generar** — abre el `.xlsx`: la hoja `inventario` con un repuesto por código y la hoja
+   `compatibilidades` con los demás autos, incluida la que agregaste.
 
 ## Retener o avisar
 
