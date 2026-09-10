@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
-import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, rechargeWallet, setProductTop, type ProductTopSummary } from '../db';
+import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, setProductTop, type ProductTopSummary } from '../db';
 import { KPIs } from './KPIs';
 import { Filters } from './Filters';
 import { InventoryTable } from './InventoryTable';
@@ -35,6 +35,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletLoading, setWalletLoading] = useState(false);
+  /** Cómo volvió el vendedor de Flow, si es que volvió de Flow. */
+  const [rechargeReturn, setRechargeReturn] = useState<'exitosa' | 'pendiente' | null>(null);
   const [topProduct, setTopProduct] = useState<Product | null>(null);
   const [topSummary, setTopSummary] = useState<ProductTopSummary | null>(null);
   const [topLoading, setTopLoading] = useState(false);
@@ -81,6 +83,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
     finally { setWalletLoading(false); }
   };
 
+  /**
+   * Cupos, costo y máximo de productos Top. El monedero los necesita para decir cuántos Top
+   * quedan y cuánto cuesta el próximo, no solo el modal de la estrella.
+   */
+  const refreshTopSummary = async () => {
+    try { const summary = await getProductTopSummary(); setTopSummary(summary); setWalletBalance(summary.saldoMonedas); }
+    catch { /* Sin resumen el monedero usa los valores por defecto y el saldo que ya tiene. */ }
+  };
+
   useEffect(() => {
     document.documentElement.removeAttribute('data-theme');
     localStorage.removeItem('theme');
@@ -95,7 +106,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
     void refreshWallet();
   }, []);
 
-  const openWallet = () => { setWalletOpen(true); void refreshWallet(); };
+  /**
+   * El regreso desde Flow.
+   *
+   * El backend termina el pago en una página puente que manda de vuelta acá con `?recarga=`
+   * (`PagoController.paginaPuenteRecarga`). Es un parámetro propio y no el `status=success` del
+   * pago de un pedido, justamente para que volver de otra cosa no abra el monedero.
+   *
+   * El parámetro se limpia de la URL apenas se lee: si queda puesto, recargar la página vuelve a
+   * celebrar una recarga que ya se celebró.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const recarga = params.get('recarga');
+    if (recarga !== 'exitosa' && recarga !== 'pendiente') return;
+    params.delete('recarga');
+    const query = params.toString();
+    window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : ''));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRechargeReturn(recarga);
+    setWalletOpen(true);
+    // Se releen las dos cosas: el saldo lo movió el webhook, y el resumen de Top lleva su propia
+    // copia del saldo que si no queda vieja.
+    void refreshWallet();
+    void refreshTopSummary();
+  }, []);
+
+  const openWallet = () => { setWalletOpen(true); void refreshWallet(); void refreshTopSummary(); };
 
   const openTop = (product: Product) => {
     setTopProduct(product); setTopError(null); setTopLoading(true);
@@ -113,13 +150,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
       await Promise.all([fetchProducts(), refreshWallet()]);
     } catch (err) { setTopError(err instanceof Error ? err.message : 'No se pudo actualizar el producto Top.'); }
     finally { setTopSaving(false); }
-  };
-
-  const handleRecharge = async (pack: { name: string; coins: number; amount: number }, method: string) => {
-    const result = await rechargeWallet(pack, method);
-    setWalletBalance(result.saldo);
-    const summary = await getProductTopSummary();
-    setTopSummary(summary);
   };
 
   // 4. Product actions
@@ -377,7 +407,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         founder={founder}
       />
       <TopModal product={topProduct} visible={!walletOpen} summary={topSummary} loading={topLoading} saving={topSaving} error={topError} onClose={() => !topSaving && setTopProduct(null)} onConfirm={handleTopConfirm} onRecharge={openWallet} />
-      {walletOpen && <WalletModal balance={walletBalance} loading={walletLoading} onClose={() => setWalletOpen(false)} onRecharge={handleRecharge} />}
+      {walletOpen && <WalletModal
+        balance={walletBalance}
+        loading={walletLoading}
+        summary={topSummary}
+        products={products}
+        celebrar={rechargeReturn === 'exitosa'}
+        pendiente={rechargeReturn === 'pendiente'}
+        onCelebracionLista={() => setRechargeReturn(null)}
+        onBalance={setWalletBalance}
+        onManageTop={(product) => { setWalletOpen(false); openTop(product); }}
+        onClose={() => { setWalletOpen(false); setRechargeReturn(null); }}
+      />}
     </div>
   );
 };

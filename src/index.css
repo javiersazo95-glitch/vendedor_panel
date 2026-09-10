@@ -2184,7 +2184,74 @@ h1, h2, h3, h4, h5, h6 {
 .wallet-explainer { display: flex; gap: .65rem; padding: .85rem; border-radius: 10px; background: #f5f3ff; color: #5b21b6; }.wallet-explainer p { margin: .25rem 0 0; color: var(--text-secondary); font-size: .82rem; line-height: 1.45; }.wallet-top-badge { width: 48px; height: 48px; object-fit: contain; flex: 0 0 auto; }
 .wallet-modal h3 { margin: 0; font-size: .9rem; }.wallet-note { font-size: .78rem; color: var(--text-secondary); margin: 0; }
 .wallet-packs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }.wallet-pack { position: relative; display: grid; gap: .15rem; text-align: left; padding: .75rem; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); color: var(--text-primary); cursor: pointer; }.wallet-pack.selected { border: 2px solid #8b5cf6; background: #faf7ff; }.wallet-pack span { font-size: .76rem; color: var(--text-secondary); }.wallet-pack em { font-style: normal; font-weight: 750; color: #16803c; }.wallet-pack svg { position: absolute; top: .55rem; right: .55rem; color: #7c3aed; }
-.wallet-method { display: grid; gap: .35rem; font-size: .82rem; font-weight: 700; }.wallet-method select { padding: .6rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); }.wallet-payment-summary { display: flex; align-items: center; gap: .55rem; padding: .75rem; border-radius: 9px; background: var(--bg-app); font-size: .82rem; }.wallet-payment-summary strong { margin-left: auto; }
+.wallet-payment-summary { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .8rem .9rem; border-radius: 9px; background: var(--bg-app); font-size: .82rem; }.wallet-payment-summary div { display: grid; gap: .15rem; }.wallet-payment-summary span { font-size: .72rem; color: var(--text-secondary); }.wallet-payment-total { text-align: right; }.wallet-payment-total strong { font-size: 1.05rem; color: #16803c; }
+.wallet-secure-note { display: flex; align-items: center; gap: .5rem; margin: 0; font-size: .76rem; color: var(--text-secondary); }.wallet-secure-note svg { color: #16803c; flex: 0 0 auto; }
+
+/* Monedero: tarjeta de saldo, con el azul de la marca para que se lea igual que en la app. */
+.wallet-card { display: grid; grid-template-columns: auto 1fr; gap: .5rem 1rem; align-items: center; padding: 1.1rem; border-radius: 14px; background: linear-gradient(135deg, #1d5fc4, #0f4aa8 55%, #06285c); color: #fff; }
+.wallet-card-copy { display: grid; gap: .1rem; }.wallet-card-copy span { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: #bcd6f8; }.wallet-card-copy strong { font-size: 1.9rem; line-height: 1.1; }.wallet-card-copy small { font-size: .74rem; color: #cfe0f4; }
+.wallet-card-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .55rem; justify-content: flex-end; }.wallet-card-actions .btn { display: inline-flex; align-items: center; gap: .4rem; }
+
+/* Anuncios Top vigentes. */
+.wallet-tops h3 { display: flex; align-items: center; gap: .45rem; margin: 0 0 .55rem; }.wallet-tops-count { margin-left: auto; font-size: .74rem; font-weight: 600; color: var(--text-secondary); }
+.wallet-tops-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.wallet-tops-list li { display: flex; align-items: center; gap: .75rem; padding: .6rem .75rem; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); }
+.wallet-tops-list li > div { display: grid; gap: .1rem; min-width: 0; }.wallet-tops-list strong { font-size: .84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.wallet-tops-list span { font-size: .74rem; color: #9a6800; }
+.wallet-tops-list li.is-expired span { color: #b42318; }.wallet-tops-list li.is-expired { background: #fff8f7; border-color: #f3d1cc; }
+.wallet-tops-list .btn { margin-left: auto; flex: 0 0 auto; display: inline-flex; align-items: center; gap: .35rem; font-size: .76rem; padding: .4rem .7rem; }
+.wallet-explainer-icon { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: #ede9fe; color: #5b21b6; flex: 0 0 auto; }
+.wallet-pending { display: flex; gap: .55rem; margin: 0; padding: .8rem .9rem; border-radius: 10px; border-left: 3px solid #b45309; background: #fffaf0; color: #7c4a03; font-size: .82rem; line-height: 1.5; }.wallet-pending svg { flex: 0 0 auto; margin-top: .1rem; }
+.recharge-subtitle { display: block; font-size: .75rem; font-weight: 600; color: var(--text-secondary); }
+
+/* Pasos de la recarga y elección de documento tributario. */
+.recharge-step { display: flex; align-items: center; gap: .6rem; }.recharge-step > span { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #0f4aa8; color: #fff; font-size: .8rem; font-weight: 800; flex: 0 0 auto; }.recharge-step strong { display: block; font-size: .88rem; }.recharge-step small { font-size: .74rem; color: var(--text-secondary); }
+.wallet-pack-tag { justify-self: start; font-size: .64rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; padding: .1rem .4rem; border-radius: 5px; background: #eef2f7; color: #52627a; }.wallet-pack-tag.is-featured { background: #fff0c4; color: #9a6800; }
+.wallet-pack-bonus { font-size: .72rem !important; font-weight: 700; color: #16803c !important; }
+.recharge-doc-choice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+.recharge-doc-option { display: grid; gap: .15rem; text-align: left; padding: .7rem .8rem; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); color: var(--text-primary); cursor: pointer; }.recharge-doc-option.selected { border: 2px solid #0f4aa8; background: #f4f8ff; }.recharge-doc-option small { font-size: .73rem; color: var(--text-secondary); }
+.recharge-doc-fields { display: grid; gap: .6rem; }.recharge-doc-fields label { display: grid; gap: .25rem; font-size: .8rem; font-weight: 700; }.recharge-doc-fields input { padding: .55rem .65rem; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); font-weight: 500; }.recharge-doc-fields input.is-invalid { border-color: #dc2626; background: #fff6f5; }
+.recharge-doc-error { font-weight: 600; color: #b42318; font-size: .74rem; }
+
+/* Historial de movimientos. */
+.wallet-history-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 11px; background: #fff0c4; color: #9a6800; }
+.wallet-history-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; padding: .8rem; border-radius: 10px; background: var(--bg-app); text-align: center; }.wallet-history-summary b { display: block; font-size: 1.15rem; }.wallet-history-summary span { font-size: .72rem; color: var(--text-secondary); }
+.wallet-history-list { display: grid; gap: .4rem; }
+.wallet-history-item { display: flex; align-items: center; gap: .65rem; width: 100%; padding: .6rem .7rem; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); color: var(--text-primary); cursor: pointer; text-align: left; }.wallet-history-item:hover { border-color: #cbd5e1; }
+.wallet-history-item-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; }.is-credit .wallet-history-item-icon, .wallet-history-item-icon.is-credit { background: #e7f7ee; color: #16803c; }.is-debit .wallet-history-item-icon, .wallet-history-item-icon.is-debit { background: #fdeceb; color: #b42318; }
+.wallet-history-body { display: grid; gap: .1rem; min-width: 0; flex: 1 1 auto; }.wallet-history-body strong { font-size: .84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.wallet-history-body span { font-size: .74rem; color: var(--text-secondary); }
+.wallet-history-amount { font-weight: 800; font-size: .9rem; flex: 0 0 auto; }.is-credit .wallet-history-amount { color: #16803c; }.is-debit .wallet-history-amount { color: #b42318; }
+.wallet-history-empty { display: grid; justify-items: center; gap: .4rem; padding: 1.6rem 0; color: var(--text-secondary); font-size: .84rem; }
+
+/* Detalle de un movimiento: va por encima del historial. */
+.wallet-detail-overlay { z-index: 1600; }.wallet-detail { width: min(520px, 96vw); max-height: 88vh; display: flex; flex-direction: column; border-radius: 20px; }
+.wallet-detail-amount { display: grid; justify-items: center; gap: .1rem; padding: 1rem; border-radius: 12px; background: var(--bg-app); }.wallet-detail-amount strong { font-size: 2rem; line-height: 1.1; }.wallet-detail-amount.is-credit strong { color: #16803c; }.wallet-detail-amount.is-debit strong { color: #b42318; }.wallet-detail-amount span { font-size: .76rem; color: var(--text-secondary); }
+.wallet-detail-rows { margin: 0; display: grid; gap: .1rem; }.wallet-detail-rows > div { display: flex; gap: 1rem; justify-content: space-between; padding: .5rem 0; border-bottom: 1px solid var(--border-color); }.wallet-detail-rows > div:last-child { border-bottom: 0; }.wallet-detail-rows dt { font-size: .78rem; color: var(--text-secondary); flex: 0 0 auto; }.wallet-detail-rows dd { margin: 0; font-size: .8rem; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+
+/* Visor de la boleta o factura: es siempre la hoja más profunda. */
+.document-viewer-overlay { z-index: 1700; }.document-viewer { width: min(860px, 96vw); height: min(88vh, 900px); display: flex; flex-direction: column; border-radius: 20px; }
+.document-viewer .modal-header > div { display: flex; align-items: center; gap: .65rem; }.document-viewer h2 { margin: 0; font-size: 1.05rem; }.document-viewer small { font-size: .75rem; color: var(--text-secondary); }
+.document-viewer-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 11px; background: #e7f7ee; color: #16803c; flex: 0 0 auto; }
+.document-viewer-frame { flex: 1 1 auto; min-height: 0; margin: 0 1.5rem; border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; background: #f8fafc; }.document-viewer-frame object { width: 100%; height: 100%; border: 0; }
+.document-viewer-state { display: grid; justify-items: center; align-content: center; gap: .7rem; height: 100%; padding: 1.5rem; text-align: center; font-size: .84rem; color: var(--text-secondary); }
+.document-viewer-spinner { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #cbd5e1; border-top-color: #0f4aa8; animation: document-viewer-spin .8s linear infinite; }
+@keyframes document-viewer-spin { to { transform: rotate(360deg); } }
+.document-viewer-download { display: inline-flex; align-items: center; gap: .4rem; text-decoration: none; }
+
+/* Lluvia de monedas al volver de Flow con la recarga acreditada. Es decorativa: no recibe clics. */
+.coin-rain-layer { position: fixed; inset: 0; z-index: 1800; display: grid; justify-items: center; align-content: center; gap: .3rem; background: rgba(6, 40, 92, .82); color: #fff; text-align: center; }
+.coin-rain-layer h3 { margin: 0; font-size: 1.6rem; }.coin-rain-layer p { margin: 0; font-size: .92rem; color: #cfe0f4; }
+.coin-rain { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.coin-rain-item { position: absolute; top: 0; width: var(--coin-size); height: var(--coin-size); animation: coin-rain-fall var(--coin-dur) linear var(--coin-delay) forwards; }
+.coin-rain-item > svg { animation: coin-rain-spin var(--coin-dur) linear var(--coin-delay) forwards; }
+@keyframes coin-rain-fall { from { transform: translate3d(0, -30vh, 0); opacity: 0; } 12% { opacity: 1; } to { transform: translate3d(var(--coin-deriva), 115vh, 0); opacity: 1; } }
+@keyframes coin-rain-spin { from { transform: rotateY(0deg); } to { transform: rotateY(var(--coin-giro)); } }
+@media (prefers-reduced-motion: reduce) { .coin-rain { display: none; } }
+
+@media (max-width: 640px) {
+  .wallet-packs, .recharge-doc-choice { grid-template-columns: 1fr; }
+  .wallet-card { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .wallet-card-actions { justify-content: center; }
+}
 
 /* Slide-over Drawer for ManualUpload (Fase 2) */
 .drawer-overlay {

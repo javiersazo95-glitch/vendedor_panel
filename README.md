@@ -48,10 +48,54 @@ npm run preview   # sirve el build de dist/ localmente
   oficial, todo en el navegador. El plan de mejoras de este flujo está en
   [PLAN_CARGA_MASIVA_PLANTILLA.md](PLAN_CARGA_MASIVA_PLANTILLA.md).
 - **Inventario** (`src/components/InventoryTable.tsx`, `src/components/Dashboard.tsx`): listado, filtros, pausar/reanudar y eliminar productos.
+- **Monedero de Monedas RepuesTop** (`src/components/WalletModal.tsx`): saldo, productos Top
+  vigentes con lo que le queda a cada uno, recarga por Flow (`RechargeModal.tsx`), historial de
+  movimientos (`WalletHistoryModal.tsx`) y la boleta o factura de cada recarga
+  (`DocumentViewerModal.tsx`). Ver la sección siguiente.
+- **Producto Top** (`src/components/TopModal.tsx`): activar o renovar la insignia Top Ventas de
+  un repuesto por 30 días, con los cupos gratuitos y el costo que informa el backend.
+
+## El monedero y la recarga de Monedas
+
+El monedero del panel es **el mismo** que el de la app móvil y el del market web, y las tres
+superficies consumen los mismos endpoints. Lo que hay que saber antes de tocarlo:
+
+- **La recarga se cobra de verdad, por Flow.** `startRecharge()` llama `POST /fichas/recargas`,
+  que crea una intención **PENDIENTE** y devuelve la URL de la pasarela; las Monedas se acreditan
+  **solo cuando el webhook confirma el pago**. El panel no acredita nada y no debe volver a
+  hacerlo: hasta septiembre de 2026 llamaba `POST /fichas/compras` y el backend le creía que el
+  vendedor había pagado.
+- **Los packs y el precio salen del backend** (`GET /fichas/packs`). No hay lista fija en el
+  panel: cuando la había, cambiar un precio obligaba a desplegar las tres plataformas.
+- **El método de pago se elige dentro de Flow**, no antes. El selector que había acá era
+  decoración: ninguna de sus opciones cobraba nada.
+- **El documento tributario se pregunta ANTES de cobrar**, y el RUT de una factura se valida con
+  módulo 11 en el cliente (`src/utils/rut.ts`) y otra vez en el backend. Cortar antes es lo
+  correcto: después de cobrar, una factura que no se puede emitir obliga a devolver la plata.
+  Los datos llegan prellenados desde `GET /fichas/recargas/datos-documento`, que los arma el
+  backend juntando la tienda y el perfil — si cada cliente lo armara por su cuenta, terminarían
+  sugiriendo cosas distintas para el mismo vendedor.
+- **El retorno vuelve al panel gracias a `origen: 'PANEL_VENDEDOR'`.** El backend usa ese valor
+  para mandar la página puente de Flow a la URL del panel (`repuestop.panel.base-url`) en vez de
+  a `repuestop.cl/perfil/anuncios`. **No cambiarlo por `INVENTARIO`**: ese lo usa el market web
+  desde su modal de Producto Top, y compartirlo mandaría al panel a quien nunca salió del sitio
+  web.
+- **Al volver, el parámetro `?recarga=` se limpia de la URL** (`Dashboard.tsx`). Si queda puesto,
+  recargar la página vuelve a celebrar una recarga que ya se celebró.
+- **La boleta o factura se ve desde el detalle de un movimiento del historial**, que es el lugar
+  al que el vendedor vuelve a buscarla. El PDF se baja a un blob antes de mostrarlo; las razones
+  están en `DocumentViewerModal.tsx` y valen igual que en la web.
+
+Para correrlo en local hace falta el backend levantado. Si además está corriendo el market web,
+uno de los dos frontends cae en el 5174 y hay que arrancar el backend con `PANEL_BASE_URL`
+apuntando al puerto del panel, o el retorno de la recarga se va al sitio equivocado.
+
+El contexto completo del dominio tributario (los cuatro documentos, quién los emite y por qué)
+vive en `HANDOFF_BOLETAS_Y_RECARGA.md` del repo del backend.
 
 ## Estructura
 
-- `src/db.ts` — capa de acceso a la API del backend (productos, batch de carga masiva).
+- `src/db.ts` — capa de acceso a la API del backend (productos, batch de carga masiva, monedero y recargas).
 - `src/utils/plantillaMapping.ts` — lógica pura del adaptador (autodetección, mapeo de
   valores, generación del `.xlsx` oficial) y contrato de respaldo de la plantilla.
 - `src/utils/plantillaEsquema.ts` — consumo de `GET /inventario/excel/esquema`, la fuente
@@ -72,6 +116,9 @@ npm run preview   # sirve el build de dist/ localmente
   (`/inventario/excel/mapeos`), con `localStorage` como espejo local.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
+- `src/utils/rut.ts` — formato y dígito verificador (módulo 11) del RUT chileno. Mismo
+  algoritmo que el market web y la app: si el panel fuera más permisivo, el vendedor se
+  enteraría del error recién después de apretar "Pagar".
 - `src/utils/session.ts` — sesión de usuario en `sessionStorage` (TTL de 2 horas).
 - `src/utils/imageHelper.ts` — resolución de URLs de imágenes y `API_BASE_URL`.
 

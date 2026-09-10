@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getProductTopSummary, rechargeWallet, saveProductsBatch, setProductTop } from './db';
+import { getProductTopSummary, getRechargeDocumentUrl, getWalletHistory, saveProductsBatch, setProductTop, startRecharge } from './db';
 import { saveSession, clearSession } from './utils/session';
 
 const baseRow = {
@@ -105,15 +105,66 @@ describe('saveProductsBatch', () => {
     expect(JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string)).toEqual({ destacado: true, renovar: true });
   });
 
-  it('registers an inventory-origin recharge then refreshes the authoritative balance', async () => {
-    const fetchMock = vi.fn((url: string, _init?: RequestInit) => {
-      void _init;
-      if (url.includes('/compras')) return Promise.resolve(new Response(JSON.stringify({ id: 1 }), { status: 201 }));
-      return Promise.resolve(new Response(JSON.stringify({ saldo: 200 }), { status: 200 }));
-    });
+  /**
+   * Lo que reemplaza a la recarga vieja. Aquella llamaba `POST /fichas/compras` y acreditaba las
+   * monedas en el acto, sin que hubiera entrado un peso: el backend le creía al panel que el
+   * vendedor había pagado. Ahora solo se crea la intención y se devuelve la URL de Flow.
+   */
+  it('inicia el cobro en la pasarela y no acredita nada', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => { void url; void init; return Promise.resolve(new Response(JSON.stringify({ url: 'https://flow.cl/pagar/abc', token: 'abc' }), { status: 200 })); });
     vi.stubGlobal('fetch', fetchMock);
-    await expect(rechargeWallet({ name: 'Pack Medio', coins: 200, amount: 10000 }, 'Webpay Plus / Débito')).resolves.toEqual({ saldo: 200 });
-    const purchase = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
-    expect(purchase).toMatchObject({ cantidadFichas: 200, montoPagado: 10000, origen: 'INVENTARIO' });
+
+    await expect(startRecharge('PACK_MEDIO', { tipo: 'FACTURA', rut: '18.328.123-2', razonSocial: 'Repuestos SpA', giro: 'Venta de repuestos' }))
+      .resolves.toEqual({ url: 'https://flow.cl/pagar/abc', token: 'abc' });
+
+    expect(fetchMock.mock.calls[0][0]).toContain('/fichas/recargas');
+    expect(fetchMock.mock.calls).toHaveLength(1);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    // El monto NO viaja: el precio sale del catálogo del backend, o cualquiera pediría 10.000
+    // monedas por $1.
+    expect(body).toEqual({
+      packId: 'PACK_MEDIO',
+      origen: 'PANEL_VENDEDOR',
+      tipoDocumento: 'FACTURA',
+      facturaRut: '18.328.123-2',
+      facturaRazonSocial: 'Repuestos SpA',
+      facturaGiro: 'Venta de repuestos',
+    });
+  });
+
+  /**
+   * `PANEL_VENDEDOR` es lo que hace que el retorno de Flow vuelva al panel y no a repuestop.cl.
+   * No puede ser "INVENTARIO": ese ya lo usa el market web desde su modal de Producto Top, y
+   * compartirlo mandaría al panel a quien nunca salió del sitio web.
+   */
+  it('manda su propio origen, distinto del que usa el market web', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => { void url; void init; return Promise.resolve(new Response(JSON.stringify({ url: 'https://flow.cl/pagar/abc' }), { status: 200 })); });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await startRecharge('PACK_BASICO', { tipo: 'BOLETA', rut: '', razonSocial: '', giro: '' });
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.origen).toBe('PANEL_VENDEDOR');
+    expect(body.origen).not.toBe('INVENTARIO');
+    // Una boleta no lleva datos de factura: se omiten en vez de mandarlos vacíos.
+    expect(body).not.toHaveProperty('facturaRut');
+  });
+
+  it('falla si la pasarela no devuelve una URL, en vez de dejar al vendedor en la nada', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ token: 'abc' }), { status: 200 }))));
+    await expect(startRecharge('PACK_BASICO', { tipo: 'BOLETA', rut: '', razonSocial: '', giro: '' })).rejects.toThrow(/URL de pago/i);
+  });
+
+  it('lee el historial con su saldo y tolera una respuesta sin movimientos', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify({ saldo: 350 }), { status: 200 }))));
+    await expect(getWalletHistory()).resolves.toEqual({ saldo: 350, movimientos: [] });
+  });
+
+  it('pide el enlace del documento de una recarga', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => { void url; void init; return Promise.resolve(new Response(JSON.stringify({ url: 'https://api/boleta/token' }), { status: 200 })); });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getRechargeDocumentUrl('10')).resolves.toBe('https://api/boleta/token');
+    expect(fetchMock.mock.calls[0][0]).toContain('/fichas/compras/10/documento-url');
   });
 });

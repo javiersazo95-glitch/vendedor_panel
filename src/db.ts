@@ -181,6 +181,64 @@ export interface WalletBalance {
   saldo: number;
 }
 
+/**
+ * Un pack de Monedas del catalogo del backend (`GET /fichas/packs`).
+ *
+ * El panel ya no lleva su propia lista: la tenia fija en `WalletModal`, con precios que nadie
+ * garantizaba iguales a los de la app y la web. Cambiar un precio obligaba a desplegar las tres.
+ */
+export interface CoinPack {
+  id: string;
+  nombre: string;
+  monedas: number;
+  bonus: number;
+  totalMonedas: number;
+  precioClp: number;
+  etiqueta: string | null;
+  descripcion: string | null;
+  color: string | null;
+  destacado: boolean;
+}
+
+/** Un movimiento del monedero. `cantidad` siempre es positiva: el signo lo da `tipo`. */
+export interface WalletMovement {
+  id: string;
+  tipo: 'CREDITO' | 'DEBITO';
+  cantidad: number;
+  motivo: string | null;
+  descripcion: string | null;
+  anuncioId: string | null;
+  fecha: string;
+  /** La compra que origino el credito. Sin esto no hay a que pedirle el documento. */
+  compraId: string | null;
+  documentoDisponible: boolean;
+  documentoTipo: string | null;
+  documentoFolio: string | null;
+  documentoFecha: string | null;
+}
+
+export interface WalletHistory {
+  saldo: number;
+  movimientos: WalletMovement[];
+}
+
+export type TipoDocumentoTributario = 'BOLETA' | 'FACTURA';
+
+/** Que documento sugerirle al vendedor y con que datos llega prellenado el formulario. */
+export interface DatosDocumentoRecarga {
+  tipoSugerido: TipoDocumentoTributario;
+  rut: string;
+  razonSocial: string;
+  giro: string;
+}
+
+export interface DocumentoRecarga {
+  tipo: TipoDocumentoTributario;
+  rut: string;
+  razonSocial: string;
+  giro: string;
+}
+
 async function getApiError(response: Response, fallback: string): Promise<string> {
   try {
     const data = await response.json() as { message?: string; error?: string; errors?: string[] };
@@ -439,24 +497,117 @@ export async function getWalletBalance(): Promise<WalletBalance> {
   return response.json() as Promise<WalletBalance>;
 }
 
-export async function rechargeWallet(pack: { name: string; coins: number; amount: number }, paymentMethod: string): Promise<WalletBalance> {
+/**
+ * Saldo mas el historial de movimientos, del mas nuevo al mas viejo.
+ *
+ * Es la misma fuente que da el saldo, y por eso se leen juntos: el encabezado del historial
+ * tiene que cuadrar con las filas que se estan mostrando.
+ */
+export async function getWalletHistory(): Promise<WalletHistory> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/compras`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/movimientos`, {
+    method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo consultar el historial del monedero.'));
+  const data = await response.json() as { saldo?: number; movimientos?: WalletMovement[] };
+  return { saldo: Number(data.saldo) || 0, movimientos: Array.isArray(data.movimientos) ? data.movimientos : [] };
+}
+
+/** Catalogo de packs. Unica fuente de verdad del precio, compartida con la app y la web. */
+export async function getCoinPacks(): Promise<CoinPack[]> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/packs`, {
+    method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudieron cargar los packs de monedas.'));
+  const packs = await response.json() as CoinPack[];
+  return Array.isArray(packs) ? packs : [];
+}
+
+/**
+ * Con que datos llega prellenado el paso del documento tributario.
+ *
+ * Lo arma el backend y no cada cliente: juntar la tienda y el perfil por separado en la web, la
+ * app y el panel es como terminan sugiriendo cosas distintas para el mismo vendedor.
+ */
+export async function getRechargeDocumentData(): Promise<DatosDocumentoRecarga> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/recargas/datos-documento`, {
+    method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudieron cargar tus datos de facturación.'));
+  const data = await response.json() as Partial<DatosDocumentoRecarga>;
+  return {
+    tipoSugerido: data.tipoSugerido === 'FACTURA' ? 'FACTURA' : 'BOLETA',
+    rut: data.rut || '',
+    razonSocial: data.razonSocial || '',
+    giro: data.giro || '',
+  };
+}
+
+/**
+ * `origen` con el que este panel arranca una recarga.
+ *
+ * Es el valor que el backend usa para devolver al vendedor ACA y no al sitio web al volver de
+ * Flow. No es "INVENTARIO" a proposito: ese ya lo usa el market web cuando la recarga sale de su
+ * modal de Producto Top, y compartirlo mandaria al panel a quien nunca salio de repuestop.cl.
+ */
+const ORIGEN_RECARGA = 'PANEL_VENDEDOR';
+
+/**
+ * Arranca el cobro de una recarga y devuelve la URL de la pasarela.
+ *
+ * Reemplaza a la vieja `rechargeWallet()`, que llamaba `POST /fichas/compras` y acreditaba las
+ * monedas de inmediato: el backend le creia al panel que el vendedor habia pagado, sin que
+ * hubiera entrado un peso. Esta funcion NO acredita nada. Se crea la intencion, el vendedor se
+ * va a Flow, y las monedas entran cuando el webhook confirma que el dinero llego.
+ *
+ * El precio y la cantidad de monedas salen del catalogo del backend, nunca de aca: es lo que
+ * impide que alguien pida 10.000 monedas por $1.
+ */
+export async function startRecharge(packId: string, documento: DocumentoRecarga): Promise<{ url: string; token: string }> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/recargas`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({
-      cantidadFichas: pack.coins,
-      montoPagado: pack.amount,
-      packNombre: pack.name,
-      metodoPago: paymentMethod,
-      referenciaPago: `WEB-${Date.now()}`,
-      origen: 'INVENTARIO',
+      packId,
+      origen: ORIGEN_RECARGA,
+      // El backend valida el RUT con modulo 11 antes de cobrar y corta si no sirve: una factura
+      // que no se puede emitir despues del cobro obliga a devolver la plata.
+      tipoDocumento: documento.tipo,
+      ...(documento.rut ? { facturaRut: documento.rut } : {}),
+      ...(documento.razonSocial ? { facturaRazonSocial: documento.razonSocial } : {}),
+      ...(documento.giro ? { facturaGiro: documento.giro } : {}),
     }),
   });
-  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo registrar la recarga.'));
-  await response.json();
-  return getWalletBalance();
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo iniciar el pago de la recarga.'));
+  const data = await response.json() as { url?: string; token?: string };
+  if (!data.url) throw new Error('La pasarela no devolvió una URL de pago.');
+  return { url: data.url, token: data.token || '' };
+}
+
+/**
+ * Enlace privado para ver y descargar la boleta o factura de una recarga.
+ *
+ * El backend comprueba que la compra sea de quien pregunta antes de emitir el token, y responde
+ * 404 -- no 403 -- cuando es de otro: un 403 ya confirmaria que existe, y ahi van el RUT, la
+ * razon social y cuanto gasto.
+ */
+export async function getRechargeDocumentUrl(compraId: string): Promise<string> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/compras/${compraId}/documento-url`, {
+    method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No se pudo abrir el documento de esta recarga.'));
+  const data = await response.json() as { url?: string };
+  if (!data.url) throw new Error('No se pudo abrir el documento de esta recarga.');
+  return data.url;
 }
 
 // Batch save for bulk upload
