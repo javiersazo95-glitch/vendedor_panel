@@ -824,6 +824,14 @@ describe('PlantillaMapper', () => {
     expect(screen.getByLabelText('Marca del vehículo, compatibilidad 1')).toHaveValue('Nissan');
     expect(screen.getByLabelText('Marca del vehículo, compatibilidad 2')).toHaveValue('Toyota');
 
+    // Quitar una del archivo pregunta antes: por un clic de más se pierde trabajo que no
+    // se puede deshacer desde el paso 3.
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getAllByTitle('Quitar esta compatibilidad')[0]);
+    expect(confirmar).toHaveBeenCalled();
+    expect(screen.getByLabelText('Marca del vehículo, compatibilidad 1')).toHaveValue('Nissan');
+
+    confirmar.mockReturnValue(true);
     fireEvent.click(screen.getAllByTitle('Quitar esta compatibilidad')[0]);
     // La que queda es la otra, no un hueco: la lista se rearma.
     await waitFor(() => expect(screen.getByLabelText('Marca del vehículo, compatibilidad 1')).toHaveValue('Toyota'));
@@ -836,6 +844,27 @@ describe('PlantillaMapper', () => {
     // La quitada tampoco está en el archivo, que es lo que de verdad importa.
     expect(compat).toHaveLength(2);
     expect((compat[1] as string[])[2]).toBe('Yaris');
+    confirmar.mockRestore();
+  });
+
+  it('la compatibilidad agregada a mano se quita sin preguntar', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    clic(/Agregar compatibilidad/);
+    await screen.findByLabelText('Marca del vehículo, compatibilidad 1');
+
+    // Deshacerla es volver a agregarla: preguntar acá sólo sería un clic de más.
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByTitle('Quitar esta compatibilidad'));
+    expect(confirmar).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument());
+    confirmar.mockRestore();
   });
 
 });

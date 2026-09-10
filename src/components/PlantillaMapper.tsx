@@ -2235,9 +2235,24 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                           type="button"
                           className="mapper-quitar"
                           title="Quitar esta compatibilidad"
-                          onClick={() => (fila.extra !== null
-                            ? quitarCompat(fila.extra)
-                            : quitarCompatDelArchivo(fila.clave as string))}
+                          onClick={() => {
+                            // Quitar una del archivo no se deshace desde acá: habría que
+                            // volver al paso 2 y rehacer lo del paso 3. Por un clic de más
+                            // se pierde trabajo, así que se pregunta antes. La agregada a
+                            // mano no: deshacerla es volver a agregarla.
+                            if (fila.extra !== null) {
+                              quitarCompat(fila.extra);
+                              return;
+                            }
+                            const auto = [dato('compatibilidad_marca'), dato('compatibilidad_modelo')]
+                              .filter(Boolean).join(' ');
+                            const seguro = window.confirm(
+                              `¿Quitar ${auto || 'esta compatibilidad'} del repuesto ${dato('sku_proveedor')}?`
+                              + ' Este vehículo no se va a publicar, y para recuperarlo hay que'
+                              + ' volver al paso anterior.',
+                            );
+                            if (seguro) quitarCompatDelArchivo(fila.clave as string);
+                          }}
                         >
                           Quitar
                         </button>
