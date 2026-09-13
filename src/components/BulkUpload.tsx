@@ -7,6 +7,8 @@ import { useFocusTrap } from '../utils/useFocusTrap';
 import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
+import { encId } from '../utils/url';
+import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from '../utils/fileValidation';
 import { FullCreationUpload } from './FullCreationUpload';
 
 interface BulkUploadProps {
@@ -343,7 +345,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
           alert('Sesión requerida: No encontramos un proveedor activo para descargar la plantilla.');
           return;
         }
-        const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/plantilla`, {
+        const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/plantilla`, {
           headers: {
             'Authorization': `Bearer ${session.token}`,
           },
@@ -1585,7 +1587,20 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                       ref={dataFileInputRef}
                       accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
                       style={{ display: 'none' }}
-                      onChange={(e) => setDataFile(e.target.files?.[0] || null)}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0] || null;
+                        if (file && excedeTamanoMaximoDatos(file)) {
+                          alert(mensajeArchivoDemasiadoGrande(file));
+                          if (dataFileInputRef.current) dataFileInputRef.current.value = '';
+                          return;
+                        }
+                        if (file && !(await pareceExcelValido(file))) {
+                          alert(MENSAJE_EXCEL_INVALIDO);
+                          if (dataFileInputRef.current) dataFileInputRef.current.value = '';
+                          return;
+                        }
+                        setDataFile(file);
+                      }}
                       disabled={processing}
                     />
                     <FileSpreadsheet size={24} className="dropzone-icon" />

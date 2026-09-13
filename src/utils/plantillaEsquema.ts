@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from './apiFetch';
 import { API_BASE_URL } from './imageHelper';
 import { getStoredSession } from './session';
+import { encId } from './url';
 import { ESQUEMA_FALLBACK, type EsquemaPlantilla } from './plantillaMapping';
 
 const listaDeTextos = (valor: unknown): string[] =>
@@ -63,7 +64,7 @@ export function normalizarEsquema(data: unknown): EsquemaPlantilla | null {
 
 export async function fetchEsquemaPlantilla(sellerId: number | string, token: string): Promise<EsquemaPlantilla | null> {
   const response = await apiFetch(
-    `${API_BASE_URL}/api/v1/proveedores/${sellerId}/inventario/excel/esquema`,
+    `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/excel/esquema`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!response.ok) return null;

@@ -11,6 +11,7 @@ import {
   type FilaDescartada,
 } from './plantillaFilas';
 import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
+import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from './fileValidation';
 
 /**
  * Lógica pura (sin React) para el flujo "Adaptar mi plantilla": leer el Excel propio
@@ -689,6 +690,13 @@ export interface HojaUsuario {
 
 /** Lee el libro completo. Un CSV se comporta como un libro de una sola hoja. */
 export async function leerLibro(file: File): Promise<HojaUsuario[]> {
+  if (excedeTamanoMaximoDatos(file)) {
+    throw new Error(mensajeArchivoDemasiadoGrande(file));
+  }
+  if (!(await pareceExcelValido(file))) {
+    throw new Error(MENSAJE_EXCEL_INVALIDO);
+  }
+
   const XLSX = await import('xlsx');
   const isCsv = /\.csv$/i.test(file.name);
 

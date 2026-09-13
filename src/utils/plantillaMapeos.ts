@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from './apiFetch';
 import { API_BASE_URL } from './imageHelper';
 import { getStoredSession } from './session';
+import { encId } from './url';
 import { loadSavedMapping, saveMapping, type Mapping } from './plantillaMapping';
 
 interface MapeoRemoto {
@@ -26,7 +27,7 @@ interface MapeoRemoto {
 }
 
 const url = (sellerId: number | string) =>
-  `${API_BASE_URL}/api/v1/proveedores/${sellerId}/inventario/excel/mapeos`;
+  `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/excel/mapeos`;
 
 /** Convierte la respuesta del backend en mapeos utilizables, descartando los ilegibles. */
 export function parsearMapeos(data: unknown): Record<string, Mapping> {
