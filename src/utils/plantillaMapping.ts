@@ -12,6 +12,7 @@ import {
 } from './plantillaFilas';
 import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
 import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from './fileValidation';
+import { sanitizeAoaForExport } from './xlsxSafety';
 
 /**
  * Lógica pura (sin React) para el flujo "Adaptar mi plantilla": leer el Excel propio
@@ -1218,13 +1219,13 @@ export async function buildOfficialXlsxFile(
   compatibilidades?: (string | number)[][],
 ): Promise<File> {
   const XLSX = await import('xlsx');
-  const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+  const worksheet = XLSX.utils.aoa_to_sheet(sanitizeAoaForExport(aoa));
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'inventario');
   // La hoja va sólo si tiene filas: una hoja vacía haría al backend validar encabezados
   // de algo que no aporta nada.
   if (compatibilidades && compatibilidades.length > 1) {
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(compatibilidades), 'compatibilidades');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(sanitizeAoaForExport(compatibilidades)), 'compatibilidades');
   }
   const instrucciones = XLSX.utils.aoa_to_sheet([
     [`VERSION_PLANTILLA: ${version}`],

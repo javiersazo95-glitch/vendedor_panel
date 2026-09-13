@@ -9,6 +9,7 @@ import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
 import { encId } from '../utils/url';
 import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from '../utils/fileValidation';
+import { sanitizeRowsForExport } from '../utils/xlsxSafety';
 import { FullCreationUpload } from './FullCreationUpload';
 
 interface BulkUploadProps {
@@ -187,7 +188,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
     }));
 
     const XLSX = await import('xlsx');
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const worksheet = XLSX.utils.json_to_sheet(sanitizeRowsForExport(exportData));
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Errores_Carga');
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });

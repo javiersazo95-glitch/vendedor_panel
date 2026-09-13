@@ -9,6 +9,7 @@ import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 import { descargarFotos, esUrlDeImagen } from '../utils/plantillaFotos';
 import { useMapeosGuardados } from '../utils/plantillaMapeos';
+import { sanitizeAoaForExport, sanitizeRowsForExport } from '../utils/xlsxSafety';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -1032,7 +1033,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             const original = (originalRows[f.fila - 1] as unknown[]) ?? [];
             return [...headerRow.map((_, i) => original[i] ?? ''), f.mensajes.join(' | ')];
           });
-          worksheet = XLSX.utils.aoa_to_sheet([[...headerRow, 'motivo_error'], ...filas]);
+          worksheet = XLSX.utils.aoa_to_sheet(sanitizeAoaForExport([[...headerRow, 'motivo_error'], ...filas]));
         }
       } catch (err) {
         console.error('No se pudo leer el archivo original para reconstruir el Excel de errores:', err);
@@ -1040,12 +1041,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     }
 
     if (!worksheet) {
-      worksheet = XLSX.utils.json_to_sheet(filasConError.map((f) => ({
+      worksheet = XLSX.utils.json_to_sheet(sanitizeRowsForExport(filasConError.map((f) => ({
         'Fila': f.fila,
         'SKU': f.sku,
         'Estado': 'FALLIDO',
         'Motivo del Error': f.mensajes.join(' | ')
-      })));
+      }))));
     }
 
     const workbook = XLSX.utils.book_new();
