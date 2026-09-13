@@ -32,7 +32,7 @@ export type OrdenInventario = 'recomendado' | 'reciente';
 export type GrupoInventario = 'top-vencido' | 'top-vigente' | 'atencion' | 'stock-bajo' | 'resto' | 'todos';
 
 /** Umbral de "stock bajo". Es el mismo con el que la tabla pinta el badge ámbar. */
-export const STOCK_BAJO = 10;
+const STOCK_BAJO = 10;
 
 export const ETIQUETAS_GRUPO: Record<GrupoInventario, string> = {
   'top-vencido': 'Tu insignia Top venció · renuévala para recuperar la prioridad',

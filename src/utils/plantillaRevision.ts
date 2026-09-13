@@ -21,9 +21,9 @@ import type { EsquemaPlantilla } from './plantillaMapping';
 
 export { normalizarNumero };
 
-export type Severidad = 'error' | 'aviso';
+type Severidad = 'error' | 'aviso';
 
-export interface Problema {
+interface Problema {
   /** Columna oficial afectada. */
   columna: string;
   severidad: Severidad;

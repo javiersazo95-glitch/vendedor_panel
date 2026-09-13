@@ -1,8 +1,8 @@
-export const FLOW_RATE_BASE = 0.0289;
-export const FLOW_IVA = 0.19;
-export const FLOW_RATE_WITH_IVA = FLOW_RATE_BASE * (1 + FLOW_IVA);
-export const FOUNDER_APP_RATE = 0.05;
-export const COMMISSION_IVA_INCLUDED = true;
+const FLOW_RATE_BASE = 0.0289;
+const FLOW_IVA = 0.19;
+const FLOW_RATE_WITH_IVA = FLOW_RATE_BASE * (1 + FLOW_IVA);
+const FOUNDER_APP_RATE = 0.05;
+const COMMISSION_IVA_INCLUDED = true;
 
 export function pricingFeeBreakdown(basePrice: number, founder: boolean = false) {
   if (basePrice <= 0 || !Number.isFinite(basePrice)) {

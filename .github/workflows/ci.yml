@@ -18,3 +18,8 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run test
+      # No bloquea el merge todavia (ver ENG-SRC-003 del audit-kit): antes esto solo se
+      # detectaba con una auditoria manual. continue-on-error hasta definir el umbral que
+      # deba frenar un PR.
+      - run: npm audit --audit-level=high
+        continue-on-error: true
