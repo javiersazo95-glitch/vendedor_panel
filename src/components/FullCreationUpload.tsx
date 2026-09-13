@@ -3,6 +3,8 @@ import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTri
 import { apiFetch, SessionExpiredError, RequestTimeoutError } from '../utils/apiFetch';
 import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
+import { encId } from '../utils/url';
+import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from '../utils/fileValidation';
 import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 import { descargarFotos, esUrlDeImagen } from '../utils/plantillaFotos';
@@ -247,7 +249,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     let cancelado = false;
     setHistorialLoading(true);
     setHistorialError(null);
-    apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/cargas?page=${historialPage}&size=20&modo=FULL_CREATION`, {
+    apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargas?page=${historialPage}&size=20&modo=FULL_CREATION`, {
       headers: { 'Authorization': `Bearer ${session.token}` }
     })
       .then(async (response) => {
@@ -442,7 +444,16 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setShowMapper(true);
   };
 
-  const onFileSelected = (file: File | null) => {
+  const onFileSelected = async (file: File | null) => {
+    if (file && excedeTamanoMaximoDatos(file)) {
+      setErrorMsg(mensajeArchivoDemasiadoGrande(file));
+      return;
+    }
+    if (file && !(await pareceExcelValido(file))) {
+      setErrorMsg(MENSAJE_EXCEL_INVALIDO);
+      return;
+    }
+
     // Si el navegador re-dispara onChange sobre el MISMO archivo (pasa al re-abrir el
     // dialogo y volver a elegirlo, aunque no haya cambiado nada), no hay que perder las
     // fotos que el vendedor ya selecciono para ese Excel -- solo se limpian cuando el
@@ -462,7 +473,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     const session = requireSession();
     if (!session) return;
     try {
-      const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/plantilla`, {
+      const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/plantilla`, {
         headers: { 'Authorization': `Bearer ${session.token}` }
       });
       if (!response.ok) {
@@ -515,7 +526,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       const formData = new FormData();
       formData.append('file', dataFile);
       const response = await apiFetch(
-        `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/validar`,
+        `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/validar`,
         { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
       );
       clearInterval(progressInterval);
@@ -548,7 +559,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     // que el estado deje de ser PENDIENTE/PROCESANDO.
     while (true) {
       const response = await apiFetch(
-        `${API_BASE_URL}/api/v1/proveedores/${sellerId}/inventario/excel/cargas/${jobId}`,
+        `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/excel/cargas/${encId(jobId)}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       if (!response.ok) {
@@ -626,7 +637,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       const formData = new FormData();
       formData.append('file', archivoASubir);
       const response = await apiFetch(
-        `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/cargar`,
+        `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargar`,
         { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
       );
       clearInterval(uploadProgressInterval);
@@ -867,7 +878,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           // Fase 14). Se trae el producto actual y se reenvia tal cual mas las fotos, en
           // vez de agregar un endpoint nuevo solo para esto.
           const getResponse = await apiFetch(
-            `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${fila.productoId}`,
+            `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(fila.productoId as number)}`,
             { headers: { 'Authorization': `Bearer ${session.token}` } }
           );
           if (!getResponse.ok) {
@@ -909,7 +920,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           });
 
           const response = await apiFetch(
-            `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${fila.productoId}/editar`,
+            `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(fila.productoId as number)}/editar`,
             { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
           );
           if (!response.ok) {
@@ -973,7 +984,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setSelectedCargaLoading(true);
     try {
       const response = await apiFetch(
-        `${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/excel/cargas/${cargaId}`,
+        `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargas/${encId(cargaId)}`,
         { headers: { 'Authorization': `Bearer ${session.token}` } }
       );
       if (!response.ok) {

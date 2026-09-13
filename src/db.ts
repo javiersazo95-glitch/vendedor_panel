@@ -1,6 +1,7 @@
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from './utils/imageHelper';
 import { apiFetch } from './utils/apiFetch';
 import { getStoredSession } from './utils/session';
+import { encId } from './utils/url';
 
 export interface Product {
   id: string;
@@ -252,7 +253,7 @@ export async function getAllProducts(): Promise<Product[]> {
   const session = getSession();
   if (!session) return [];
 
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${session.token}`,
@@ -304,7 +305,7 @@ export async function addProduct(
   formData.append('activo', 'true');
   imageFiles.forEach((file) => formData.append('imagenes', file));
 
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/personalizado`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/personalizado`, {
     method: 'POST',
     headers,
     body: formData
@@ -363,7 +364,7 @@ export async function updateProduct(
     formData.append('activo', String(product.activo !== false));
     imageFiles.forEach((file) => formData.append('imagenes', file));
 
-    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}/editar`, {
+    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(product.id)}/editar`, {
       method: 'POST',
       headers,
       body: formData
@@ -395,7 +396,7 @@ export async function updateProduct(
       activo: product.activo !== false
     };
 
-    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${product.id}`, {
+    response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(product.id)}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(payload)
@@ -423,7 +424,7 @@ export async function deleteProduct(id: string): Promise<void> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
 
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(id)}`, {
     method: 'DELETE',
     headers: {
       'Authorization': `Bearer ${session.token}`
@@ -440,7 +441,7 @@ async function setProductPaused(id: string, paused: boolean): Promise<Product> {
   if (!session) throw new Error('No hay sesión activa.');
 
   const action = paused ? 'pausa' : 'retomar';
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}/${action}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(id)}/${action}`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${session.token}`,
@@ -467,7 +468,7 @@ export function resumeProduct(id: string): Promise<Product> {
 export async function getProductTopSummary(): Promise<ProductTopSummary> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/top/resumen`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/top/resumen`, {
     method: 'GET',
     headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
   });
@@ -478,7 +479,7 @@ export async function getProductTopSummary(): Promise<ProductTopSummary> {
 export async function setProductTop(id: string, renovar = false): Promise<Product> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/${id}/top`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(id)}/top`, {
     method: 'PATCH',
     headers: { 'Authorization': `Bearer ${session.token}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ destacado: true, renovar }),
@@ -601,7 +602,7 @@ export async function startRecharge(packId: string, documento: DocumentoRecarga)
 export async function getRechargeDocumentUrl(compraId: string): Promise<string> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/compras/${compraId}/documento-url`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/compras/${encId(compraId)}/documento-url`, {
     method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
   });
   if (!response.ok) throw new Error(await getApiError(response, 'No se pudo abrir el documento de esta recarga.'));
@@ -736,7 +737,7 @@ export async function savePreciosStockBatch(
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa de vendedor.');
 
-  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${session.sellerId}/inventario/precios-stock`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/precios-stock`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${session.token}`,
