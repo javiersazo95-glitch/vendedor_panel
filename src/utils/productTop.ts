@@ -1,6 +1,6 @@
 import type { Product } from '../db';
 
-export type ProductTopState = 'none' | 'active' | 'expired';
+type ProductTopState = 'none' | 'active' | 'expired';
 
 export interface ProductTopStatus {
   state: ProductTopState;

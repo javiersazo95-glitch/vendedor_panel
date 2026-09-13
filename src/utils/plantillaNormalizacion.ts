@@ -128,7 +128,7 @@ export interface CambioNormalizacion {
 /** Columnas que el backend lee como número. El esquema todavía no declara tipos. */
 export const COLUMNAS_NUMERICAS = new Set(['precio', 'stock', 'anio_desde', 'anio_hasta']);
 /** Columnas que el backend lee como SI/NO. */
-export const COLUMNAS_SI_NO = new Set(['compatibilidad_general', 'requiere_chasis']);
+const COLUMNAS_SI_NO = new Set(['compatibilidad_general', 'requiere_chasis']);
 
 /**
  * Limpia una celda según la columna oficial a la que va. Devuelve el valor final y, cuando
@@ -185,7 +185,7 @@ export function agruparCambios(cambios: CambioNormalizacion[], maxEjemplos = 8):
  * Los largos son los de las columnas reales (ProveedorProducto y Repuesto en el backend).
  * ------------------------------------------------------------------------ */
 
-export type TipoDeDato = 'texto' | 'numero' | 'entero' | 'anio';
+type TipoDeDato = 'texto' | 'numero' | 'entero' | 'anio';
 
 export interface LimiteColumna {
   maxLength: number;

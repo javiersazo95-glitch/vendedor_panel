@@ -48,8 +48,6 @@ export const PLANTILLA_COLUMNAS = [
   'requiere_chasis',
 ] as const;
 
-export type OficialCol = (typeof PLANTILLA_COLUMNAS)[number];
-
 /**
  * El esquema tal como lo entrega GET /inventario/excel/esquema. Es la fuente
  * autoritativa: qué columnas tiene la plantilla, cuáles son obligatorias, qué versión
@@ -368,10 +366,10 @@ export const CAMPO_AGRUPADO_POR: Record<string, string> = { subcategoria: 'categ
  * archivo del vendedor, salvo cuando esa fila trajo varios autos en una celda: ahí cada
  * auto es una fila distinta del archivo generado y necesita su propia clave.
  */
-export const claveDeParche = (origen: number, sub = 0): string =>
+const claveDeParche = (origen: number, sub = 0): string =>
   (sub === 0 ? String(origen) : `${origen}:${sub}`);
 
-export interface GrupoPorCompletar {
+interface GrupoPorCompletar {
   /** Valor del campo que agrupa ("Frenos"), del que dependen los valores válidos. */
   clave: string;
   /** Cuántas filas de ese grupo venían sin el dato. */
@@ -404,7 +402,7 @@ export interface CampoPorCompletar {
 const PRECIO_A_COTIZAR = /^(consultar|consultar precio|a consultar|cotizar|a cotizar|por cotizar|a pedido|preguntar|sin precio|s\/p)$/i;
 
 /** trim + minúsculas + sin acentos + no-alfanuméricos colapsados a un espacio. */
-export function normalizeHeader(h: string): string {
+function normalizeHeader(h: string): string {
   return String(h ?? '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')

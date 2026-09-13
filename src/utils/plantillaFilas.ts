@@ -12,7 +12,7 @@
  */
 import { normalizarParaComparar } from './plantillaCatalogos';
 
-export type MotivoDescarte = 'totales' | 'encabezado';
+type MotivoDescarte = 'totales' | 'encabezado';
 
 export interface FilaDescartada {
   /** Índice dentro del arreglo de filas de datos, no el número de fila del Excel. */
