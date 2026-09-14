@@ -144,16 +144,13 @@ vive en `HANDOFF_BOLETAS_Y_RECARGA.md` del repo del backend.
   archivo). Se descargan desde el navegador, nunca desde el backend.
 - `src/utils/plantillaMapeos.ts` — mapeos guardados en la cuenta del vendedor
   (`/inventario/excel/mapeos`), con `localStorage` como espejo local.
-- `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
-  prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
-- `.xlsx` de prueba versionados en la raíz: `Catalogo_120_Productos_RepuesTop.xlsx` (120
-  productos, formato oficial), `Prueba_Carga_Masiva_250_registros_Asincrono.xlsx` (umbral
-  asíncrono de la Fase 8), `Prueba_Carga_Masiva_Casos_Mixtos.xlsx` (casos válidos/inválidos) y
-  `Prueba_Carga_Masiva_Express_Casos_Borde.xlsx` (SKU inexistente, SKU repetido, precio ≤0 y
-  stock negativo para la carga EXPRESS — ver Flujo 5 de `plan_pruebas_dev.md` en el backend).
-  `prueba-fotos-3-origenes.xlsx` + `pruebas-fotos/` (carpeta, zip y una fila con URL) quedan
-  fuera de git a propósito: son fixtures locales para probar el emparejamiento de fotos a
-  mano, no assets del proyecto.
+- `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de `.xlsx` de
+  prueba con el formato oficial vigente. Ejecutar con `node <archivo>` después de cualquier
+  cambio de columnas; no generan archivos versionados, hay que correrlos para tener datos.
+- `pruebas-pago/` — Excel (`Prueba_Flujos_Pago.xlsx`, 5 productos reales con precio y stock,
+  formato oficial `2.1.0`) + `fotos/` con una foto real por SKU, para probar de punta a punta
+  los flujos de pago (checkout, Flow, boleta). Queda fuera de git a propósito: se regenera
+  cuando haga falta, no es un asset versionado del proyecto.
 - `src/utils/inventoryOrder.ts` — los grupos y el orden del Inventario General. Función pura:
   recibe los productos y devuelve la lista ordenada más a qué grupo quedó cada uno.
 - `src/utils/rut.ts` — formato y dígito verificador (módulo 11) del RUT chileno. Mismo

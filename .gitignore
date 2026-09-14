@@ -8,4 +8,7 @@ audit-runs/
 # fotos de ejemplo. Se generan al probar el flujo y no son del proyecto.
 prueba*.xlsx
 Plantilla_*.xlsx
-pruebas-fotos/
+
+# Excel + fotos reales para probar los flujos de pago (checkout, Flow, boleta) de punta a
+# punta. Local, se regenera cuando haga falta -- no es un asset versionado del proyecto.
+pruebas-pago/

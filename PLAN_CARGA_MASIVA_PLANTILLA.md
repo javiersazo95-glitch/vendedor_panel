@@ -94,11 +94,13 @@ lee con el mapa de 18 columnas. Desde la columna K todo queda corrido un lugar:
 Sin un solo error en el reporte. El vendedor ve "120 productos cargados" y su catálogo queda
 inservible.
 
-Reproducible hoy con archivos del propio repo: `Prueba_Carga_Masiva_250_registros_Asincrono.xlsx`
-y `Prueba_Carga_Masiva_Casos_Mixtos.xlsx` son exactamente ese caso (17 columnas, sin
-`instrucciones`). `Catalogo_120_Productos_RepuesTop.xlsx` sí declara `VERSION_PLANTILLA: 1.1.0`
-y se rechaza correctamente — lo que demuestra que la guarda funciona sólo cuando el archivo
-colabora.
+Era reproducible con archivos del propio repo (`Prueba_Carga_Masiva_250_registros_Asincrono.xlsx`
+y `Prueba_Carga_Masiva_Casos_Mixtos.xlsx`, 17 columnas sin `instrucciones`) hasta que la Fase 0
+cerró este riesgo: `validarEstructuraPlantilla` ahora compara la fila de encabezados completa
+contra `COLUMNAS_EXCEL` antes de leer una sola fila, así que un archivo con las columnas
+desalineadas se rechaza con un mensaje concreto en vez de leerse corrido. Esos tres `.xlsx` (con
+el layout viejo, ya sin valor de reproducción) se limpiaron del repo el 2026-09-14; el caso queda
+documentado acá y cubierto por los tests de `InventarioExcelServiceTest` en el backend.
 
 ### R2 — El archivo del mapper no declara versión
 
