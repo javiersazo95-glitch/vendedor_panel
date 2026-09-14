@@ -10,6 +10,7 @@ import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 import { descargarFotos, esUrlDeImagen } from '../utils/plantillaFotos';
 import { useMapeosGuardados } from '../utils/plantillaMapeos';
 import { sanitizeAoaForExport, sanitizeRowsForExport } from '../utils/xlsxSafety';
+import { comprimirImagen } from '../utils/imageCompression';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -915,10 +916,15 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           formData.append('compatibilityGroupsJson', producto.compatibilityGroupsJson ?? '');
           (producto.vehiculoCatalogoIds ?? []).forEach((id: number) => formData.append('vehiculoCatalogoIds', String(id)));
           formData.append('activo', String(producto.activo !== false));
-          (imageAssignments[fila.sku] || []).forEach((filename) => {
+          // Se comprime aca, justo antes de subir: cubre las 3 fuentes por igual (carpeta,
+          // ZIP y fotos bajadas por URL del Excel), que llegan sin tratamiento a
+          // availableImages. Ver imageCompression.ts.
+          await Promise.all((imageAssignments[fila.sku] || []).map(async (filename) => {
             const blob = availableImages[filename];
-            if (blob) formData.append('imagenes', blob, filename);
-          });
+            if (!blob) return;
+            const { blob: comprimido, filename: nombreFinal } = await comprimirImagen(blob, filename);
+            formData.append('imagenes', comprimido, nombreFinal);
+          }));
 
           const response = await apiFetch(
             `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(fila.productoId as number)}/editar`,

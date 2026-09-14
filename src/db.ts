@@ -2,6 +2,10 @@ import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from './utils/imageHelper';
 import { apiFetch } from './utils/apiFetch';
 import { getStoredSession } from './utils/session';
 import { encId } from './utils/url';
+import { comprimirImagenes } from './utils/imageCompression';
+
+/** ManualUpload siempre entrega File, pero el tipo tambien admite Blob por los otros llamadores de addProduct/updateProduct. */
+const nombreDeImagen = (archivo: File | Blob): string => ('name' in archivo ? archivo.name : 'foto.jpg');
 
 export interface Product {
   id: string;
@@ -303,7 +307,10 @@ export async function addProduct(
   formData.append('condicion', product.condition || 'ORIGINAL');
   formData.append('requiereChasis', String(product.requiresChassis === true));
   formData.append('activo', 'true');
-  imageFiles.forEach((file) => formData.append('imagenes', file));
+  const imagenesComprimidas = await comprimirImagenes(
+    imageFiles.map((file) => ({ blob: file, filename: nombreDeImagen(file) })),
+  );
+  imagenesComprimidas.forEach(({ blob, filename }) => formData.append('imagenes', blob, filename));
 
   const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/personalizado`, {
     method: 'POST',
@@ -362,7 +369,10 @@ export async function updateProduct(
     formData.append('condicion', product.condition || 'ORIGINAL');
     formData.append('requiereChasis', String(product.requiresChassis === true));
     formData.append('activo', String(product.activo !== false));
-    imageFiles.forEach((file) => formData.append('imagenes', file));
+    const imagenesComprimidas = await comprimirImagenes(
+      imageFiles.map((file) => ({ blob: file, filename: nombreDeImagen(file) })),
+    );
+    imagenesComprimidas.forEach(({ blob, filename }) => formData.append('imagenes', blob, filename));
 
     response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(product.id)}/editar`, {
       method: 'POST',
