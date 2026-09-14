@@ -146,6 +146,14 @@ vive en `HANDOFF_BOLETAS_Y_RECARGA.md` del repo del backend.
   (`/inventario/excel/mapeos`), con `localStorage` como espejo local.
 - `generate_120_products_excel.js`, `generate_bulk_excel.js` — generadores de los `.xlsx` de
   prueba de la raíz. Ejecutar con `node <archivo>` después de cualquier cambio de columnas.
+- `.xlsx` de prueba versionados en la raíz: `Catalogo_120_Productos_RepuesTop.xlsx` (120
+  productos, formato oficial), `Prueba_Carga_Masiva_250_registros_Asincrono.xlsx` (umbral
+  asíncrono de la Fase 8), `Prueba_Carga_Masiva_Casos_Mixtos.xlsx` (casos válidos/inválidos) y
+  `Prueba_Carga_Masiva_Express_Casos_Borde.xlsx` (SKU inexistente, SKU repetido, precio ≤0 y
+  stock negativo para la carga EXPRESS — ver Flujo 5 de `plan_pruebas_dev.md` en el backend).
+  `prueba-fotos-3-origenes.xlsx` + `pruebas-fotos/` (carpeta, zip y una fila con URL) quedan
+  fuera de git a propósito: son fixtures locales para probar el emparejamiento de fotos a
+  mano, no assets del proyecto.
 - `src/utils/inventoryOrder.ts` — los grupos y el orden del Inventario General. Función pura:
   recibe los productos y devuelve la lista ordenada más a qué grupo quedó cada uno.
 - `src/utils/rut.ts` — formato y dígito verificador (módulo 11) del RUT chileno. Mismo
