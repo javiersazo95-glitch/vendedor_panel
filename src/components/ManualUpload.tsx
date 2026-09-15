@@ -1302,7 +1302,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     className="manual-pricing-row"
                     style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
                   >
-                    <span>Costos totales de la venta:</span>
+                    <span style={{ color: '#0066ff', fontWeight: 600 }}>Costos totales de la venta:</span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <strong className="manual-pricing-fee">-${formatCLP(priceFee)}</strong>
                       {showPricingDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
