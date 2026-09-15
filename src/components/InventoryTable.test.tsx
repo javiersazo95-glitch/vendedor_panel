@@ -47,6 +47,53 @@ describe('InventoryTable', () => {
     expect(screen.getByText('Repuesto Test 1')).toBeInTheDocument();
   });
 
+  it('dice que un repuesto universal es universal, en vez de un auto vacío con un año inventado', () => {
+    const universal: Product = {
+      ...mockProducts[0],
+      esUniversal: true,
+      // Como llega de la API un repuesto sin compatibilidad vehicular.
+      vehicleBrand: '',
+      vehicleModel: '',
+      vehicleYear: 0,
+      vehicleVersion: '',
+    };
+
+    render(
+      <InventoryTable
+        products={[universal]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onTogglePause={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Compatibilidad universal')).toBeInTheDocument();
+    // El año actual aparecía acá cuando el panel lo rellenaba solo.
+    expect(screen.queryByText(new RegExp(String(new Date().getFullYear())))).not.toBeInTheDocument();
+  });
+
+  it('no deja un guión suelto cuando el repuesto no trae año ni motor', () => {
+    const sinDatos: Product = {
+      ...mockProducts[0],
+      vehicleYear: 0,
+      vehicleVersion: '',
+    };
+
+    render(
+      <InventoryTable
+        products={[sinDatos]}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onTogglePause={vi.fn()}
+      />
+    );
+
+    // El auto sí se muestra; lo que no hay no se dibuja. Antes esta celda mostraba "0 - ",
+    // con el 0 del año ausente y un guión que no separaba nada.
+    expect(screen.getByText('Toyota Yaris')).toBeInTheDocument();
+    expect(screen.queryByText(/0\s*-/)).not.toBeInTheDocument();
+  });
+
   it('re-slices the current page when itemsPerPage changes while staying on page 1 (QA-SRC-003)', () => {
     render(
       <InventoryTable

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getProductTopSummary, getRechargeDocumentUrl, getWalletHistory, saveProductsBatch, setProductTop, startRecharge } from './db';
+import { getAllProducts, getProductTopSummary, getRechargeDocumentUrl, getWalletHistory, saveProductsBatch, setProductTop, startRecharge } from './db';
 import { saveSession, clearSession } from './utils/session';
 
 const baseRow = {
@@ -166,5 +166,40 @@ describe('saveProductsBatch', () => {
 
     await expect(getRechargeDocumentUrl('10')).resolves.toBe('https://api/boleta/token');
     expect(fetchMock.mock.calls[0][0]).toContain('/fichas/compras/10/documento-url');
+  });
+});
+
+describe('mapDtoToProduct (vía getAllProducts)', () => {
+  beforeEach(() => {
+    saveSession({ email: 'a@a.com', role: 'vendedor', token: 'tok', sellerId: 'seller-1' });
+  });
+
+  afterEach(() => {
+    clearSession();
+    vi.restoreAllMocks();
+  });
+
+  it('deja el año en 0 cuando el backend no lo manda, en vez de inventar el año actual', async () => {
+    // Un repuesto universal llega así: sin marca, modelo ni años de compatibilidad.
+    const dto = { id: 7, skuProveedor: 'UNIV-1', nombrePublicado: 'Filtro universal', esUniversal: true };
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify([dto]), { status: 200 }))));
+
+    const [producto] = await getAllProducts();
+
+    expect(producto.esUniversal).toBe(true);
+    expect(producto.vehicleYear).toBe(0);
+    expect(producto.vehicleYearTo).toBe(0);
+    // El año actual acá era un dato inventado: se veía en la tabla y se colaba en el filtro de años.
+    expect(producto.vehicleYear).not.toBe(new Date().getFullYear());
+  });
+
+  it('respeta los años que sí vienen del backend', async () => {
+    const dto = { id: 8, skuProveedor: 'COMP-1', anioDesde: 2014, anioHasta: 2019 };
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(JSON.stringify([dto]), { status: 200 }))));
+
+    const [producto] = await getAllProducts();
+
+    expect(producto.vehicleYear).toBe(2014);
+    expect(producto.vehicleYearTo).toBe(2019);
   });
 });

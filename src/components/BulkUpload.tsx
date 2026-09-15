@@ -2281,7 +2281,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                         <td>{product.name}</td>
                         <td>{product.partBrand || '—'}</td>
                         <td>{[product.vehicleBrand, product.vehicleModel].filter(Boolean).join(' ') || '—'}</td>
-                        <td>{product.vehicleYear}</td>
+                        <td>{product.vehicleYear || '—'}</td>
                         <td style={{
                           background: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? 'rgba(16, 185, 129, 0.08)' : undefined,
                           color: selectedHistoryItem.mode === 'EXPRESS_STOCK_PRICE' ? '#047857' : undefined,

@@ -19,6 +19,23 @@ interface InventoryTableProps {
   onQuickUpdate?: (product: Product, updates: { price?: number; stock?: number }) => Promise<void>;
 }
 
+/** Marca y modelo del auto, sin el espacio suelto que queda cuando falta alguno. */
+function vehiculoDe(p: Product): string {
+  return [p.vehicleBrand, p.vehicleModel].filter(Boolean).join(' ');
+}
+
+/**
+ * La segunda línea de la celda de compatibilidad: año y motor.
+ *
+ * Se arma con lo que realmente vino, no con un molde fijo. Antes era `{año} - {motor}` siempre, y
+ * un repuesto sin esos datos mostraba "2026 - " (el año lo inventaba `mapDtoToProduct` con el año
+ * actual). Si no hay ninguno de los dos, la línea no se dibuja.
+ */
+function detalleDeCompatibilidad(p: Product): string {
+  const anio = p.vehicleYear > 0 ? String(p.vehicleYear) : '';
+  return [anio, p.vehicleVersion].filter(Boolean).join(' - ');
+}
+
 interface QuickEditCellProps {
   product: Product;
   field: 'price' | 'stock';
@@ -310,12 +327,18 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, grupos
                   </td>
                   <td>{p.partBrand}</td>
                   <td>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontWeight: 600 }}>{p.vehicleBrand} {p.vehicleModel}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        {p.vehicleYear} - {p.vehicleVersion}
-                      </span>
-                    </div>
+                    {p.esUniversal ? (
+                      <span style={{ fontWeight: 600 }}>Compatibilidad universal</span>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600 }}>{vehiculoDe(p) || '—'}</span>
+                        {detalleDeCompatibilidad(p) && (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            {detalleDeCompatibilidad(p)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="col-price">
                     <QuickEditCell

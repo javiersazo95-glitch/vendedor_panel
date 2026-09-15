@@ -149,7 +149,11 @@ function mapDtoToProduct(dto: ProductDto): Product {
     partBrand: dto.marcaRepuesto || '',
     vehicleBrand: dto.compatibilidadMarca || '',
     vehicleModel: dto.compatibilidadModelo || '',
-    vehicleYear: dto.anioDesde || new Date().getFullYear(),
+    // 0 = "el backend no mandó año", que es lo normal en un repuesto universal. Antes se rellenaba
+    // con el año actual: el panel inventaba un dato que nadie declaró, y ese año falso se veía en
+    // la tabla ("2026 - "), se colaba en el desplegable de años del filtro y volvía al backend al
+    // editar el producto. El resto del código ya trata el 0 como "sin año" (`vehicleYear > 0`).
+    vehicleYear: dto.anioDesde || 0,
     vehicleVersion: dto.motor || '',
     price: Number(dto.precio || 0),
     stock: Number(dto.stock || 0),
@@ -159,7 +163,7 @@ function mapDtoToProduct(dto: ProductDto): Product {
     condition: dto.condicion === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL',
     requiresChassis: dto.requiereChasis === true,
     esUniversal: dto.esUniversal === true,
-    vehicleYearTo: dto.anioHasta || dto.anioDesde || new Date().getFullYear(),
+    vehicleYearTo: dto.anioHasta || dto.anioDesde || 0,
     vehiculoCatalogoIds: dto.vehiculoCatalogoIds || [],
     compatibilityGroupsJson: dto.compatibilityGroupsJson || '',
     lastUpdated: dto.updatedAt || dto.createdAt || new Date().toISOString(),
