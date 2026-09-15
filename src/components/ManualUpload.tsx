@@ -1291,9 +1291,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
               {pricingMode !== 'quote_only' && price > 0 && (
                 <div className="manual-pricing-helper">
-                  {founder && <div className="manual-pricing-row"><strong>Beneficio Fundador: tarifa RepuesTop fija de 5% (IVA incl.)</strong></div>}
+                  {founder && <div className="manual-pricing-row"><strong>Beneficio Fundador: tarifa RepuesTop fija de 5% + IVA</strong></div>}
                   <div className="manual-pricing-row">
-                    <span>Comisión RepuesTop ({Math.round(priceBreakdown.rate * 100)}% IVA incl.):</span>
+                    <span>Comisión RepuesTop ({Math.round(priceBreakdown.rate * 100)}% + IVA):</span>
                     <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopWithIva)}</strong>
                   </div>
                   <div className="manual-pricing-row" style={{ paddingLeft: '0.75rem', fontSize: '0.78rem', opacity: 0.85 }}>
@@ -1310,6 +1310,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                   <div className="manual-pricing-row">
                     <strong>Recibirás en tu cuenta (Líquido):</strong>
                     <strong className="manual-pricing-earnings">${formatCLP(sellerEarnings)}</strong>
+                  </div>
+                  <div className="manual-pricing-row" style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                    <span>Abono estimado:</span>
+                    <span>11 días tras entrega (sin reclamos)</span>
                   </div>
 
                   {suggestedPrice > price && (
