@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List } from 'lucide-react';
+import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2 } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
 import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, setProductTop, type ProductTopSummary } from '../db';
@@ -32,6 +32,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   // renders as an off-canvas drawer toggled by this state.
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAssigningImages, setIsAssigningImages] = useState(false);
+  /** Cuántos productos actualizó la última carga Express limpia, para avisarlo en el inventario. */
+  const [expressCargados, setExpressCargados] = useState<number | null>(null);
+  /** Con qué pestaña abre la carga masiva; 'history' sólo al venir del "Ver detalle" del aviso. */
+  const [bulkInitialTab, setBulkInitialTab] = useState<'upload' | 'history'>('upload');
   const [inventoryView, setInventoryView] = useState<'table' | 'grid'>('table');
   const [inventoryOrder, setInventoryOrder] = useState<OrdenInventario>('recomendado');
   const [walletOpen, setWalletOpen] = useState(false);
@@ -281,7 +285,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             Carga Manual 1:1
           </button>
 
-          <button className={`nav-item ${activeView === 'bulk' ? 'active' : ''}`} onClick={() => { setActiveView('bulk'); closeSidebarOnMobile(); }}>
+          {/* Entrar por el menú siempre abre en "Nueva carga": la pestaña de historial queda
+              reservada para el "Ver detalle" del aviso, que es el único que sabe qué carga mirar. */}
+          <button
+            className={`nav-item ${activeView === 'bulk' ? 'active' : ''}`}
+            onClick={() => { setBulkInitialTab('upload'); setExpressCargados(null); setActiveView('bulk'); closeSidebarOnMobile(); }}
+          >
             <UploadCloud size={18} />
             Carga Masiva
           </button>
@@ -364,12 +373,58 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
           </div>
         )}
 
+        {expressCargados !== null && activeView === 'inventory' && (
+          <div
+            style={{
+              background: 'var(--success-bg)',
+              border: '1px solid hsl(var(--success) / 0.25)',
+              borderRadius: '12px',
+              color: 'hsl(var(--success))',
+              padding: '0.85rem 1.25rem',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              marginBottom: '0.75rem'
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <CheckCircle2 size={18} style={{ flexShrink: 0 }} />
+              Listo: {expressCargados === 1
+                ? 'actualizaste el precio y el stock de 1 repuesto.'
+                : `actualizaste el precio y el stock de ${expressCargados} repuestos.`} Los ves abajo, en tu inventario.
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', height: 'auto' }}
+                onClick={() => { setBulkInitialTab('history'); setActiveView('bulk'); setExpressCargados(null); }}
+              >
+                Ver detalle
+              </button>
+              <button
+                type="button"
+                className="icon-close"
+                aria-label="Cerrar aviso de carga"
+                onClick={() => setExpressCargados(null)}
+              >
+                <X size={16} />
+              </button>
+            </span>
+          </div>
+        )}
+
         {activeView === 'bulk' ? (
           <BulkUpload
             isOpen={activeView === 'bulk'}
             onClose={() => setActiveView('inventory')}
             onUploadSuccess={fetchProducts}
             onAssignImagesStateChange={(isAssigning) => setIsAssigningImages(isAssigning)}
+            onExpressSuccess={(cargados) => { setActiveView('inventory'); setExpressCargados(cargados); }}
+            initialTab={bulkInitialTab}
             embedded
           />
         ) : (

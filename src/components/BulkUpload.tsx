@@ -17,6 +17,15 @@ interface BulkUploadProps {
   onClose: () => void;
   onUploadSuccess: () => void;
   onAssignImagesStateChange?: (isAssigning: boolean) => void;
+  /**
+   * Una carga Express que terminó sin una sola fila con error ni advertencia.
+   *
+   * Sólo ese caso avisa: si algo quedó fuera, el vendedor tiene que ver acá qué SKU no se
+   * actualizó, y mandarlo al inventario con un cartel verde escondería justamente eso.
+   */
+  onExpressSuccess?: (cargados: number) => void;
+  /** Con qué pestaña abre. Sirve para volver al detalle de una carga ya hecha. */
+  initialTab?: 'upload' | 'history';
   embedded?: boolean;
 }
 
@@ -100,6 +109,8 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   onClose,
   onUploadSuccess,
   onAssignImagesStateChange,
+  onExpressSuccess,
+  initialTab = 'upload',
   embedded = false
 }) => {
   const [uploadMode, setUploadMode] = useState<'FULL_CREATION' | 'EXPRESS_STOCK_PRICE'>('FULL_CREATION');
@@ -132,7 +143,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
   const [imageAssignments, setImageAssignments] = useState<Record<string, string[]>>({});
   const [uploadSuccessCount, setUploadSuccessCount] = useState<number | null>(null);
   const [missingImageRows, setMissingImageRows] = useState<{ row: number; tableRow: number; sku: string; name: string }[]>([]);
-  const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'history'>(initialTab);
   const [uploadHistory, setUploadHistory] = useState<BulkUploadHistoryItem[]>(() => loadBulkUploadHistory());
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<BulkUploadHistoryItem | null>(null);
 
@@ -750,6 +761,19 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       setActiveTab('upload');
       setProgress(100);
       onUploadSuccess();
+
+      // La carga Express deja al vendedor en esta misma pantalla, donde lo único que cambia es
+      // un cartel y el detalle de la derecha: no se entiende que ya terminó si no se lee. Cuando
+      // salió todo bien se lo manda al inventario, que es la prueba de que los precios y el
+      // stock quedaron actualizados -- mirarlo dice más que cualquier aviso.
+      //
+      // Con una sola fila con error o advertencia NO se redirige: ahí el detalle de esta
+      // pantalla es lo único que nombra el SKU que quedó fuera, y sacarlo de encima lo
+      // escondería. Las advertencias cuentan igual que los errores a propósito.
+      const cargaLimpia = dbResult.errors.length === 0 && stats.errors === 0 && stats.warnings === 0;
+      if (uploadMode === 'EXPRESS_STOCK_PRICE' && cargaLimpia) {
+        onExpressSuccess?.(dbResult.success.length);
+      }
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       setLogs((prev) => [...prev, { id: `${Date.now()}-upload-error`, row: 0, sku: 'N/A', status: 'ERROR', message: `Error al iniciar la carga: ${errMsg}` }]);
