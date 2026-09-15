@@ -1,4 +1,4 @@
-const FLOW_RATE_BASE = 0.0289;
+export const FLOW_RATE_BASE = 0.0289;
 const FLOW_IVA = 0.19;
 const FLOW_RATE_WITH_IVA = FLOW_RATE_BASE * (1 + FLOW_IVA);
 const FOUNDER_APP_RATE = 0.05;

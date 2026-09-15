@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, Globe, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Globe, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
-import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount } from '../utils/pricing';
+import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount, FLOW_RATE_BASE } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
 
 function sanitizeCodeInput(value: string): string {
@@ -244,6 +244,8 @@ function formatCLP(value: number) {
   return new Intl.NumberFormat('es-CL').format(value);
 }
 
+const FLOW_RATE_LABEL = `${(FLOW_RATE_BASE * 100).toFixed(2).replace('.', ',')}%`;
+
 function SelectOrInput({
   value,
   onChange,
@@ -467,6 +469,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [catalogPartBrands, setCatalogPartBrands] = useState<string[]>(PART_BRANDS_FALLBACK);
   const [vehicleBrandCatalog, setVehicleBrandCatalog] = useState<CatalogOption[]>([]);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+  const [showPricingDetails, setShowPricingDetails] = useState(false);
   const initialSnapshotRef = useRef<string | null>(null);
 
   const computeSnapshot = useCallback(() => {
@@ -1292,21 +1295,20 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               {pricingMode !== 'quote_only' && price > 0 && (
                 <div className="manual-pricing-helper">
                   {founder && <div className="manual-pricing-row"><strong>Beneficio Fundador: tarifa RepuesTop fija de 5% + IVA</strong></div>}
-                  <div className="manual-pricing-row">
-                    <span>Comisión RepuesTop ({Math.round(priceBreakdown.rate * 100)}% + IVA):</span>
-                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopWithIva)}</strong>
-                  </div>
-                  <div className="manual-pricing-row" style={{ paddingLeft: '0.75rem', fontSize: '0.78rem', opacity: 0.85 }}>
-                    <span>↳ Neto comisión: ${formatCLP(priceBreakdown.repuestopNet)} | IVA (19%): ${formatCLP(priceBreakdown.repuestopIva)}</span>
-                  </div>
-                  <div className="manual-pricing-row">
-                    <span>Procesamiento Flow (Pasarela + IVA):</span>
-                    <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.flowWithIva)}</strong>
-                  </div>
-                  <div className="manual-pricing-row">
-                    <span>Descuentos totales:</span>
-                    <strong className="manual-pricing-fee">-${formatCLP(priceFee)}</strong>
-                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPricingDetails((prev) => !prev)}
+                    className="manual-pricing-row"
+                    style={{ width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', textAlign: 'left' }}
+                  >
+                    <span>Costos totales de la venta:</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <strong className="manual-pricing-fee">-${formatCLP(priceFee)}</strong>
+                      {showPricingDetails ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </span>
+                  </button>
+
                   <div className="manual-pricing-row">
                     <strong>Recibirás en tu cuenta (Líquido):</strong>
                     <strong className="manual-pricing-earnings">${formatCLP(sellerEarnings)}</strong>
@@ -1315,6 +1317,22 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     <span>Abono estimado:</span>
                     <span>11 días tras entrega (sin reclamos)</span>
                   </div>
+
+                  {showPricingDetails && (
+                    <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.6rem', backgroundColor: 'rgba(100, 116, 139, 0.08)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <div className="manual-pricing-row">
+                        <span>Comisión RepuesTop ({Math.round(priceBreakdown.rate * 100)}% + IVA):</span>
+                        <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.repuestopWithIva)}</strong>
+                      </div>
+                      <div className="manual-pricing-row" style={{ paddingLeft: '0.75rem', fontSize: '0.78rem', opacity: 0.85 }}>
+                        <span>↳ Neto comisión: ${formatCLP(priceBreakdown.repuestopNet)} | IVA (19%): ${formatCLP(priceBreakdown.repuestopIva)}</span>
+                      </div>
+                      <div className="manual-pricing-row">
+                        <span>Procesamiento Flow ({FLOW_RATE_LABEL} + IVA):</span>
+                        <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.flowWithIva)}</strong>
+                      </div>
+                    </div>
+                  )}
 
                   {suggestedPrice > price && (
                     <div className="manual-suggested-price">
