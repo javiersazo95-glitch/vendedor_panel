@@ -12,3 +12,13 @@ Plantilla_*.xlsx
 # Excel + fotos reales para probar los flujos de pago (checkout, Flow, boleta) de punta a
 # punta. Local, se regenera cuando haga falta -- no es un asset versionado del proyecto.
 pruebas-pago/
+
+# Datos de prueba del ambiente dev: el Excel de 2.000 repuestos, las fotos del pool y el
+# ZIP que las lleva. Son ~84 MB de binarios que se regeneran con dos comandos
+# (descargar_fotos_pool.js y generar_2000_datos_dev.js), asi que no son un asset del
+# proyecto. Si se versionaran, cada regeneracion dejaria otra copia en el historial.
+# Se versionan las dos cosas que no se pueden regenerar solas: de donde sale cada foto
+# (fuentes_fotos.json, que es lo que lee el descargador) y su atribucion.
+datos_prueba_dev/*
+!datos_prueba_dev/fuentes_fotos.json
+!datos_prueba_dev/CREDITOS_FOTOS.md
