@@ -10,6 +10,7 @@ import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
 import { encId } from '../utils/url';
 import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from '../utils/fileValidation';
+import { ordenarFilasPorEstado } from '../utils/cargaResultado';
 import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 import { descargarFotos, esUrlDeImagen } from '../utils/plantillaFotos';
@@ -1133,6 +1134,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         </span>
       </div>
 
+      {/* Sin esto el número de fila salta (14, 1961, 27...) y parece un error de la tabla. */}
+      {(data.productosConAdvertencia > 0 || data.productosConError > 0) && (
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+          Abajo van primero las filas que conviene revisar; el número es el de tu Excel.
+        </p>
+      )}
+
       {data.filas.length > 0 && (
         <div className="log-table-container" style={{ marginTop: 0, flex: 1, minHeight: 0, maxHeight: '390px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {/* Cabecera fija: fuera del scroll vertical */}
@@ -1165,7 +1173,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                 <col style={{ width: 'auto' }} />
               </colgroup>
               <tbody>
-                {data.filas.map((fila) => (
+                {/* Ordenadas, no en el orden del archivo: con 2.000 filas las que fallan quedan
+                    perdidas entre las que salieron bien, y el recuadro tiene scroll propio. */}
+                {ordenarFilasPorEstado(data.filas).map((fila) => (
                   <tr key={fila.fila}>
                     <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.78rem', whiteSpace: 'nowrap', textAlign: 'center', color: 'var(--text-secondary)' }}>{fila.fila}</td>
                     <td style={{ padding: '0.55rem 0.85rem', fontSize: '0.78rem', fontWeight: 750, whiteSpace: 'nowrap', letterSpacing: '0.02em' }}>{fila.sku}</td>
