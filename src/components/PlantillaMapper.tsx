@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
@@ -109,6 +109,22 @@ const MAX_FILAS_REVISION = 100;
 /** Filas de revisión por página. */
 const FILAS_POR_PAGINA = 20;
 
+/**
+ * Repuestos por página en la tabla de compatibilidades.
+ *
+ * Se cuenta en repuestos y no en filas porque la tabla se pagina por repuesto: un repuesto
+ * con cuatro autos se ve entero o no se ve. Diez repuestos son entre diez y unas cuarenta
+ * filas, del mismo orden que la tabla de arriba.
+ */
+const REPUESTOS_POR_PAGINA_COMPAT = 10;
+
+/**
+ * Las columnas de una compatibilidad que sí o sí llevan dato. Son las mismas que la celda
+ * marca en amarillo cuando están vacías: el motor y la referencia OEM son opcionales.
+ */
+const COMPAT_CON_DATO: readonly string[] = COLUMNAS_COMPATIBILIDADES
+  .filter((c) => c !== 'motor' && c !== 'referencia_oem');
+
 /** Los años que se pueden elegir, del más nuevo al más viejo, como en la carga 1:1. */
 const ANIOS = aniosDisponibles();
 
@@ -204,6 +220,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   /** La tabla de revisión ocupando toda la pantalla, para corregir con espacio. */
   const [tablaExpandida, setTablaExpandida] = useState(false);
   const [paginaRevision, setPaginaRevision] = useState(1);
+  const [paginaCompat, setPaginaCompat] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Todo lo que esta pantalla recorre sale del esquema del backend: las columnas, cuáles
@@ -610,6 +627,71 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     }));
     return [...delArchivo, ...agregadas];
   }, [separacion, filasOrigenCompat, mapping?.compatibilidadesExtra]);
+
+  /**
+   * Las compatibilidades agrupadas por repuesto.
+   *
+   * El repuesto es la unidad con la que el vendedor decide: lo que tiene que juzgar es "¿este
+   * repuesto sirve para estos autos?", no una fila suelta. Por eso la tabla se pagina por
+   * repuesto y no por fila —un corte a mitad de grupo le parte esa decisión en dos páginas—
+   * y por eso hay paginado en vez de un tope como el de la tabla de arriba: allá los
+   * contadores miran el archivo entero igual, pero acá cada fila es una compatibilidad que se
+   * va a publicar. Mostrar cien de quinientas y publicar las otras cuatrocientas sin que las
+   * haya visto es justamente publicar mal en silencio.
+   *
+   * El orden pone adelante lo que hay que mirar: primero lo que el vendedor acaba de agregar
+   * a mano, después los repuestos a los que les falta completar algo, y al final el resto en
+   * el orden del archivo. Sin esto, con quinientas compatibilidades la que falta completar
+   * queda en la página veinte y no la ve nadie.
+   */
+  const gruposCompatibilidad = useMemo(() => {
+    const columnas = COLUMNAS_COMPATIBILIDADES as readonly string[];
+    const iSku = columnas.indexOf('sku_proveedor');
+    const grupos = new Map<string, {
+      sku: string;
+      filas: { valores: string[]; clave: string | number | null; extra: number | null; indice: number }[];
+      agregadas: number;
+      sinDato: number;
+      orden: number;
+    }>();
+
+    filasCompatibilidad.forEach((fila, indice) => {
+      const sku = String(fila.valores[iSku] ?? '').trim().toUpperCase();
+      let grupo = grupos.get(sku);
+      if (!grupo) {
+        grupo = { sku, filas: [], agregadas: 0, sinDato: 0, orden: grupos.size };
+        grupos.set(sku, grupo);
+      }
+      grupo.filas.push({ ...fila, indice });
+      if (fila.extra !== null) grupo.agregadas += 1;
+      // "Le falta algo" es exactamente lo que la celda marca en amarillo, así que lo que
+      // queda adelante es lo que se ve marcado. Una marca que no está en el catálogo no
+      // entra en la cuenta a propósito: los modelos se piden por marca a medida que hacen
+      // falta, y ordenar con algo que llega después movería la tabla bajo el dedo del
+      // vendedor mientras la está leyendo.
+      if (COMPAT_CON_DATO.some((c) => !String(fila.valores[columnas.indexOf(c)] ?? '').trim())) {
+        grupo.sinDato += 1;
+      }
+    });
+
+    const primero = (valor: number) => (valor > 0 ? 0 : 1);
+    return [...grupos.values()].sort((a, b) => (
+      primero(a.agregadas) - primero(b.agregadas)
+      || primero(a.sinDato) - primero(b.sinDato)
+      || a.orden - b.orden
+    ));
+  }, [filasCompatibilidad]);
+
+  // La página se acota al vuelo, igual que la de la tabla de revisión: quitar una
+  // compatibilidad puede dejar menos páginas de las que había.
+  const totalPaginasCompat = Math.max(1, Math.ceil(gruposCompatibilidad.length / REPUESTOS_POR_PAGINA_COMPAT));
+  const paginaActualCompat = Math.min(paginaCompat, totalPaginasCompat);
+  const gruposDeLaPagina = gruposCompatibilidad.slice(
+    (paginaActualCompat - 1) * REPUESTOS_POR_PAGINA_COMPAT,
+    paginaActualCompat * REPUESTOS_POR_PAGINA_COMPAT,
+  );
+  /** Cuántas compatibilidades del archivo entero tienen alguna celda sin completar. */
+  const compatSinCompletar = gruposCompatibilidad.reduce((total, g) => total + g.sinDato, 0);
 
   /**
    * Cuántos autos de más lleva cada repuesto, por SKU.
@@ -2356,15 +2438,27 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
       {revision && revision.filas.length > 0 && (
         <details className="mapper-section mapper-compat" open={filasCompatibilidad.length > 0}>
+          {/* El tamaño va en el título, antes de abrir: con un archivo grande esto son
+              cientos de filas, y saberlo de antemano evita el susto de abrirlo a ciegas. */}
           <summary className="bulk-purpose-label">
             {filasCompatibilidad.length > 0
-              ? 'Compatibilidades: los demás autos de cada repuesto'
+              ? `Compatibilidades: los demás autos de cada repuesto (${gruposCompatibilidad.length.toLocaleString('es-CL')} repuestos, ${filasCompatibilidad.length.toLocaleString('es-CL')} autos)`
               : 'Compatibilidades: ningún repuesto tiene más de un auto'}
           </summary>
           <p className="mapper-hint">
             En la tabla de arriba cada repuesto lleva un auto. Acá van los demás, y es la
             segunda hoja del Excel que se genera. Puedes corregir lo que haya y agregar los
             autos que falten: el mismo repuesto aparecerá en la búsqueda de cada uno.
+            {compatSinCompletar > 0 && (
+              <>
+                {' '}
+                <b>
+                  {compatSinCompletar === 1
+                    ? 'A un auto le falta completar un dato, y va primero.'
+                    : `A ${compatSinCompletar.toLocaleString('es-CL')} autos les falta completar algún dato, y van primero.`}
+                </b>
+              </>
+            )}
           </p>
 
           <div className="mapper-preview-wrap">
@@ -2378,7 +2472,29 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {filasCompatibilidad.map((fila, i) => {
+                {gruposDeLaPagina.map((grupo) => (
+                <Fragment key={`grupo-${grupo.sku}`}>
+                {/* El repuesto se nombra una vez arriba de sus autos: la columna del código
+                    se queda igual porque hay que poder corregirla, pero así se ve de un
+                    vistazo cuántos autos lleva este repuesto y cuáles son. */}
+                <tr className="mapper-compat-grupo">
+                  <td colSpan={COLUMNAS_COMPATIBILIDADES.length + 1}>
+                    <b>{grupo.sku || 'Sin código'}</b>
+                    {' · '}
+                    {grupo.filas.length === 1 ? 'un auto más' : `${grupo.filas.length} autos más`}
+                    {grupo.sinDato > 0 && (
+                      <span className="mapper-compat-falta">
+                        {' · '}
+                        {grupo.sinDato === 1 ? 'a uno le falta un dato' : `a ${grupo.sinDato} les falta un dato`}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+                {grupo.filas.map((fila) => {
+                  // El número de la etiqueta es la posición en el archivo, no la de la
+                  // página: es lo que el vendedor puede volver a encontrar, y no cambia
+                  // cuando se reordenan los grupos.
+                  const i = fila.indice;
                   const dato = (columna: string) =>
                     fila.valores[(COLUMNAS_COMPATIBILIDADES as readonly string[]).indexOf(columna)] ?? '';
                   const contexto: ContextoDeFila = {
@@ -2433,6 +2549,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                     </tr>
                   );
                 })}
+                </Fragment>
+                ))}
                 {filasCompatibilidad.length === 0 && (
                   <tr>
                     <td colSpan={COLUMNAS_COMPATIBILIDADES.length + 1} className="mapper-empty">
@@ -2445,10 +2563,42 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
             </table>
           </div>
 
+          {totalPaginasCompat > 1 && (
+            <div className="mapper-revision-paginado">
+              <button
+                type="button"
+                className="btn btn-secondary mapper-btn"
+                onClick={() => setPaginaCompat(paginaActualCompat - 1)}
+                disabled={paginaActualCompat <= 1}
+              >
+                <ArrowLeft size={15} /> Anteriores
+              </button>
+              <span>
+                Repuestos {(paginaActualCompat - 1) * REPUESTOS_POR_PAGINA_COMPAT + 1}
+                –{Math.min(paginaActualCompat * REPUESTOS_POR_PAGINA_COMPAT, gruposCompatibilidad.length)}
+                {' '}de {gruposCompatibilidad.length.toLocaleString('es-CL')}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary mapper-btn"
+                onClick={() => setPaginaCompat(paginaActualCompat + 1)}
+                disabled={paginaActualCompat >= totalPaginasCompat}
+              >
+                Siguientes <ArrowRight size={15} />
+              </button>
+            </div>
+          )}
+
           <button
             type="button"
             className="btn btn-secondary mapper-btn"
-            onClick={() => agregarCompat(primerSku)}
+            onClick={() => {
+              agregarCompat(primerSku);
+              // El auto recién agregado viene vacío, así que su repuesto queda en el primer
+              // grupo: sin volver a la página 1 el vendedor haría clic y no vería aparecer
+              // nada.
+              setPaginaCompat(1);
+            }}
           >
             <Plus size={16} /> Agregar compatibilidad
           </button>

@@ -877,6 +877,46 @@ describe('PlantillaMapper', () => {
   });
 
 
+  it('agrupa las compatibilidades por repuesto, las pagina y pone adelante las que falta completar', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+
+    // Doce repuestos con dos autos cada uno: doce compatibilidades, más de una página. Es la
+    // forma del archivo de verdad, donde esto llega a cientos de filas y la tabla se dibujaba
+    // entera: cada fila son cuatro selects con el catálogo completo adentro.
+    const filas = ['Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto,Desde,Hasta'];
+    for (let i = 1; i <= 12; i++) {
+      const sku = `A-${String(i).padStart(2, '0')}`;
+      filas.push(`${sku},Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla,2014,2018`);
+      // Al noveno le falta el modelo en su segundo auto: tiene que quedar el primero de todos.
+      filas.push(`${sku},Pastilla,Brembo,Frenos,4990,10,Toyota,${i === 9 ? '' : 'Yaris'},2015,2020`);
+    }
+    await subirYRelacionar(filas.join('\n'));
+    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // El tamaño se dice en el título, antes de abrir nada.
+    expect(screen.getByText(/Compatibilidades: los demás autos de cada repuesto \(12 repuestos, 12 autos\)/))
+      .toBeInTheDocument();
+    expect(screen.getByText(/A un auto le falta completar un dato, y va primero/)).toBeInTheDocument();
+
+    const encabezados = () => [...document.querySelectorAll('.mapper-compat-grupo')]
+      .map((tr) => tr.textContent ?? '');
+
+    // Una página son diez repuestos, no los doce: lo que ahorra el paginado es justamente
+    // no montar los selects de todos a la vez.
+    expect(encabezados()).toHaveLength(10);
+    expect(encabezados()[0]).toContain('A-09');
+    expect(encabezados()[0]).toContain('le falta un dato');
+    expect(encabezados().some((t) => t.includes('A-12'))).toBe(false);
+
+    expect(screen.getByText(/Repuestos 1–10 de 12/)).toBeInTheDocument();
+    clic(/Siguientes/);
+    // Ninguno queda fuera: los que no entraban en la primera página están en la segunda.
+    expect(encabezados()).toHaveLength(2);
+    expect(encabezados().some((t) => t.includes('A-12'))).toBe(true);
+  });
+
   it('deja agregar un auto a mano y lo escribe en la hoja de compatibilidades', async () => {
     const onGenerated = vi.fn();
     render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);

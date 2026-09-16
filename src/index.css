@@ -1270,6 +1270,21 @@ h1, h2, h3, h4, h5, h6 {
 .mapper-detalles-archivo > summary, .mapper-detalle-arreglos > summary, .mapper-compat > summary { cursor: pointer; font-weight: 700; color: var(--text-primary); list-style: revert; }
 .mapper-detalles-archivo[open] > summary, .mapper-compat[open] > summary { margin-bottom: .75rem; }
 .mapper-detalles-archivo > .mapper-section { margin-top: 1rem; }
+
+/* La fila que encabeza los autos de un mismo repuesto. No es una fila de datos: no se puede
+   corregir nada en ella, así que no toma el cursor ni el hover de las demás. */
+.mapper-compat-grupo > td {
+  background: var(--bg-app);
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+  white-space: normal;
+  max-width: none;
+  padding-top: .5rem;
+  padding-bottom: .5rem;
+}
+.mapper-compat-grupo { cursor: default; }
+.mapper-compat-grupo:hover > td { background: var(--bg-app); }
+.mapper-compat-falta { color: #b45309; font-weight: 600; }
 .mapper-detalle-arreglos { margin-top: .5rem; }
 .mapper-arreglo-antes { color: var(--text-muted); text-decoration: line-through; }
 .mapper-arreglo-despues { font-weight: 700; color: #15803d; }
