@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
   UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check, Image as ImageIcon, Plus,
+  Maximize2, Minimize2,
 } from 'lucide-react';
 import {
   ESQUEMA_FALLBACK,
@@ -93,6 +94,19 @@ const BIG_FILE_ROWS = 5000;
 const VALUE_MAP_CAP = 20;
 /** Filas crudas que se muestran para que el vendedor confirme dónde están sus títulos. */
 const PREVIEW_ROWS = 6;
+
+/**
+ * Cuántas filas del archivo llegan a la tabla de revisión, ya priorizadas por `revisarAoA`
+ * (primero las que no se publican).
+ *
+ * No son "todas" a propósito: cada celda de esa tabla es un `<select>` que carga el catálogo
+ * completo, así que las filas cuestan miles de nodos cada una. Con el tope alto y paginación,
+ * el vendedor llega a todas las que le importan sin que el navegador tenga que dibujarlas juntas.
+ */
+const MAX_FILAS_REVISION = 100;
+
+/** Filas de revisión por página. */
+const FILAS_POR_PAGINA = 20;
 
 /** Los años que se pueden elegir, del más nuevo al más viejo, como en la carga 1:1. */
 const ANIOS = aniosDisponibles();
@@ -186,6 +200,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const [generating, setGenerating] = useState(false);
   const [reused, setReused] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  /** La tabla de revisión ocupando toda la pantalla, para corregir con espacio. */
+  const [tablaExpandida, setTablaExpandida] = useState(false);
+  const [paginaRevision, setPaginaRevision] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Todo lo que esta pantalla recorre sale del esquema del backend: las columnas, cuáles
@@ -364,7 +381,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         })
         .filter((campo) => campo.grupos.length > 0),
       revision: revisarAoA(paraRevisar, campos, {
-        maxFilas: 20,
+        maxFilas: MAX_FILAS_REVISION,
         primeraFilaArchivo: filaEncabezados + 2,
         catalogos: esquema.catalogos,
         numerosDeFila: origenes.map((i) => (filasOriginales[i] ?? i) + 1),
@@ -374,6 +391,19 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     };
   }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema, filasOriginales,
     opcionesDeGrupo, modelosPorMarca]);
+
+  // Cuántas de las filas mostradas piden atención. Es lo que titula la tabla, y no se saca de
+  // los contadores de arriba: ésos miran el archivo entero, y acá se nombra lo que se ve.
+  const revisionConProblemas = revision ? revision.filas.filter((f) => f.problemas.length > 0).length : 0;
+
+  // La página se acota al vuelo en vez de reajustarse con un efecto: cambiar el mapeo puede dejar
+  // menos filas de las que había, y un setState dentro de un efecto agrega un render de más
+  // (además de lo que marca el lint del proyecto).
+  const totalPaginasRevision = revision ? Math.max(1, Math.ceil(revision.filas.length / FILAS_POR_PAGINA)) : 1;
+  const paginaActualRevision = Math.min(paginaRevision, totalPaginasRevision);
+  const filasDeLaPagina = revision
+    ? revision.filas.slice((paginaActualRevision - 1) * FILAS_POR_PAGINA, paginaActualRevision * FILAS_POR_PAGINA)
+    : [];
 
   // Las marcas se piden al llegar a revisar y no antes: es el único paso que las usa, y
   // pedirlas al abrir el asistente cargaría el catálogo a quien sólo viene a mapear.
@@ -2102,10 +2132,23 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       )}
 
       {revision && revision.filas.length > 0 && (
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">
-            Tus primeros {revision.filas.length} repuestos, ya con el formato de RepuesTop
-          </span>
+        <section className={`mapper-section${tablaExpandida ? ' mapper-revision-expandida' : ''}`}>
+          <div className="mapper-revision-encabezado">
+            <span className="bulk-purpose-label">
+              {revisionConProblemas > 0
+                ? `${revisionConProblemas === 1 ? 'La fila que conviene revisar' : `Las ${revisionConProblemas} filas que conviene revisar`}, primero las que no se publican`
+                : 'Tus repuestos, ya con el formato de RepuesTop'}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary mapper-btn"
+              onClick={() => setTablaExpandida((v) => !v)}
+            >
+              {tablaExpandida
+                ? <><Minimize2 size={15} /> Salir de pantalla completa</>
+                : <><Maximize2 size={15} /> Ver en pantalla completa</>}
+            </button>
+          </div>
           <div className="mapper-preview-wrap">
             <table className="mapper-preview revisada">
               <thead>
@@ -2118,7 +2161,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {revision.filas.map((fila: FilaRevisada) => {
+                {filasDeLaPagina.map((fila: FilaRevisada) => {
                   const completables = new Set(porCompletar.map((x) => x.columna));
                   const porColumna = new Map(fila.problemas.map((p) => [p.columna, p]));
                   const dato = (columna: string) => {
@@ -2172,9 +2215,34 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               </tbody>
             </table>
           </div>
+          {totalPaginasRevision > 1 && (
+            <div className="mapper-revision-paginado">
+              <button
+                type="button"
+                className="btn btn-secondary mapper-btn"
+                onClick={() => setPaginaRevision(paginaActualRevision - 1)}
+                disabled={paginaActualRevision <= 1}
+              >
+                <ArrowLeft size={15} /> Anteriores
+              </button>
+              <span>
+                Filas {(paginaActualRevision - 1) * FILAS_POR_PAGINA + 1}
+                –{Math.min(paginaActualRevision * FILAS_POR_PAGINA, revision.filas.length)}
+                {' '}de {revision.filas.length}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary mapper-btn"
+                onClick={() => setPaginaRevision(paginaActualRevision + 1)}
+                disabled={paginaActualRevision >= totalPaginasRevision}
+              >
+                Siguientes <ArrowRight size={15} />
+              </button>
+            </div>
+          )}
           <p className="mapper-hint">
             {revision.total > revision.filas.length
-              ? `Mostramos las primeras ${revision.filas.length} filas; los contadores de arriba miran las ${revision.total.toLocaleString('es-CL')}. `
+              ? `De las ${revision.total.toLocaleString('es-CL')} filas del archivo, acá están las ${revision.filas.length} que más conviene mirar; los contadores de arriba miran todas. `
               : ''}
             {columnasVisibles.length < revision.columnas.length
               ? 'No mostramos las columnas que quedaron vacías en todas estas filas.'

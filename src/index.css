@@ -845,6 +845,29 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Vista previa de las filas crudas, para elegir donde estan los titulos. */
 .mapper-preview-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 12px; }
+
+/* Cabecera de la tabla de revisión: el título a la izquierda, el botón de pantalla completa
+   a la derecha. */
+.mapper-revision-encabezado { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+/* La tabla de revisión ocupando toda la pantalla. Es la misma sección de siempre, sacada de su
+   lugar con position: fixed -- no una copia de la tabla en un modal, que habría que mantener
+   en paralelo. El scroll queda adentro para que el encabezado y el paginado no se vayan. */
+.mapper-revision-expandida {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  margin: 0;
+  padding: 1rem 1.25rem 1.25rem;
+  background: var(--bg-app);
+  overflow: auto;
+}
+.mapper-revision-expandida .mapper-preview-wrap { max-height: calc(100vh - 11rem); overflow: auto; }
+/* La fila de títulos se queda a la vista al bajar por la tabla: con 20 filas de selects,
+   perderla obliga a contar columnas de memoria. */
+.mapper-revision-expandida .mapper-preview thead th { position: sticky; top: 0; z-index: 1; background: var(--bg-card); }
+
+.mapper-revision-paginado { display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem; color: var(--text-secondary); }
 .mapper-preview { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
 .mapper-preview tr { cursor: pointer; }
 .mapper-preview tr:hover { background: rgba(79, 70, 229, 0.05); }

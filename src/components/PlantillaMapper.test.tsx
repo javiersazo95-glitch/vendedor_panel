@@ -69,6 +69,33 @@ async function subirYRelacionar(contenido = CSV) {
 describe('PlantillaMapper', () => {
   beforeEach(() => localStorage.clear());
 
+  it('pagina la tabla de revisión y la abre en pantalla completa', async () => {
+    // 25 filas sanas: más que una página, para que aparezca el paginado.
+    const filas = Array.from({ length: 25 }, (_, i) =>
+      `A-${i + 1},Filtro de aceite,Bosch,Filtros,4990,10,Toyota Corolla 2014-2018`);
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar(['Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion', ...filas].join('\n'));
+
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // Primera página: 20 de las 25, y el paginado dice dónde está parado.
+    expect(screen.getByText(/Filas 1.*20.*de 25/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Anteriores/ })).toBeDisabled();
+
+    clic(/Siguientes/);
+    expect(screen.getByText(/Filas 21.*25.*de 25/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Siguientes/ })).toBeDisabled();
+
+    // Pantalla completa: es la misma sección, marcada para ocupar todo.
+    const seccion = screen.getByText(/pantalla completa/i).closest('section') as HTMLElement;
+    expect(seccion).not.toHaveClass('mapper-revision-expandida');
+    clic(/Ver en pantalla completa/);
+    expect(seccion).toHaveClass('mapper-revision-expandida');
+    clic(/Salir de pantalla completa/);
+    expect(seccion).not.toHaveClass('mapper-revision-expandida');
+  });
+
   it('mapea un Excel propio y genera el archivo en formato oficial', async () => {
     const onGenerated = vi.fn();
     render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} />);

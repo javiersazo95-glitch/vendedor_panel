@@ -324,7 +324,11 @@ describe('archivos crudos: lo que ya funciona', () => {
   it('entiende el precio con signo peso, con miles y con decimales', () => {
     const r = leerComoElPanel('03-precios-sucios');
     // "$24.990", "6,990" y "1.234,50" pasan; el problema es el sufijo, no el formato.
-    expect(r.revision.filas[0].problemas).toEqual([]);
+    // Se busca la fila por su precio y no por posición: la tabla de revisión ahora ordena
+    // primero las filas con problemas, así que `filas[0]` ya no es la primera del archivo.
+    const columnaPrecio = r.revision.columnas.indexOf('precio');
+    const fila = r.revision.filas.find((f) => f.valores[columnaPrecio] === '24990');
+    expect(fila?.problemas).toEqual([]);
     expect(valorEn(r.oficial, 1, 'precio')).toBe('24990');
   });
 });

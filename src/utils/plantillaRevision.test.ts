@@ -115,6 +115,38 @@ describe('revisarAoA', () => {
     expect(r.filas[0].problemas[0].mensaje).toMatch(/mayor que el año hasta/);
   });
 
+  it('muestra las filas con problemas aunque estén al final del archivo, no las primeras 20', () => {
+    // El caso que dejaba al vendedor sin salida: los contadores decían "5 con error" y la tabla
+    // mostraba 20 filas sanas, porque los errores caían en la fila 31 en adelante.
+    const filas = [
+      ...Array.from({ length: 30 }, () => filaBase()),
+      ...Array.from({ length: 5 }, (_, i) => filaBase({ categoria: '', sku_proveedor: `MALA-${i}` })),
+    ];
+    const r = revisarAoA([columnas, ...filas], PLANTILLA_CAMPOS, { maxFilas: 20 });
+
+    const sku = (f: { valores: string[] }) => f.valores[columnas.indexOf('sku_proveedor')];
+    const mostradas = r.filas.map(sku);
+
+    expect(r.filas).toHaveLength(20);
+    // Las cinco con error entran, y van primero.
+    expect(mostradas.slice(0, 5)).toEqual(['MALA-0', 'MALA-1', 'MALA-2', 'MALA-3', 'MALA-4']);
+    expect(r.filas.slice(0, 5).every((f) => f.tieneError)).toBe(true);
+    // El resto se completa con filas sanas, hasta el tope.
+    expect(r.filas.slice(5).every((f) => !f.tieneError)).toBe(true);
+  });
+
+  it('entre filas con problemas, las que no se publican van antes que las que sólo avisan', () => {
+    const filas = [
+      filaBase({ sku_proveedor: 'AVISO-1', precio: '4.990' }),
+      filaBase({ sku_proveedor: 'SANA-1' }),
+      filaBase({ sku_proveedor: 'ERROR-1', categoria: '' }),
+    ];
+    const r = revisarAoA([columnas, ...filas], PLANTILLA_CAMPOS, { maxFilas: 20 });
+
+    const sku = (f: { valores: string[] }) => f.valores[columnas.indexOf('sku_proveedor')];
+    expect(r.filas.map(sku)).toEqual(['ERROR-1', 'AVISO-1', 'SANA-1']);
+  });
+
   it('los contadores miran todo el archivo aunque sólo se muestren algunas filas', () => {
     const filas = [
       ...Array.from({ length: 30 }, () => filaBase()),

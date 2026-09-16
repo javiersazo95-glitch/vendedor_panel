@@ -48,7 +48,11 @@ export interface FilaRevisada {
 
 export interface RevisionArchivo {
   columnas: string[];
-  /** Sólo las primeras filas, para mostrar. Los contadores miran el archivo completo. */
+  /**
+   * Las filas que se muestran y se pueden corregir: primero las que no se publican, después
+   * las que se publican distinto, y al final las sanas. Los contadores de abajo miran el
+   * archivo completo, no sólo éstas.
+   */
   filas: FilaRevisada[];
   total: number;
   publicables: number;
@@ -120,7 +124,13 @@ export function revisarAoA(
   const indice = new Map(columnas.map((c, i) => [c, i]));
   const obligatorias = campos.filter((c) => c.required).map((c) => c.key);
 
-  const filas: FilaRevisada[] = [];
+  // Tres baldes en vez de una lista: el tope elige QUE filas se muestran, no las primeras del
+  // archivo. Antes, un archivo con los errores en la fila 25 en adelante dejaba al vendedor
+  // viendo "3 con error" arriba y 20 filas sanas abajo, sin forma de llegar a corregirlos.
+  // Cada balde se corta en maxFilas para no quedarse con el archivo entero en memoria.
+  const errores: FilaRevisada[] = [];
+  const avisos: FilaRevisada[] = [];
+  const limpias: FilaRevisada[] = [];
   let publicables = 0;
   let conError = 0;
   let conAviso = 0;
@@ -228,8 +238,9 @@ export function revisarAoA(
     else publicables += 1;
     if (!tieneError && problemas.length > 0) conAviso += 1;
 
-    if (filas.length < maxFilas) {
-      filas.push({
+    const balde = tieneError ? errores : problemas.length > 0 ? avisos : limpias;
+    if (balde.length < maxFilas) {
+      balde.push({
         numeroFila: numerosDeFila?.[i - 1] ?? primeraFilaArchivo + i - 1,
         clave: clavesDeFila?.[i - 1] ?? String(i - 1),
         valores,
@@ -238,6 +249,11 @@ export function revisarAoA(
       });
     }
   }
+
+  // Primero lo que no se publica, despues lo que se publica distinto de como se escribio, y al
+  // final las sanas. Dentro de cada balde se respeta el orden del archivo, y cada fila lleva su
+  // numero real del Excel, asi que reordenar no le hace perder de vista donde corregir.
+  const filas = [...errores, ...avisos, ...limpias].slice(0, maxFilas);
 
   return { columnas, filas, total: aoa.length - 1, publicables, conError, conAviso };
 }
