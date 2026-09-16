@@ -2525,16 +2525,28 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                           className="mapper-quitar"
                           title="Quitar esta compatibilidad"
                           onClick={() => {
-                            // Quitar una del archivo no se deshace desde acá: habría que
-                            // volver al paso 2 y rehacer lo del paso 3. Por un clic de más
-                            // se pierde trabajo, así que se pregunta antes. La agregada a
-                            // mano no: deshacerla es volver a agregarla.
+                            const auto = [dato('compatibilidad_marca'), dato('compatibilidad_modelo')]
+                              .filter(Boolean).join(' ');
+                            // Quitar no se deshace con un botón, así que por un clic de más
+                            // se pierde trabajo y se pregunta antes. La única que se va
+                            // derecho es la fila que el vendedor acaba de agregar y todavía
+                            // no escribió: ahí no hay nada que perder, y preguntar por una
+                            // fila vacía es lo que enseña a apretar "Aceptar" sin leer,
+                            // justo lo que deja sin efecto la pregunta que sí importa.
+                            const escrito = COLUMNAS_COMPATIBILIDADES
+                              .some((c) => c !== 'sku_proveedor' && dato(c).trim());
                             if (fila.extra !== null) {
+                              if (escrito) {
+                                const seguro = window.confirm(
+                                  `¿Quitar ${auto || 'esta compatibilidad'} del repuesto ${dato('sku_proveedor')}?`
+                                  + ' Se pierde lo que escribiste en esta fila; para recuperarlo hay que'
+                                  + ' agregar el vehículo de nuevo.',
+                                );
+                                if (!seguro) return;
+                              }
                               quitarCompat(fila.extra);
                               return;
                             }
-                            const auto = [dato('compatibilidad_marca'), dato('compatibilidad_modelo')]
-                              .filter(Boolean).join(' ');
                             const seguro = window.confirm(
                               `¿Quitar ${auto || 'esta compatibilidad'} del repuesto ${dato('sku_proveedor')}?`
                               + ' Este vehículo no se va a publicar, y para recuperarlo hay que'

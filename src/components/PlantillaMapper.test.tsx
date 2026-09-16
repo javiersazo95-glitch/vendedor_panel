@@ -1005,7 +1005,7 @@ describe('PlantillaMapper', () => {
     confirmar.mockRestore();
   });
 
-  it('la compatibilidad agregada a mano se quita sin preguntar', async () => {
+  it('la compatibilidad agregada a mano y todavía vacía se quita sin preguntar', async () => {
     render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
     await subirYRelacionar([
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
@@ -1017,10 +1017,42 @@ describe('PlantillaMapper', () => {
     clic(/Agregar compatibilidad/);
     await screen.findByLabelText('Marca del vehículo, compatibilidad 1');
 
-    // Deshacerla es volver a agregarla: preguntar acá sólo sería un clic de más.
+    // La fila está recién agregada y vacía: no hay nada que perder, y preguntar acá es lo
+    // que enseña a apretar "Aceptar" sin leer.
     const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
     fireEvent.click(screen.getByTitle('Quitar esta compatibilidad'));
     expect(confirmar).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument());
+    confirmar.mockRestore();
+  });
+
+  it('la compatibilidad agregada a mano que ya tiene datos pregunta antes de quitarse', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    clic(/Agregar compatibilidad/);
+    await screen.findByLabelText('Marca del vehículo, compatibilidad 1');
+    fireEvent.change(screen.getByLabelText('Marca del vehículo, compatibilidad 1'), {
+      target: { value: 'Nissan' },
+    });
+    const modelo = screen.getByLabelText('Modelo del vehículo, compatibilidad 1');
+    fireEvent.change(modelo, { target: { value: 'V16' } });
+    fireEvent.blur(modelo);
+
+    // Ya hay trabajo escrito en la fila, y quitarla no se deshace con un botón: un clic de
+    // más lo borraba sin decir nada.
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByTitle('Quitar esta compatibilidad'));
+    expect(confirmar).toHaveBeenCalled();
+    expect(screen.getByLabelText('Marca del vehículo, compatibilidad 1')).toHaveValue('Nissan');
+
+    confirmar.mockReturnValue(true);
+    fireEvent.click(screen.getByTitle('Quitar esta compatibilidad'));
     await waitFor(() => expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument());
     confirmar.mockRestore();
   });
