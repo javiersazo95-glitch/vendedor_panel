@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { apiFetch, SessionExpiredError, RequestTimeoutError } from './apiFetch';
+import {
+  apiFetch,
+  BULK_EXCEL_VALIDATION_TIMEOUT_MS,
+  SessionExpiredError,
+  RequestTimeoutError,
+} from './apiFetch';
 import { saveSession, getStoredSession } from './session';
 
 describe('apiFetch', () => {
@@ -48,6 +53,27 @@ describe('apiFetch', () => {
     const promise = apiFetch('https://api.test/slow');
     const assertion = expect(promise).rejects.toBeInstanceOf(RequestTimeoutError);
     await vi.advanceTimersByTimeAsync(25000);
+    await assertion;
+  });
+
+  it('acepta un timeout mayor para una validación masiva sin cambiar el límite global', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          })
+      )
+    );
+
+    const promise = apiFetch('https://api.test/excel/validar', undefined, BULK_EXCEL_VALIDATION_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(25000);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+    const assertion = expect(promise).rejects.toBeInstanceOf(RequestTimeoutError);
+    await vi.advanceTimersByTimeAsync(BULK_EXCEL_VALIDATION_TIMEOUT_MS - 25000);
     await assertion;
   });
 

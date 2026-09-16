@@ -2,6 +2,14 @@ import { clearSession } from './session';
 
 const DEFAULT_TIMEOUT_MS = 25000;
 
+/**
+ * La validación de una plantilla grande ejecuta las mismas reglas que una carga real,
+ * fila por fila, pero sin guardar. Es el único request interactivo que puede superar el
+ * timeout habitual de la API sin estar bloqueado. Mantenemos este límite acotado para
+ * que un backend caído no deje la interfaz esperando indefinidamente.
+ */
+export const BULK_EXCEL_VALIDATION_TIMEOUT_MS = 8 * 60 * 1000;
+
 export class SessionExpiredError extends Error {
   constructor() {
     super('Tu sesión expiró. Inicia sesión nuevamente.');
@@ -25,9 +33,13 @@ export class RequestTimeoutError extends Error {
  *   login screen instead of leaving them retrying with a dead token
  *   (previously there was no way out of an expired session, QA-SRC-004).
  */
-export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(
+  input: string,
+  init?: RequestInit,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {

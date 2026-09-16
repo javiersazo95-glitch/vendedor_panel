@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Eye, Wand2 } from 'lucide-react';
-import { apiFetch, SessionExpiredError, RequestTimeoutError } from '../utils/apiFetch';
+import {
+  apiFetch,
+  BULK_EXCEL_VALIDATION_TIMEOUT_MS,
+  SessionExpiredError,
+  RequestTimeoutError,
+} from '../utils/apiFetch';
 import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
 import { encId } from '../utils/url';
@@ -529,7 +534,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       formData.append('file', dataFile);
       const response = await apiFetch(
         `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/validar`,
-        { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
+        { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData },
+        BULK_EXCEL_VALIDATION_TIMEOUT_MS,
       );
       clearInterval(progressInterval);
       if (!response.ok) {
