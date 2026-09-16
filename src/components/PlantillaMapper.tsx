@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FileSpreadsheet, Wand2, AlertTriangle, ArrowLeft, ArrowRight, Download, X,
   UploadCloud, ArrowLeftRight, ListChecks, Rocket, ShieldCheck, Check, Image as ImageIcon, Plus,
@@ -1939,6 +1940,18 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const filasFuera = (mapping?.usarBandasComoCategoria && bandas ? bandas.total : 0)
     + (mapping?.quitarFilasDeTotales && filasDeTotales ? filasDeTotales.total : 0);
 
+  /**
+   * A pantalla completa, la tabla sale por un portal a <body>.
+   *
+   * No alcanza con `position: fixed` y un z-index alto: `.main-content` es un flex item con
+   * `z-index: 1`, y un z-index sobre un flex item crea contexto de apilamiento propio aunque no
+   * tenga `position`. Desde adentro, ningún valor alcanza para pasar por encima de la barra
+   * lateral (`z-index: 20`, en la raíz), así que la tabla quedaba tapada por el menú. El portal
+   * la saca de ese contexto; plegada se queda donde siempre.
+   */
+  const aPantallaCompleta = (contenido: React.ReactNode) =>
+    (tablaExpandida ? createPortal(contenido, document.body) : contenido);
+
   return (
     <div className="mapper">
       <div className="mapper-hero compact">
@@ -2131,7 +2144,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         </section>
       )}
 
-      {revision && revision.filas.length > 0 && (
+      {revision && revision.filas.length > 0 && aPantallaCompleta(
         <section className={`mapper-section${tablaExpandida ? ' mapper-revision-expandida' : ''}`}>
           <div className="mapper-revision-encabezado">
             <span className="bulk-purpose-label">

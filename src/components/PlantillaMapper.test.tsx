@@ -87,13 +87,23 @@ describe('PlantillaMapper', () => {
     expect(screen.getByText(/Filas 21.*25.*de 25/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Siguientes/ })).toBeDisabled();
 
-    // Pantalla completa: es la misma sección, marcada para ocupar todo.
-    const seccion = screen.getByText(/pantalla completa/i).closest('section') as HTMLElement;
-    expect(seccion).not.toHaveClass('mapper-revision-expandida');
+    // Pantalla completa. Se vuelve a buscar la sección en cada paso porque al expandirse sale
+    // por un portal: React la desmonta de su lugar y la monta en <body>, así que una referencia
+    // guardada antes queda apuntando al nodo viejo.
+    const seccion = () => screen.getByText(/pantalla completa/i).closest('section') as HTMLElement;
+
+    expect(seccion()).not.toHaveClass('mapper-revision-expandida');
+    expect(seccion().parentElement).not.toBe(document.body);
+
     clic(/Ver en pantalla completa/);
-    expect(seccion).toHaveClass('mapper-revision-expandida');
+    expect(seccion()).toHaveClass('mapper-revision-expandida');
+    // Lo que de verdad arregla el bug: colgar de <body> y no de `.main-content`, que crea su
+    // propio contexto de apilamiento y dejaba la tabla debajo del menú lateral.
+    expect(seccion().parentElement).toBe(document.body);
+
     clic(/Salir de pantalla completa/);
-    expect(seccion).not.toHaveClass('mapper-revision-expandida');
+    expect(seccion()).not.toHaveClass('mapper-revision-expandida');
+    expect(seccion().parentElement).not.toBe(document.body);
   });
 
   it('mapea un Excel propio y genera el archivo en formato oficial', async () => {
