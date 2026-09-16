@@ -2422,32 +2422,6 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         </details>
       )}
 
-      {ficha && (
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">Así se verá tu primer repuesto en RepuesTop</span>
-          <article className="mapper-ficha">
-            <div className="mapper-ficha-foto">
-              <ImageIcon size={26} />
-              <span>La foto se agrega después</span>
-            </div>
-            <div className="mapper-ficha-body">
-              <h5>{ficha.nombre}</h5>
-              <div className="mapper-ficha-chips">
-                {ficha.marca && <span className="mapper-ficha-chip">{ficha.marca}</span>}
-                {ficha.categoria && <span className="mapper-ficha-chip alt">{ficha.categoria}</span>}
-                {ficha.subcategoria && <span className="mapper-ficha-chip alt">{ficha.subcategoria}</span>}
-                <span className="mapper-ficha-chip cond">{ficha.condicion}</span>
-              </div>
-              <div className="mapper-ficha-precio">{ficha.precio}</div>
-              <p className="mapper-ficha-compat">{ficha.compatibilidad}</p>
-              <p className="mapper-ficha-meta">
-                Código {ficha.sku || '—'}{ficha.stock ? ` · ${ficha.stock} en stock` : ''}
-              </p>
-              {ficha.descripcion && <p className="mapper-ficha-desc">{ficha.descripcion}</p>}
-            </div>
-          </article>
-        </section>
-      )}
 
       {/*
         Lo informativo, plegado: el vendedor lo abre si quiere, pero deja de competir con
@@ -2456,6 +2430,32 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       */}
       <details className="mapper-detalles-archivo">
         <summary>Detalles del archivo</summary>
+        {ficha && (
+          <section className="mapper-section">
+            <span className="bulk-purpose-label">Así se verá tu primer repuesto en RepuesTop</span>
+            <article className="mapper-ficha">
+              <div className="mapper-ficha-foto">
+                <ImageIcon size={26} />
+                <span>La foto se agrega después</span>
+              </div>
+              <div className="mapper-ficha-body">
+                <h5>{ficha.nombre}</h5>
+                <div className="mapper-ficha-chips">
+                  {ficha.marca && <span className="mapper-ficha-chip">{ficha.marca}</span>}
+                  {ficha.categoria && <span className="mapper-ficha-chip alt">{ficha.categoria}</span>}
+                  {ficha.subcategoria && <span className="mapper-ficha-chip alt">{ficha.subcategoria}</span>}
+                  <span className="mapper-ficha-chip cond">{ficha.condicion}</span>
+                </div>
+                <div className="mapper-ficha-precio">{ficha.precio}</div>
+                <p className="mapper-ficha-compat">{ficha.compatibilidad}</p>
+                <p className="mapper-ficha-meta">
+                  Código {ficha.sku || '—'}{ficha.stock ? ` · ${ficha.stock} en stock` : ''}
+                </p>
+                {ficha.descripcion && <p className="mapper-ficha-desc">{ficha.descripcion}</p>}
+              </div>
+            </article>
+          </section>
+        )}
         {arreglos.length > 0 && (
           <section className="mapper-section">
             <span className="bulk-purpose-label">

@@ -84,6 +84,7 @@ describe('PlantillaMapper', () => {
     expect(detalles.open).toBe(false);
     expect(detalles.textContent).toContain('Así estamos leyendo tu archivo');
     expect(detalles.textContent).toContain('Arreglos que hicimos por ti');
+    expect(detalles.textContent).toContain('Así se verá tu primer repuesto en RepuesTop');
 
     // Y la tabla va después de las decisiones, no antes.
     const cuerpo = document.body.textContent ?? '';
