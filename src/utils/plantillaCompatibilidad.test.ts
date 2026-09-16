@@ -47,6 +47,12 @@ describe('parsearAplicacion', () => {
     expect(pareceColumnaDeAplicacion(['varios', 'consultar', 'Toyota Yaris'], MARCAS)).toBe(false);
     expect(pareceColumnaDeAplicacion(['Toyota Yaris'], [])).toBe(false);
   });
+
+  it('no confunde una columna de marcas con una aplicación escrita de corrido', () => {
+    // `marca_vehiculo` viene junto a `modelo_vehiculo` y `ano_vehiculo` en archivos
+    // como Plantilla_Carga_Masiva_RepuesTop_1500_pruebas.xlsx.
+    expect(pareceColumnaDeAplicacion(['Toyota', 'Nissan', 'Chevrolet'], MARCAS)).toBe(false);
+  });
 });
 
 describe('detectarSkusRepetidos', () => {

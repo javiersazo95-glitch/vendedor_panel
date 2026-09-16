@@ -105,11 +105,21 @@ export function parsearAplicacion(texto: string, marcasVehiculo: string[]): Apli
   return { marca, modelo, anioDesde, anioHasta };
 }
 
-/** Igual que arriba pero para decidir si vale la pena ofrecer el asistente. */
+/**
+ * Igual que arriba pero para decidir si vale la pena ofrecer el asistente.
+ *
+ * Una columna de marca por sí sola ("Toyota", "Nissan") es una compatibilidad ya
+ * separada, no una aplicación escrita de corrido. Exigimos que después de reconocer
+ * la marca quede al menos el modelo o algún año; de lo contrario el mapper ofrecía
+ * separar columnas que el vendedor ya había separado correctamente.
+ */
 export function pareceColumnaDeAplicacion(valores: string[], marcasVehiculo: string[]): boolean {
   if (marcasVehiculo.length === 0) return false;
-  const conMarca = valores.filter((v) => parsearAplicacion(v, marcasVehiculo) !== null).length;
-  return conMarca > 0 && conMarca >= valores.length / 2;
+  const aplicacionesCompletas = valores.filter((v) => {
+    const aplicacion = parsearAplicacion(v, marcasVehiculo);
+    return !!aplicacion && !!(aplicacion.modelo || aplicacion.anioDesde || aplicacion.anioHasta);
+  }).length;
+  return aplicacionesCompletas > 0 && aplicacionesCompletas >= valores.length / 2;
 }
 
 export interface SeparacionPorSku {
