@@ -69,6 +69,68 @@ async function subirYRelacionar(contenido = CSV) {
 describe('PlantillaMapper', () => {
   beforeEach(() => localStorage.clear());
 
+  it('pone antes de la tabla lo que el vendedor debe decidir, y pliega lo informativo', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion',
+      'A-1,Pastilla,Brembo,Frenos,$ 4.990,10,Toyota Corolla 2014-2018',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // Lo informativo vive plegado, no suelto en la pantalla.
+    const detalles = screen.getByText('Detalles del archivo').closest('details') as HTMLDetailsElement;
+    expect(detalles).toBeInTheDocument();
+    expect(detalles.open).toBe(false);
+    expect(detalles.textContent).toContain('Así estamos leyendo tu archivo');
+    expect(detalles.textContent).toContain('Arreglos que hicimos por ti');
+
+    // Y la tabla va después de las decisiones, no antes.
+    const cuerpo = document.body.textContent ?? '';
+    expect(cuerpo.indexOf('Tus palabras y las de RepuesTop')).toBeLessThan(cuerpo.indexOf('Qué revisar'));
+  });
+
+  it('pliega las compatibilidades cuando ningún código se repite', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota Corolla 2014-2018',
+      'B-2,Disco,Brembo,Frenos,9990,5,Nissan V16 1995-2010',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    const compat = screen.getByText(/Compatibilidades:/).closest('details') as HTMLDetailsElement;
+    expect(compat.open).toBe(false);
+    // Sigue estando: plegar no es quitar la función de agregar un auto a mano.
+    expect(compat.textContent).toContain('Agregar compatibilidad');
+  });
+
+  it('avisa en la propia fila cuando el código está repetido en el archivo', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota Corolla 2014-2016',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota Yaris 2017-2020',
+    ].join('\n'));
+
+    // El mismo código en dos filas se junta en un repuesto con dos autos.
+    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // El aviso nace en la tabla, donde el vendedor ya está mirando. Se busca por clase y se mira
+    // su textContent: el mensaje lleva interpolaciones y un <b>, así que queda repartido en
+    // varios nodos de texto y getByText no lo encuentra entero.
+    const avisos = document.querySelectorAll('td.motivo .mapper-motivo.info');
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0].textContent).toMatch(/Este código está repetido/);
+    expect(avisos[0].textContent).toMatch(/un repuesto con 2 autos/);
+    // Y la sección de compatibilidades sí se abre, porque ahora hay algo que mirar.
+    const compat = screen.getByText(/Compatibilidades:/).closest('details') as HTMLDetailsElement;
+    expect(compat.open).toBe(true);
+  });
+
   it('pagina la tabla de revisión y la abre en pantalla completa', async () => {
     // 25 filas sanas: más que una página, para que aparezca el paginado.
     const filas = Array.from({ length: 25 }, (_, i) =>

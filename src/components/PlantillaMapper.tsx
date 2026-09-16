@@ -443,6 +443,25 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const arreglos = useMemo(() => agruparCambios(cambios), [cambios]);
 
   /**
+   * Los arreglos resumidos por columna, que es el tipo de arreglo que el vendedor reconoce.
+   *
+   * `agruparCambios` agrupa por valor, así que "le sacamos el punto de miles al precio" salía
+   * como ocho líneas casi idénticas ($33.100 → 33100, $37.200 → 37200…). Acá va una línea por
+   * columna con el total y un par de ejemplos; el detalle valor por valor queda plegado abajo.
+   */
+  const arreglosPorColumna = useMemo(() => {
+    const mapa = new Map<string, { columna: string; filas: number; ejemplos: { antes: string; despues: string }[] }>();
+    for (const c of cambios) {
+      const grupo = mapa.get(c.columna) ?? { columna: c.columna, filas: 0, ejemplos: [] };
+      grupo.filas += 1;
+      const repetido = grupo.ejemplos.some((e) => e.antes === c.antes && e.despues === c.despues);
+      if (!repetido && grupo.ejemplos.length < 2) grupo.ejemplos.push({ antes: c.antes, despues: c.despues });
+      mapa.set(c.columna, grupo);
+    }
+    return [...mapa.values()].sort((a, b) => b.filas - a.filas);
+  }, [cambios]);
+
+  /**
    * Columnas que vale la pena mostrar en la tabla: las que traen algo o las que tienen
    * algún problema. Las 18 completas obligan a un scroll largo lleno de celdas vacías, y
    * lo que hay que mirar se pierde.
@@ -565,6 +584,29 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     }));
     return [...delArchivo, ...agregadas];
   }, [separacion, filasOrigenCompat, mapping?.compatibilidadesExtra]);
+
+  /**
+   * Cuántos autos de más lleva cada repuesto, por SKU.
+   *
+   * Es lo que deja avisar el código repetido donde el vendedor está mirando: la fila dice que ese
+   * repuesto se publica con varios autos, en vez de obligarlo a deducirlo de la tabla de
+   * compatibilidades de más abajo, que es la parte que menos se entiende del paso.
+   *
+   * Se cruza por SKU y no por la clave de la fila: la fila de compatibilidad guarda la clave de
+   * la fila de la que salió -la repetida-, no la del repuesto que quedó en el inventario, así que
+   * por clave no calzan nunca. El SKU es justamente lo que las une.
+   */
+  const autosExtraPorSku = useMemo(() => {
+    const cuenta = new Map<string, number>();
+    const iSku = (COLUMNAS_COMPATIBILIDADES as readonly string[]).indexOf('sku_proveedor');
+    if (iSku < 0) return cuenta;
+    for (const f of filasCompatibilidad) {
+      const sku = String(f.valores[iSku] ?? '').trim().toUpperCase();
+      if (!sku) continue;
+      cuenta.set(sku, (cuenta.get(sku) ?? 0) + 1);
+    }
+    return cuenta;
+  }, [filasCompatibilidad]);
 
   /** El primer repuesto que sí se puede publicar: es el que vale la pena mostrar armado. */
   const ficha = useMemo(() => {
@@ -2018,57 +2060,6 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         </div>
       )}
 
-      {arreglos.length > 0 && (
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">
-            Arreglos que hicimos por ti ({cambios.length.toLocaleString('es-CL')} en total)
-          </span>
-          <p className="mapper-hint">
-            Dejamos tus datos como los espera RepuesTop. Tu archivo original no se toca.
-          </p>
-          <ul className="mapper-arreglos">
-            {arreglos.map((a) => (
-              <li key={`${a.columna}|${a.antes}|${a.despues}`}>
-                <span className="mapper-arreglo-col">
-                  {campos.find((c) => c.key === a.columna)?.label ?? a.columna}
-                </span>
-                <span className="mapper-arreglo-antes">{a.antes}</span>
-                <ArrowRight size={14} aria-label="queda como" />
-                <span className="mapper-arreglo-despues">{a.despues}</span>
-                <span className="mapper-arreglo-filas">{plural(a.filas, 'fila', 'filas')}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {ficha && (
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">Así se verá tu primer repuesto en RepuesTop</span>
-          <article className="mapper-ficha">
-            <div className="mapper-ficha-foto">
-              <ImageIcon size={26} />
-              <span>La foto se agrega después</span>
-            </div>
-            <div className="mapper-ficha-body">
-              <h5>{ficha.nombre}</h5>
-              <div className="mapper-ficha-chips">
-                {ficha.marca && <span className="mapper-ficha-chip">{ficha.marca}</span>}
-                {ficha.categoria && <span className="mapper-ficha-chip alt">{ficha.categoria}</span>}
-                {ficha.subcategoria && <span className="mapper-ficha-chip alt">{ficha.subcategoria}</span>}
-                <span className="mapper-ficha-chip cond">{ficha.condicion}</span>
-              </div>
-              <div className="mapper-ficha-precio">{ficha.precio}</div>
-              <p className="mapper-ficha-compat">{ficha.compatibilidad}</p>
-              <p className="mapper-ficha-meta">
-                Código {ficha.sku || '—'}{ficha.stock ? ` · ${ficha.stock} en stock` : ''}
-              </p>
-              {ficha.descripcion && <p className="mapper-ficha-desc">{ficha.descripcion}</p>}
-            </div>
-          </article>
-        </section>
-      )}
-
       {porCompletar.length > 0 && (
         <section className="mapper-section">
           <span className="bulk-purpose-label">
@@ -2141,6 +2132,61 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               </div>
             );
           })}
+        </section>
+      )}
+
+      {/* Decisiones contra el catálogo real de RepuesTop */}
+      {bloquesCatalogo.length > 0 && (
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">
+            Tus palabras y las de RepuesTop ({pendientesCatalogo} sin responder)
+          </span>
+          <p className="mapper-hint">
+            Estos nombres no están en el catálogo de RepuesTop. Elige a cuál corresponde cada uno;
+            empieza por los de arriba, que son los que aparecen en más repuestos.
+          </p>
+          {pendientesCatalogo > 0 && (
+            <button type="button" className="btn btn-secondary mapper-btn mapper-btn-sugerencias" onClick={aceptarSugerencias}>
+              <Wand2 size={16} /> Usar todas las sugerencias
+            </button>
+          )}
+          {bloquesCatalogo.map((bloque) => (
+            <div className="mapper-values-block" key={bloque.campo.key}>
+              <div className="mapper-values-title">
+                {bloque.campo.label} <span>← {bloque.columna.displayHeader}</span>
+              </div>
+              <div className="mapper-rows">
+                {bloque.decisiones.map((d) => {
+                  const elegido = mapping.valueMap[bloque.campo.key]?.[d.valor] ?? '';
+                  return (
+                    <div className={`mapper-row ${elegido ? 'resuelta' : ''}`} key={d.valor}>
+                      <div className="mapper-row-label">
+                        {elegido && <Check size={15} className="mapper-row-check" />}
+                        <span>{d.valor}</span>
+                        <span className="mapper-sample">{plural(d.filas, 'repuesto', 'repuestos')}</span>
+                      </div>
+                      <select
+                        className="form-control"
+                        value={elegido}
+                        aria-label={`${bloque.campo.label}: ${d.valor}`}
+                        onChange={(e) => setValue(bloque.campo.key, d.valor, e.target.value)}
+                      >
+                        <option value="">
+                          {bloque.campo.key === 'categoria' ? 'dejar como está (no se va a publicar)' : 'dejar como está'}
+                        </option>
+                        {d.sugerencias.map((sug) => (
+                          <option key={sug} value={sug}>{sug} — parecido</option>
+                        ))}
+                        {bloque.catalogo
+                          .filter((c) => !d.sugerencias.includes(c))
+                          .map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </section>
       )}
 
@@ -2218,6 +2264,17 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         );
                       })}
                       <td className="motivo">
+                        {(() => {
+                          const sku = dato('sku_proveedor').toUpperCase();
+                          const extra = sku ? (autosExtraPorSku.get(sku) ?? 0) : 0;
+                          if (!extra) return null;
+                          return (
+                            <span className="mapper-motivo info">
+                              Este código está repetido en tu archivo: se publica como{' '}
+                              <b>un repuesto con {extra + 1} autos</b>, no como varios repuestos.
+                            </span>
+                          );
+                        })()}
                         {fila.problemas.map((p, i) => (
                           <span key={i} className={`mapper-motivo ${p.severidad}`}>{p.mensaje}</span>
                         ))}
@@ -2265,10 +2322,12 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       )}
 
       {revision && revision.filas.length > 0 && (
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">
-            Compatibilidades: los demás autos de cada repuesto
-          </span>
+        <details className="mapper-section mapper-compat" open={filasCompatibilidad.length > 0}>
+          <summary className="bulk-purpose-label">
+            {filasCompatibilidad.length > 0
+              ? 'Compatibilidades: los demás autos de cada repuesto'
+              : 'Compatibilidades: ningún repuesto tiene más de un auto'}
+          </summary>
           <p className="mapper-hint">
             En la tabla de arriba cada repuesto lleva un auto. Acá van los demás, y es la
             segunda hoja del Excel que se genera. Puedes corregir lo que haya y agregar los
@@ -2360,136 +2419,156 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           >
             <Plus size={16} /> Agregar compatibilidad
           </button>
-        </section>
+        </details>
       )}
 
-      <section className="mapper-section">
-        <span className="bulk-purpose-label">Así estamos leyendo tu archivo</span>
-        <ul className="mapper-resumen">
-          <li><b>Archivo:</b> {userFile.name}</li>
-          {hojas.length > 1 && <li><b>Hoja:</b> {hoja?.nombre}</li>}
-          <li><b>Títulos:</b> fila {filaEncabezados + 1} de tu Excel</li>
-          <li>
-            <b>Repuestos a preparar:</b> {(filasListas - filasFuera).toLocaleString('es-CL')}
-            {filasFuera > 0
-              ? ` (de ${filasListas.toLocaleString('es-CL')} filas; el resto son títulos o totales)`
-              : ''}
-          </li>
-        </ul>
-      </section>
-
-      {/* Decisiones contra el catálogo real de RepuesTop */}
-      {bloquesCatalogo.length > 0 && (
+      {ficha && (
         <section className="mapper-section">
-          <span className="bulk-purpose-label">
-            Tus palabras y las de RepuesTop ({pendientesCatalogo} sin responder)
-          </span>
-          <p className="mapper-hint">
-            Estos nombres no están en el catálogo de RepuesTop. Elige a cuál corresponde cada uno;
-            empieza por los de arriba, que son los que aparecen en más repuestos.
-          </p>
-          {pendientesCatalogo > 0 && (
-            <button type="button" className="btn btn-secondary mapper-btn mapper-btn-sugerencias" onClick={aceptarSugerencias}>
-              <Wand2 size={16} /> Usar todas las sugerencias
-            </button>
-          )}
-          {bloquesCatalogo.map((bloque) => (
-            <div className="mapper-values-block" key={bloque.campo.key}>
-              <div className="mapper-values-title">
-                {bloque.campo.label} <span>← {bloque.columna.displayHeader}</span>
-              </div>
-              <div className="mapper-rows">
-                {bloque.decisiones.map((d) => {
-                  const elegido = mapping.valueMap[bloque.campo.key]?.[d.valor] ?? '';
-                  return (
-                    <div className={`mapper-row ${elegido ? 'resuelta' : ''}`} key={d.valor}>
-                      <div className="mapper-row-label">
-                        {elegido && <Check size={15} className="mapper-row-check" />}
-                        <span>{d.valor}</span>
-                        <span className="mapper-sample">{plural(d.filas, 'repuesto', 'repuestos')}</span>
-                      </div>
-                      <select
-                        className="form-control"
-                        value={elegido}
-                        aria-label={`${bloque.campo.label}: ${d.valor}`}
-                        onChange={(e) => setValue(bloque.campo.key, d.valor, e.target.value)}
-                      >
-                        <option value="">
-                          {bloque.campo.key === 'categoria' ? 'dejar como está (no se va a publicar)' : 'dejar como está'}
-                        </option>
-                        {d.sugerencias.map((sug) => (
-                          <option key={sug} value={sug}>{sug} — parecido</option>
-                        ))}
-                        {bloque.catalogo
-                          .filter((c) => !d.sugerencias.includes(c))
-                          .map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </div>
-                  );
-                })}
-              </div>
+          <span className="bulk-purpose-label">Así se verá tu primer repuesto en RepuesTop</span>
+          <article className="mapper-ficha">
+            <div className="mapper-ficha-foto">
+              <ImageIcon size={26} />
+              <span>La foto se agrega después</span>
             </div>
-          ))}
-        </section>
-      )}
-
-      {/* Traducir valores */}
-      {enumColumns.length > 0 && (
-        <section className="mapper-section">
-          <span className="bulk-purpose-label">Traducir tus palabras a las de RepuesTop</span>
-          <p className="mapper-hint">
-            Estos datos se envían tal como los tienes, salvo que aquí elijas a qué valor de
-            RepuesTop corresponde cada uno.
-          </p>
-          {enumColumns.map(({ campo, userColId }: { campo: CampoMeta; userColId: string }) => {
-            const col = colById.get(userColId);
-            if (!col) return null;
-            // Los valores que la limpieza ya resuelve no se preguntan: una X que va a
-            // quedar en SI no es una decisión pendiente, y pedirla haría pensar que falta algo.
-            const distinct = distinctValuesForColumn(userRows, col.index, VALUE_MAP_CAP)
-              .filter((val) => {
-                const yaMapeado = mapping.valueMap[campo.key]?.[val];
-                const limpio = (yaMapeado ?? normalizarCelda(campo.key, val).valor).toUpperCase();
-                return !campo.enumHint?.some((opt) => opt.toUpperCase() === limpio);
-              });
-            if (distinct.length === 0) return null;
-            const overflow = distinct.length > VALUE_MAP_CAP;
-            return (
-              <div className="mapper-values-block" key={campo.key}>
-                <div className="mapper-values-title">
-                  {campo.label} <span>← {col.displayHeader}</span>
-                </div>
-                {overflow ? (
-                  <p className="mapper-hint">
-                    Tu columna tiene demasiados valores distintos; se enviarán tal cual y el análisis
-                    marcará los que no sean válidos.
-                  </p>
-                ) : (
-                  <div className="mapper-rows">
-                    {distinct.map((val) => (
-                      <div className="mapper-row" key={val}>
-                        <div className="mapper-row-label"><span>{val}</span></div>
-                        <select
-                          className="form-control"
-                          value={mapping.valueMap[campo.key]?.[val] ?? ''}
-                          aria-label={`${campo.label}: ${val}`}
-                          onChange={(e) => setValue(campo.key, val, e.target.value)}
-                        >
-                          <option value="">dejar como está</option>
-                          {campo.enumHint?.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            <div className="mapper-ficha-body">
+              <h5>{ficha.nombre}</h5>
+              <div className="mapper-ficha-chips">
+                {ficha.marca && <span className="mapper-ficha-chip">{ficha.marca}</span>}
+                {ficha.categoria && <span className="mapper-ficha-chip alt">{ficha.categoria}</span>}
+                {ficha.subcategoria && <span className="mapper-ficha-chip alt">{ficha.subcategoria}</span>}
+                <span className="mapper-ficha-chip cond">{ficha.condicion}</span>
               </div>
-            );
-          })}
+              <div className="mapper-ficha-precio">{ficha.precio}</div>
+              <p className="mapper-ficha-compat">{ficha.compatibilidad}</p>
+              <p className="mapper-ficha-meta">
+                Código {ficha.sku || '—'}{ficha.stock ? ` · ${ficha.stock} en stock` : ''}
+              </p>
+              {ficha.descripcion && <p className="mapper-ficha-desc">{ficha.descripcion}</p>}
+            </div>
+          </article>
         </section>
       )}
 
+      {/*
+        Lo informativo, plegado: el vendedor lo abre si quiere, pero deja de competir con
+        lo que sí tiene que decidir. Antes esto iba arriba y al medio, y con un archivo de
+        2.000 filas nadie llegaba a lo de abajo.
+      */}
+      <details className="mapper-detalles-archivo">
+        <summary>Detalles del archivo</summary>
+        {arreglos.length > 0 && (
+          <section className="mapper-section">
+            <span className="bulk-purpose-label">
+              Arreglos que hicimos por ti ({cambios.length.toLocaleString('es-CL')} en total)
+            </span>
+            <p className="mapper-hint">
+              Dejamos tus datos como los espera RepuesTop. Tu archivo original no se toca.
+            </p>
+            <ul className="mapper-arreglos">
+              {arreglosPorColumna.map((a) => (
+                <li key={a.columna}>
+                  <span className="mapper-arreglo-col">
+                    {campos.find((c) => c.key === a.columna)?.label ?? a.columna}
+                  </span>
+                  <span className="mapper-arreglo-ejemplos">
+                    {a.ejemplos.map((e) => `${e.antes} → ${e.despues}`).join(' · ')}
+                  </span>
+                  <span className="mapper-arreglo-filas">{plural(a.filas, 'fila', 'filas')}</span>
+                </li>
+              ))}
+            </ul>
+            <details className="mapper-detalle-arreglos">
+              <summary>Ver cada valor corregido</summary>
+              <ul className="mapper-arreglos">
+                {arreglos.map((a) => (
+                  <li key={`${a.columna}|${a.antes}|${a.despues}`}>
+                    <span className="mapper-arreglo-col">
+                      {campos.find((c) => c.key === a.columna)?.label ?? a.columna}
+                    </span>
+                    <span className="mapper-arreglo-antes">{a.antes}</span>
+                    <ArrowRight size={14} aria-label="queda como" />
+                    <span className="mapper-arreglo-despues">{a.despues}</span>
+                    <span className="mapper-arreglo-filas">{plural(a.filas, 'fila', 'filas')}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </section>
+        )}
+
+        <section className="mapper-section">
+          <span className="bulk-purpose-label">Así estamos leyendo tu archivo</span>
+          <ul className="mapper-resumen">
+            <li><b>Archivo:</b> {userFile.name}</li>
+            {hojas.length > 1 && <li><b>Hoja:</b> {hoja?.nombre}</li>}
+            <li><b>Títulos:</b> fila {filaEncabezados + 1} de tu Excel</li>
+            <li>
+              <b>Repuestos a preparar:</b> {(filasListas - filasFuera).toLocaleString('es-CL')}
+              {filasFuera > 0
+                ? ` (de ${filasListas.toLocaleString('es-CL')} filas; el resto son títulos o totales)`
+                : ''}
+            </li>
+          </ul>
+        </section>
+
+        {/* Traducir valores */}
+        {enumColumns.length > 0 && (
+          <section className="mapper-section">
+            <span className="bulk-purpose-label">Traducir tus palabras a las de RepuesTop</span>
+            <p className="mapper-hint">
+              Estos datos se envían tal como los tienes, salvo que aquí elijas a qué valor de
+              RepuesTop corresponde cada uno.
+            </p>
+            {enumColumns.map(({ campo, userColId }: { campo: CampoMeta; userColId: string }) => {
+              const col = colById.get(userColId);
+              if (!col) return null;
+              // Los valores que la limpieza ya resuelve no se preguntan: una X que va a
+              // quedar en SI no es una decisión pendiente, y pedirla haría pensar que falta algo.
+              const distinct = distinctValuesForColumn(userRows, col.index, VALUE_MAP_CAP)
+                .filter((val) => {
+                  const yaMapeado = mapping.valueMap[campo.key]?.[val];
+                  const limpio = (yaMapeado ?? normalizarCelda(campo.key, val).valor).toUpperCase();
+                  return !campo.enumHint?.some((opt) => opt.toUpperCase() === limpio);
+                });
+              if (distinct.length === 0) return null;
+              const overflow = distinct.length > VALUE_MAP_CAP;
+              return (
+                <div className="mapper-values-block" key={campo.key}>
+                  <div className="mapper-values-title">
+                    {campo.label} <span>← {col.displayHeader}</span>
+                  </div>
+                  {overflow ? (
+                    <p className="mapper-hint">
+                      Tu columna tiene demasiados valores distintos; se enviarán tal cual y el análisis
+                      marcará los que no sean válidos.
+                    </p>
+                  ) : (
+                    <div className="mapper-rows">
+                      {distinct.map((val) => (
+                        <div className="mapper-row" key={val}>
+                          <div className="mapper-row-label"><span>{val}</span></div>
+                          <select
+                            className="form-control"
+                            value={mapping.valueMap[campo.key]?.[val] ?? ''}
+                            aria-label={`${campo.label}: ${val}`}
+                            onChange={(e) => setValue(campo.key, val, e.target.value)}
+                          >
+                            <option value="">dejar como está</option>
+                            {campo.enumHint?.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+
+      </details>
       <div className="mapper-footer">
         <button
           type="button"
