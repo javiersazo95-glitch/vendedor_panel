@@ -1029,6 +1029,20 @@ export function buildOfficialAoADetallado(
       }
     }
 
+    // Un solo año: "sirve para el RAV4 2015" es desde 2015 hasta 2015, no desde 2015 y sin fin.
+    // Muchas listas traen una sola columna de año, y dejar el hasta vacío publicaba el repuesto
+    // distinto de como lo publica la carga 1:1, que ya manda `anioHasta ?? anioDesde`. Se anota
+    // como arreglo para que aparezca en "Arreglos que hicimos por ti" y no sea un dato que el
+    // panel completó en silencio.
+    // Sólo si el "desde" es un año simple. Un "2014-2020" que nadie pidió partir sigue siendo un
+    // rango sin interpretar: copiarlo entero al "hasta" sería inventar un dato absurdo, y el paso
+    // 3 ya lo marca como número que no se puede leer.
+    const ANIO_SIMPLE = /^(19|20)\d{2}$/;
+    if (cells.anio_desde && !cells.anio_hasta && ANIO_SIMPLE.test(cells.anio_desde.trim())) {
+      cells.anio_hasta = cells.anio_desde.trim();
+      cambios.push({ columna: 'anio_hasta', antes: '(vacío)', despues: cells.anio_hasta });
+    }
+
     // Limpieza: números al formato que espera el backend, SI/NO desde la X de la planilla,
     // espacios de más. Lo que no se puede interpretar se deja igual y lo marca el paso 3.
     for (const key of columnas) {

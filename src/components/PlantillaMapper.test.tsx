@@ -69,6 +69,24 @@ async function subirYRelacionar(contenido = CSV) {
 describe('PlantillaMapper', () => {
   beforeEach(() => localStorage.clear());
 
+  it('dice arriba de la tabla qué columnas no trae el archivo', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    // Un archivo sin subcategoría, como los que llegan de verdad.
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
+      'A-1,Pastilla,Brembo,Frenos,4990,10',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    // Nombra las que desaparecen de la tabla, como el año hasta. La subcategoría no entra acá:
+    // se sigue mostrando y ya tiene su propio aviso, con la salida de completarla por categoría.
+    const avisos = document.querySelectorAll('p.mapper-sin-dato');
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0].textContent).toMatch(/año hasta/i);
+    expect(avisos[0].textContent).not.toMatch(/subcategoría/i);
+  });
+
   it('pone antes de la tabla lo que el vendedor debe decidir, y pliega lo informativo', async () => {
     render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
     await subirYRelacionar([

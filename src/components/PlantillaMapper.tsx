@@ -474,6 +474,32 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     ));
   }, [revision, porCompletar]);
 
+  /**
+   * Columnas oficiales que el archivo simplemente no trae: sin columna de origen, sin valor fijo
+   * y sin un solo dato en las filas revisadas.
+   *
+   * Se nombran arriba de la tabla porque, si no, desaparecen sin que nada lo explique: una
+   * columna vacía y no completable se oculta, y el vendedor no tiene cómo saber si es un error
+   * del panel o que su archivo no traía el dato.
+   *
+   * Sólo las que NO se muestran. Las completables -subcategoría, por ejemplo- siguen en la
+   * tabla y ya tienen su propio aviso arriba ("Tu archivo no trae este dato, elígelo acá una vez
+   * por categoría"), que además ofrece la salida; repetirlas sería decir dos veces lo mismo.
+   *
+   * Se exige que además estén vacías, y no sólo sin mapear, porque hay columnas que se llenan
+   * solas -marca y modelo salen de la columna de aplicación- y decir que "no vienen" sería falso.
+   */
+  const columnasSinDato = useMemo(() => {
+    if (!revision || !mapping) return [];
+    const visibles = new Set(columnasVisibles);
+    return revision.columnas.filter((col, i) => {
+      if (visibles.has(col)) return false;
+      if (mapping.oficial[col]) return false;
+      if (mapping.defaults?.[col]) return false;
+      return revision.filas.every((f) => (f.valores[i] ?? '').trim() === '');
+    });
+  }, [revision, mapping, columnasVisibles]);
+
   /** El catálogo real que le corresponde a una columna, o vacío si no tiene. */
   /**
    * Qué se puede elegir en una celda de la tabla. La subcategoría depende de la categoría
@@ -2208,6 +2234,13 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                 : <><Maximize2 size={15} /> Ver en pantalla completa</>}
             </button>
           </div>
+          {columnasSinDato.length > 0 && (
+            <p className="mapper-hint mapper-sin-dato">
+              Tu archivo no trae{' '}
+              <b>{columnasSinDato.map((c) => (campos.find((campo) => campo.key === c)?.label ?? c).toLowerCase()).join(', ')}</b>.
+              {' '}Puedes completarlo acá, dejarlo vacío, o volver atrás y darle un valor fijo para todas las filas.
+            </p>
+          )}
           <div className="mapper-preview-wrap">
             <table className="mapper-preview revisada">
               <thead>

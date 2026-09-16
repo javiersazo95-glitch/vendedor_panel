@@ -410,6 +410,29 @@ describe('buildOfficialAoA: limpieza de los datos del vendedor', () => {
     expect(aoa[1][idx('requiere_chasis')]).toBe('SI');
   });
 
+  it('con un solo año, el año hasta queda igual al desde', () => {
+    // "Sirve para el RAV4 2015" es desde 2015 hasta 2015, que es lo que ya hace la carga 1:1.
+    const userCols = cols(['ano']);
+    const aoa = buildOfficialAoA([['2015']], userCols, mapa({ anio_desde: '0' }));
+    expect(aoa[1][idx('anio_desde')]).toBe('2015');
+    expect(aoa[1][idx('anio_hasta')]).toBe('2015');
+  });
+
+  it('no completa el año hasta con un rango que nadie pidió partir', () => {
+    // Copiar "2014-2020" entero al hasta sería inventar un dato absurdo: se deja como está y el
+    // paso 3 lo marca como número que no se puede leer.
+    const userCols = cols(['ano']);
+    const aoa = buildOfficialAoA([['2014-2020']], userCols, mapa({ anio_desde: '0' }));
+    expect(aoa[1][idx('anio_hasta')]).toBe('');
+  });
+
+  it('respeta el año hasta que sí trae el archivo', () => {
+    const userCols = cols(['desde', 'hasta']);
+    const aoa = buildOfficialAoA([['2014', '2020']], userCols, mapa({ anio_desde: '0', anio_hasta: '1' }));
+    expect(aoa[1][idx('anio_desde')]).toBe('2014');
+    expect(aoa[1][idx('anio_hasta')]).toBe('2020');
+  });
+
   it('parte el rango de años cuando el vendedor lo pide', () => {
     const userCols = cols(['anios']);
     const con = buildOfficialAoA([['2014-2020']], userCols, mapa({ anio_desde: '0' }, { dividirAnios: true }));
