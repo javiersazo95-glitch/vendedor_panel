@@ -855,6 +855,33 @@ export function mappedEnumColumns(
     .map((campo) => ({ campo, userColId: mapping.oficial[campo.key] as string }));
 }
 
+
+/**
+ * Las categorías de RepuesTop que tienen una subcategoría con este nombre.
+ *
+ * Los vendedores escriben en la columna de categoría cosas que para RepuesTop son
+ * subcategorías ("Iluminación", que cuelga de Accesorios). Sin esto, el paso 3 sólo dice que esa
+ * categoría no existe, y el dato que el vendedor sí traía bien se pierde.
+ *
+ * Devuelve una lista porque el nombre de una subcategoría NO es único: "Bombas de Agua" cuelga de
+ * Distribución, Motor y Refrigeración a la vez. Con más de una no se puede completar sin adivinar,
+ * y quien llama decide preguntar en vez de elegir.
+ */
+export function categoriasConSubcategoria(
+  subcategoriasPorCategoria: Record<string, string[]>,
+  valor: string,
+): { categoria: string; subcategoria: string }[] {
+  const buscado = normalizarParaComparar(valor);
+  if (!buscado) return [];
+  const encontradas: { categoria: string; subcategoria: string }[] = [];
+  for (const [categoria, subs] of Object.entries(subcategoriasPorCategoria ?? {})) {
+    for (const sub of subs ?? []) {
+      if (normalizarParaComparar(sub) === buscado) encontradas.push({ categoria, subcategoria: sub });
+    }
+  }
+  return encontradas;
+}
+
 /**
  * Construye la matriz (arreglo de arreglos) en formato oficial a partir de las filas
  * del vendedor y el mapping. Fila 0 = encabezados oficiales.
@@ -1056,6 +1083,23 @@ export function buildOfficialAoADetallado(
       if (canonico && canonico !== cells[key]) {
         cambios.push({ columna: key, antes: cells[key], despues: canonico });
         cells[key] = canonico;
+      }
+    }
+
+    // Lo que el vendedor puso como categoría es, en realidad, una subcategoría de RepuesTop.
+    // Se sube la categoría padre y su palabra pasa a la subcategoría, que es donde siempre quiso
+    // ir. Sólo cuando esa subcategoría cuelga de UNA categoría: "Bombas de Agua" existe bajo
+    // Distribución, Motor y Refrigeración, y elegir una sería adivinar -- esas siguen apareciendo
+    // como decisión pendiente en el paso 3. Tampoco se pisa una subcategoría que ya venía escrita.
+    if (cells.categoria && !cells.subcategoria
+        && !buscarEnCatalogo(cells.categoria, catalogos.categorias)) {
+      const padres = categoriasConSubcategoria(catalogos.subcategoriasPorCategoria ?? {}, cells.categoria);
+      if (padres.length === 1) {
+        const { categoria: padre, subcategoria: sub } = padres[0];
+        cambios.push({ columna: 'categoria', antes: cells.categoria, despues: padre });
+        cambios.push({ columna: 'subcategoria', antes: '(vacío)', despues: sub });
+        cells.categoria = padre;
+        cells.subcategoria = sub;
       }
     }
 

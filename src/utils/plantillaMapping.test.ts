@@ -410,6 +410,54 @@ describe('buildOfficialAoA: limpieza de los datos del vendedor', () => {
     expect(aoa[1][idx('requiere_chasis')]).toBe('SI');
   });
 
+  it('sube la categoría cuando lo que el vendedor puso es una subcategoría', () => {
+    // "Iluminación" no es categoría de RepuesTop, pero sí es subcategoría de Accesorios: su
+    // palabra pasa a subcategoría y arriba queda la categoría que corresponde.
+    const catalogos = {
+      ...ESQUEMA_FALLBACK.catalogos,
+      categorias: ['Accesorios', 'Frenos'],
+      subcategoriasPorCategoria: { Accesorios: ['Iluminación', 'Neumáticos y Llantas'] },
+    };
+    const userCols = cols(['rubro']);
+    const aoa = buildOfficialAoA([['Iluminacion']], userCols, mapa({ categoria: '0' }), undefined, catalogos);
+
+    expect(aoa[1][idx('categoria')]).toBe('Accesorios');
+    expect(aoa[1][idx('subcategoria')]).toBe('Iluminación');
+  });
+
+  it('no elige categoría cuando la subcategoría cuelga de varias', () => {
+    // "Bombas de Agua" existe bajo tres categorías: elegir una seria adivinar, asi que se deja
+    // como esta y el paso 3 lo sigue preguntando.
+    const catalogos = {
+      ...ESQUEMA_FALLBACK.catalogos,
+      categorias: ['Motor', 'Refrigeración'],
+      subcategoriasPorCategoria: {
+        Motor: ['Bombas de Agua'],
+        'Refrigeración': ['Bombas de Agua'],
+      },
+    };
+    const userCols = cols(['rubro']);
+    const aoa = buildOfficialAoA([['Bombas de Agua']], userCols, mapa({ categoria: '0' }), undefined, catalogos);
+
+    expect(aoa[1][idx('categoria')]).toBe('Bombas de Agua');
+    expect(aoa[1][idx('subcategoria')]).toBe('');
+  });
+
+  it('no pisa la subcategoría que el archivo ya traía', () => {
+    const catalogos = {
+      ...ESQUEMA_FALLBACK.catalogos,
+      categorias: ['Accesorios'],
+      subcategoriasPorCategoria: { Accesorios: ['Iluminación', 'Interior'] },
+    };
+    const userCols = cols(['rubro', 'subrubro']);
+    const aoa = buildOfficialAoA(
+      [['Iluminación', 'Interior']], userCols, mapa({ categoria: '0', subcategoria: '1' }), undefined, catalogos,
+    );
+
+    expect(aoa[1][idx('subcategoria')]).toBe('Interior');
+    expect(aoa[1][idx('categoria')]).toBe('Iluminación');
+  });
+
   it('con un solo año, el año hasta queda igual al desde', () => {
     // "Sirve para el RAV4 2015" es desde 2015 hasta 2015, que es lo que ya hace la carga 1:1.
     const userCols = cols(['ano']);
