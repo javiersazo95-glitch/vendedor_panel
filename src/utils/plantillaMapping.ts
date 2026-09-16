@@ -3,7 +3,7 @@ import {
   partirRangoAnios,
   type CambioNormalizacion,
 } from './plantillaNormalizacion';
-import { buscarEnCatalogo, buscarEnTexto, normalizarParaComparar } from './plantillaCatalogos';
+import { buscarEnCatalogo, buscarEnTexto, normalizarParaComparar, normalizarTaxonomia } from './plantillaCatalogos';
 import { parsearAplicacion, separarAplicaciones } from './plantillaCompatibilidad';
 import {
   detectarBandas,
@@ -871,12 +871,12 @@ export function categoriasConSubcategoria(
   subcategoriasPorCategoria: Record<string, string[]>,
   valor: string,
 ): { categoria: string; subcategoria: string }[] {
-  const buscado = normalizarParaComparar(valor);
+  const buscado = normalizarTaxonomia(valor);
   if (!buscado) return [];
   const encontradas: { categoria: string; subcategoria: string }[] = [];
   for (const [categoria, subs] of Object.entries(subcategoriasPorCategoria ?? {})) {
     for (const sub of subs ?? []) {
-      if (normalizarParaComparar(sub) === buscado) encontradas.push({ categoria, subcategoria: sub });
+      if (normalizarTaxonomia(sub) === buscado) encontradas.push({ categoria, subcategoria: sub });
     }
   }
   return encontradas;

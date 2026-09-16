@@ -25,6 +25,34 @@ export function normalizarParaComparar(valor: string): string {
 }
 
 /**
+ * Palabras que en las listas de repuestos se usan como equivalentes de las del catálogo.
+ *
+ * En Chile "llanta" y "rueda" se dicen indistintamente, así que "Neumáticos y Ruedas" es la
+ * subcategoría "Neumáticos y Llantas" escrita con la otra palabra. Sin esto el vendedor ve que su
+ * categoría "no existe" por una diferencia que para él no es tal.
+ *
+ * Es una tabla corta y explícita a propósito: hacer calzar por parecido uniría cosas que no son lo
+ * mismo, y acá una equivalencia equivocada manda el repuesto a otra categoría sin que nadie lo
+ * note. Se agregan de a una, cuando se confirma que los vendedores usan las dos palabras.
+ */
+const SINONIMOS_TAXONOMIA: Record<string, string> = {
+  rueda: 'llanta',
+  ruedas: 'llantas',
+};
+
+/**
+ * Como `normalizarParaComparar`, pero además lleva los sinónimos conocidos a la palabra del
+ * catálogo. Es para nombres de la taxonomía de repuestos (categorías y subcategorías), no para
+ * marcas: ahí una sustitución de palabras cambiaría nombres propios.
+ */
+export function normalizarTaxonomia(valor: string): string {
+  return normalizarParaComparar(valor)
+    .split(' ')
+    .map((palabra) => SINONIMOS_TAXONOMIA[palabra] ?? palabra)
+    .join(' ');
+}
+
+/**
  * El nombre tal como está en el catálogo, o null si no está. Ignora acentos y mayúsculas
  * a propósito, y por eso devuelve el nombre **del catálogo** y no el del vendedor: el
  * backend busca con `findByNombreIgnoreCase`, que ignora mayúsculas pero no tildes, así

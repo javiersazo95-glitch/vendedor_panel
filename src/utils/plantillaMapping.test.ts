@@ -425,6 +425,21 @@ describe('buildOfficialAoA: limpieza de los datos del vendedor', () => {
     expect(aoa[1][idx('subcategoria')]).toBe('Iluminación');
   });
 
+  it('entiende "Ruedas" como la "Llantas" del catálogo', () => {
+    // En las listas chilenas llanta y rueda se usan igual: "Neumáticos y Ruedas" es la
+    // subcategoría "Neumáticos y Llantas" escrita con la otra palabra.
+    const catalogos = {
+      ...ESQUEMA_FALLBACK.catalogos,
+      categorias: ['Accesorios'],
+      subcategoriasPorCategoria: { Accesorios: ['Neumáticos y Llantas'] },
+    };
+    const userCols = cols(['rubro']);
+    const aoa = buildOfficialAoA([['Neumáticos y Ruedas']], userCols, mapa({ categoria: '0' }), undefined, catalogos);
+
+    expect(aoa[1][idx('categoria')]).toBe('Accesorios');
+    expect(aoa[1][idx('subcategoria')]).toBe('Neumáticos y Llantas');
+  });
+
   it('no elige categoría cuando la subcategoría cuelga de varias', () => {
     // "Bombas de Agua" existe bajo tres categorías: elegir una seria adivinar, asi que se deja
     // como esta y el paso 3 lo sigue preguntando.
