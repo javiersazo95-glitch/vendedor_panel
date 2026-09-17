@@ -225,6 +225,21 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [fotosDeclaradas, setFotosDeclaradas] = useState<Record<string, string[]> | null>(null);
   // El Excel propio del vendedor (no el generado), para poder volver al paso de mapeo.
   const [archivoDelVendedor, setArchivoDelVendedor] = useState<File | null>(null);
+  // La columna de fotos puede traer enlaces (los bajamos nosotros) o solo el nombre del
+  // archivo (el vendedor igual tiene que subir la carpeta o el ZIP). Sin separarlos, el
+  // aviso prometia "no necesitas subir carpeta ni ZIP" tambien cuando eran nombres.
+  const skusConFotoPorUrl = useMemo(
+    () => Object.entries(fotosDeclaradas ?? {})
+      .filter(([, fotos]) => fotos.some(esUrlDeImagen))
+      .map(([sku]) => sku),
+    [fotosDeclaradas],
+  );
+  const skusConFotoPorNombre = useMemo(
+    () => Object.entries(fotosDeclaradas ?? {})
+      .filter(([, fotos]) => fotos.some((f) => !esUrlDeImagen(f)))
+      .map(([sku]) => sku),
+    [fotosDeclaradas],
+  );
   const [descargandoFotos, setDescargandoFotos] = useState<{ hechas: number; total: number } | null>(null);
   const [fotosNoTraidas, setFotosNoTraidas] = useState<{ sku: string; url: string; motivo: string }[]>([]);
   // Aviso de cierre de la carga: que publicar no termine en silencio, y que el paso de las
@@ -1623,14 +1638,25 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                           </span>
                         )}
                       </div>
-                      {Object.keys(fotosDeclaradas ?? {}).length > 0 ? (
+                      {skusConFotoPorUrl.length > 0 ? (
                         <p className="fotos-desde-excel">
                           <CheckCircle2 size={15} />
                           <span>
                             Tu Excel trae el enlace de la foto de{' '}
-                            <b>{Object.keys(fotosDeclaradas ?? {}).length}</b>{' '}
-                            {Object.keys(fotosDeclaradas ?? {}).length === 1 ? 'repuesto' : 'repuestos'}:
+                            <b>{skusConFotoPorUrl.length}</b>{' '}
+                            {skusConFotoPorUrl.length === 1 ? 'repuesto' : 'repuestos'}:
                             no necesitas subir carpeta ni ZIP, las traemos por ti al publicar.
+                          </span>
+                        </p>
+                      ) : skusConFotoPorNombre.length > 0 ? (
+                        <p className="fotos-desde-excel">
+                          <CheckCircle2 size={15} />
+                          <span>
+                            Tu Excel trae el <b>nombre del archivo</b> de la foto de{' '}
+                            <b>{skusConFotoPorNombre.length}</b>{' '}
+                            {skusConFotoPorNombre.length === 1 ? 'repuesto' : 'repuestos'}:
+                            sube igual la carpeta o el ZIP y las emparejamos por ese nombre,
+                            sin que tengas que renombrar nada.
                           </span>
                         </p>
                       ) : (
