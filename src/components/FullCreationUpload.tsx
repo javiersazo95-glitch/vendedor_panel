@@ -210,6 +210,11 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [gallerySkuOpen, setGallerySkuOpen] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoUploadProgress, setPhotoUploadProgress] = useState<number | null>(null);
+  // Cuántas van y cuántas son en total, para poder decir "1.020 de 1.755" en vez de sólo
+  // el porcentaje: con miles de fotos, el porcentaje solo no dice si sigue viva o se
+  // colgó, y el conteo real es lo único que lo confirma de un vistazo.
+  const [photoUploadTotal, setPhotoUploadTotal] = useState(0);
+  const [photoUploadDone, setPhotoUploadDone] = useState(0);
   const [photoUploadResults, setPhotoUploadResults] = useState<FotoUploadResultado[] | null>(null);
   const [photoErrorMsg, setPhotoErrorMsg] = useState<string | null>(null);
   const photoFolderInputRef = useRef<HTMLInputElement>(null);
@@ -795,6 +800,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setAvailableImages({});
     setImageAssignments({});
     setPhotoUploadResults(null);
+    setPhotoUploadTotal(0);
+    setPhotoUploadDone(0);
     setPhotoErrorMsg(null);
     setDescargandoFotos(null);
     setFotosNoTraidas([]);
@@ -873,6 +880,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setPhotoErrorMsg(null);
     setPhotoUploadResults(null);
     setPhotoUploadProgress(0);
+    setPhotoUploadTotal(skusConFotos.length);
+    setPhotoUploadDone(0);
 
     const resultados: FotoUploadResultado[] = [];
     let completadas = 0;
@@ -947,6 +956,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         } finally {
           completadas++;
           setPhotoUploadProgress(Math.round((completadas / skusConFotos.length) * 100));
+          setPhotoUploadDone(completadas);
         }
       }));
     }
@@ -1402,7 +1412,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             </p>
           </div>
           {!embedded && (
-            <button className="btn-icon" onClick={onClose} disabled={busy} aria-label="Cerrar carga masiva">
+            <button
+              className="btn-icon"
+              onClick={onClose}
+              disabled={busy || photoUploading}
+              aria-label="Cerrar carga masiva"
+              title={photoUploading ? 'Espera a que terminen de subirse las fotos.' : undefined}
+            >
               <XCircle size={20} />
             </button>
           )}
@@ -1878,6 +1894,48 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     </span>
                   </div>
 
+                  {photoUploading && (
+                    // Antes el único indicador era el texto dentro del botón "Subir fotos",
+                    // abajo de una tabla de miles de filas y con el botón deshabilitado (se
+                    // ve apagado, no trabajando). Con miles de fotos la subida tarda minutos:
+                    // esto se ve apenas se entra a la pantalla, sin tener que hacer scroll.
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.4rem',
+                        // Mismos colores que .mapper-alert.info, para no inventar un
+                        // segundo azul "informativo" en la paleta.
+                        background: 'rgba(37, 99, 235, 0.08)',
+                        color: '#1d4ed8',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '10px',
+                        fontSize: '0.8rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
+                        <ImageUp size={16} style={{ flexShrink: 0 }} />
+                        Subiendo fotos: {photoUploadDone} de {photoUploadTotal}
+                        {photoUploadTotal > 0 ? ` (${photoUploadProgress ?? 0}%)` : ''}
+                      </div>
+                      <div style={{ height: '6px', borderRadius: '999px', background: 'rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            width: `${photoUploadTotal > 0 ? Math.round((photoUploadDone / photoUploadTotal) * 100) : 0}%`,
+                            background: 'currentColor',
+                            transition: 'width 0.2s ease',
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                        No cierres esta ventana ni salgas a Inventario General hasta que termine.
+                      </span>
+                    </div>
+                  )}
+
                   {Object.keys(urlsDeclaradasPendientes).length > 0 && (
                     <div className="mapper-alert info" style={{ alignItems: 'center' }}>
                       <span>
@@ -1923,9 +1981,25 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
 
                   {Object.keys(availableImages).length > 0 && (
                     repuestosSinFoto.length === 0 ? (
-                      <span style={{ fontSize: '0.78rem', color: 'hsl(var(--success))', fontWeight: 700 }}>
-                        Los {filasConProducto.length} repuestos quedaron con foto.
-                      </span>
+                      // "Quedaron con foto" es una afirmación de que ya se subieron, así que
+                      // sólo se dice cuando photoUploadResults lo confirma. Antes se decía en
+                      // cuanto la foto quedaba EMPAREJADA por nombre, así que se veía "Los
+                      // 1.755 repuestos quedaron con foto" mientras la barra de arriba decía
+                      // 50% -- dos mensajes contradictorios a la vez. Mientras sube, la barra
+                      // de progreso de arriba ya cuenta la historia; si falló alguna, el aviso
+                      // de "Fotos subidas: X de Y, Z fallaron" de más abajo la reemplaza, y
+                      // este mensaje en verde no se duplica con uno que dice lo contrario.
+                      photoUploading ? null : photoUploadResults ? (
+                        photoUploadResults.every((r) => r.ok) && (
+                          <span style={{ fontSize: '0.78rem', color: 'hsl(var(--success))', fontWeight: 700 }}>
+                            Los {filasConProducto.length} repuestos quedaron con foto.
+                          </span>
+                        )
+                      ) : (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                          Los {filasConProducto.length} repuestos tienen foto asignada.
+                        </span>
+                      )
                     ) : (
                       <div className="fotos-faltantes">
                         <AlertTriangle size={16} />
@@ -2184,10 +2258,17 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
               </>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap', width: '100%' }}>
+                {photoUploading && (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    Subiendo fotos, espera un momento…
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={resetFileState}
-                  style={{ border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', textDecoration: 'underline', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                  disabled={photoUploading}
+                  title={photoUploading ? 'Espera a que terminen de subirse las fotos.' : undefined}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.72rem', textDecoration: 'underline', cursor: photoUploading ? 'not-allowed' : 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.3rem', opacity: photoUploading ? 0.5 : 1 }}
                 >
                   <RefreshCw size={12} />
                   Cargar otro archivo
@@ -2196,6 +2277,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                   type="button"
                   className="btn btn-primary btn-primary-blue"
                   onClick={onClose}
+                  disabled={photoUploading}
+                  title={photoUploading ? 'Espera a que terminen de subirse las fotos.' : undefined}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                 >
                   <Package size={15} />
@@ -2292,7 +2375,22 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             */}
             <div className="carga-resumen-fotos">
               <span className="carga-resumen-paso">Tus fotos</span>
-              {fotosYaPublicadas && repuestosSinFoto.length === 0 ? (
+              {photoUploading ? (
+                // Este diálogo se abre apenas termina de crear los productos, que es antes
+                // de que las fotos terminen de subirse (siguen en la tabla de abajo, en su
+                // propio hilo). Sin esta rama, con miles de fotos el vendedor veía "Publicaste
+                // sin fotos, quedaron con imagen genérica" -en el "else" de más abajo- mientras
+                // sus fotos se estaban subiendo en ese mismo instante: justo lo contrario de lo
+                // que pasaba.
+                <p>Se están subiendo. Cierra este aviso para ver el progreso en el detalle de la carga.</p>
+              ) : photoUploadResults && repuestosSinFoto.length === 0 && !photoUploadResults.every((r) => r.ok) ? (
+                // Ya terminó de subir, pero no todas se guardaron: "no tienes que hacer nada
+                // más" sería falso, y el detalle de abajo ya dice cuáles fallaron y por qué.
+                <p>
+                  Algunas no se pudieron subir. Revisa el detalle de la carga, en la columna
+                  "Resultado" de la tabla de fotos.
+                </p>
+              ) : fotosYaPublicadas && repuestosSinFoto.length === 0 ? (
                 <p>Se publicaron junto con los repuestos. No tienes que hacer nada más.</p>
               ) : Object.keys(urlsDeclaradasPendientes).length > 0 ? (
                 <p>
