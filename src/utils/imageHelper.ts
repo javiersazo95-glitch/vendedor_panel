@@ -22,7 +22,7 @@ export const API_BASE_URL = rawApiBaseUrl
 
 export const DEFAULT_PRODUCT_IMAGE_URL =
   import.meta.env.VITE_DEFAULT_PRODUCT_IMAGE_URL ||
-  'https://pub-650d4cc5c6be42bc9a81e878e6042ea6.r2.dev/Productos/img_generica/imagen-generica.png';
+  'https://pub-650d4cc5c6be42bc9a81e878e6042ea6.r2.dev/Plantillas/Imagen_generica/imagen-generica.png';
 
 /**
  * Resolves a given image URI.
