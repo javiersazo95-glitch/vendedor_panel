@@ -13,7 +13,7 @@ import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelVali
 import { ordenarFilasPorEstado } from '../utils/cargaResultado';
 import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
-import { descargarFotos, esUrlDeImagen } from '../utils/plantillaFotos';
+import { descargarFotos, dominiosDeFotos, esUrlDeImagen } from '../utils/plantillaFotos';
 import { useMapeosGuardados } from '../utils/plantillaMapeos';
 import { sanitizeAoaForExport, sanitizeRowsForExport } from '../utils/xlsxSafety';
 import { comprimirImagen } from '../utils/imageCompression';
@@ -835,6 +835,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     return pendientes;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fotosDeclaradas, result, imageAssignments]);
+
+  /** Los sitios de donde saldrian esas fotos, para mostrarlos antes de bajarlas. */
+  const dominiosDeclarados = useMemo(
+    () => dominiosDeFotos(urlsDeclaradasPendientes),
+    [urlsDeclaradasPendientes],
+  );
 
   /**
    * Trae las fotos que el vendedor declaro como enlace en su Excel. Se bajan desde SU
@@ -1968,6 +1974,15 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         Tu Excel trae el enlace de la foto de{' '}
                         <b>{Object.keys(urlsDeclaradasPendientes).length}</b> repuestos. Podemos traerlas
                         y publicarlas solas, sin que tengas que subir nada.
+                        {/* De dónde salen las fotos, a la vista antes de bajarlas (SEC-MARKET-A35).
+                            Es un aviso y no un permiso: no agrega un clic al que sube su lista de
+                            siempre, pero deja ver el origen a quien recibió el Excel de un tercero. */}
+                        {dominiosDeclarados.length > 0 && (
+                          <>
+                            {' '}Las fotos vienen de <b>{dominiosDeclarados.slice(0, 3).join(', ')}</b>
+                            {dominiosDeclarados.length > 3 && ` y ${dominiosDeclarados.length - 3} sitio${dominiosDeclarados.length - 3 === 1 ? '' : 's'} más`}.
+                          </>
+                        )}
                       </span>
                       <button
                         type="button"

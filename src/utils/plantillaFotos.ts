@@ -51,6 +51,29 @@ export function separarFotos(valor: string): string[] {
     .filter((v) => esUrlDeImagen(v) || esNombreDeArchivoDeImagen(v));
 }
 
+/**
+ * Los dominios distintos desde donde se bajarian las fotos, sin repetir.
+ *
+ * Se muestran antes de descargar (SEC-MARKET-A35). Las fotos se traen desde el navegador y la
+ * red del vendedor, asi que cuando el Excel no lo armo el —se lo paso un proveedor, por
+ * ejemplo— conviene que vea a que sitios va a consultar su equipo antes de que ocurra. Es un
+ * aviso, no un permiso: no interrumpe el flujo de quien sube su propia lista de siempre.
+ */
+export function dominiosDeFotos(declaradas: Record<string, string[]>): string[] {
+  const dominios = new Set<string>();
+  for (const urls of Object.values(declaradas)) {
+    for (const url of urls) {
+      if (!esUrlDeImagen(url)) continue;
+      try {
+        dominios.add(new URL(url).hostname);
+      } catch {
+        // Sin dominio legible no hay nada que mostrar; descargarFotos ya la reporta como fallida.
+      }
+    }
+  }
+  return [...dominios];
+}
+
 export type TipoColumnaFotos = 'url' | 'archivo' | null;
 
 /**

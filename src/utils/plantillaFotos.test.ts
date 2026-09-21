@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import {
   descargarFotos,
+  dominiosDeFotos,
   esNombreDeArchivoDeImagen,
   esUrlDeImagen,
   fotosPorSku,
@@ -91,5 +92,28 @@ describe('descargarFotos', () => {
     const avances: number[] = [];
     await descargarFotos({ 'A-1': ['https://x.cl/a.jpg', 'https://x.cl/b.jpg'] }, (h) => avances.push(h));
     expect(avances).toEqual([1, 2]);
+  });
+});
+
+describe('dominiosDeFotos (SEC-MARKET-A35)', () => {
+  it('lista los sitios de origen sin repetir, para mostrarlos antes de descargar', () => {
+    expect(dominiosDeFotos({
+      'SKU-1': ['https://fotos.proveedor.cl/a.jpg', 'https://fotos.proveedor.cl/b.jpg'],
+      'SKU-2': ['https://cdn.otro.com/c.jpg'],
+    })).toEqual(['fotos.proveedor.cl', 'cdn.otro.com']);
+  });
+
+  it('deja fuera los nombres de archivo, que no se descargan de ninguna parte', () => {
+    expect(dominiosDeFotos({ 'SKU-1': ['foto-local.jpg'] })).toEqual([]);
+  });
+
+  it('hace visible un origen interno, que es el caso que justifica el aviso', () => {
+    // Un Excel armado por un tercero puede apuntar a la red del propio vendedor.
+    expect(dominiosDeFotos({ 'SKU-1': ['http://192.168.1.10/panel/logo.png'] }))
+      .toEqual(['192.168.1.10']);
+  });
+
+  it('sin fotos declaradas no hay nada que avisar', () => {
+    expect(dominiosDeFotos({})).toEqual([]);
   });
 });
