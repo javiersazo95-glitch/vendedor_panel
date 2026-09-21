@@ -102,6 +102,24 @@ describe('RechargeModal', () => {
     expect(screen.getByRole('button', { name: /Pagar/i })).toBeEnabled();
   });
 
+  /**
+   * SEC-MARKET-C07: el panel sale de sí mismo justo antes de pagar. Si la URL de cobro no
+   * apunta a la pasarela, no se navega: es el peor momento para mandar al vendedor a un
+   * formulario ajeno a escribir sus datos.
+   */
+  it('no redirige si la URL de cobro no es de la pasarela', async () => {
+    vi.mocked(startRecharge).mockResolvedValue({ url: 'https://flow.cl.attacker.com/pagar', token: 'abc' });
+    const location = espiarNavegacion();
+    render(<RechargeModal onClose={() => {}} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Pagar \$10\.000 CLP/i }));
+
+    expect(await screen.findByText(/No pudimos llevarte al pago de forma segura/i)).toBeInTheDocument();
+    expect(location.href).toBe('');
+    // El botón vuelve a estar disponible: el vendedor puede reintentar.
+    expect(screen.getByRole('button', { name: /Pagar/i })).toBeEnabled();
+  });
+
   /** Que no se puedan leer los datos de facturación no puede impedir recargar con boleta. */
   it('recarga igual si no se pueden prellenar los datos del documento', async () => {
     vi.mocked(getRechargeDocumentData).mockRejectedValue(new Error('sin datos'));

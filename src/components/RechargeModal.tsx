@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 import { getCoinPacks, getRechargeDocumentData, startRecharge, type CoinPack, type DocumentoRecarga, type TipoDocumentoTributario } from '../db';
 import { formatRut, isValidRut } from '../utils/rut';
+import { esUrlDePasarela } from '../utils/url';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { RepuestopCoin } from './RepuestopCoin';
 
@@ -77,6 +78,11 @@ export function RechargeModal({ onClose }: RechargeModalProps) {
     setError('');
     try {
       const { url } = await startRecharge(selected.id, documento);
+      if (!esUrlDePasarela(url)) {
+        setError('No pudimos llevarte al pago de forma segura. Vuelve a intentarlo y, si sigue igual, avísanos.');
+        setProcessing(false);
+        return;
+      }
       // Redirección dura, no window.open: es la misma pestaña la que va a Flow y vuelve al panel.
       window.location.href = url;
     } catch (err) {
