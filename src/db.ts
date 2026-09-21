@@ -99,6 +99,26 @@ function getSession(): { token: string; sellerId: string } | null {
   return { token: user.token, sellerId: user.sellerId };
 }
 
+/**
+ * Cierra la sesion tambien en el servidor.
+ *
+ * Borrar el almacenamiento local solo esconde el token: el JWT sigue valido hasta su `exp`,
+ * asi que uno capturado antes de cerrar sesion seguia abriendo inventario y monedero
+ * (SEC-MARKET-B06). Importa en mostradores y equipos compartidos, que es donde se usa el panel.
+ *
+ * La sesion se lee al entrar, antes de que el llamador limpie el almacenamiento: de ahi sale
+ * el token que autoriza esta misma llamada.
+ */
+export async function logout(): Promise<void> {
+  const session = getSession();
+  if (!session) return;
+
+  await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${session.token}` },
+  });
+}
+
 // Shape of ProveedorProductoResponseDTO as returned by the Spring Boot backend.
 // Fields are optional/loosely typed because the backend response is not
 // validated at the boundary; mapDtoToProduct() still guards every field with

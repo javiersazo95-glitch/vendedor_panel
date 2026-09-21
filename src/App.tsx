@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
+import { logout } from './db';
 import { clearSession, getStoredSession, saveSession, type UserSession } from './utils/session';
 
 function App() {
@@ -13,6 +14,10 @@ function App() {
   };
 
   const handleLogout = () => {
+    // El servidor primero: sin esta llamada el token sigue sirviendo hasta su `exp` y cerrar
+    // sesion es solo un gesto visual (SEC-MARKET-B06). No se espera la respuesta ni se deja
+    // que un fallo de red retenga al vendedor dentro del panel: la limpieza local va igual.
+    void logout().catch(() => {});
     setSession(null);
     clearSession();
   };
