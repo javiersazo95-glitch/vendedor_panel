@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2, ShieldCheck, X } from 'lucide-react';
 import { getCoinPacks, getRechargeDocumentData, startRecharge, type CoinPack, type DocumentoRecarga, type TipoDocumentoTributario } from '../db';
+import { API_BASE_URL } from '../utils/imageHelper';
 import { formatRut, isValidRut } from '../utils/rut';
-import { esUrlDePasarela } from '../utils/url';
+import { esDestinoDePagoPermitido } from '../utils/url';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { RepuestopCoin } from './RepuestopCoin';
 
@@ -78,7 +79,7 @@ export function RechargeModal({ onClose }: RechargeModalProps) {
     setError('');
     try {
       const { url } = await startRecharge(selected.id, documento);
-      if (!esUrlDePasarela(url)) {
+      if (!esDestinoDePagoPermitido(url, API_BASE_URL)) {
         setError('No pudimos llevarte al pago de forma segura. Vuelve a intentarlo y, si sigue igual, avísanos.');
         setProcessing(false);
         return;
