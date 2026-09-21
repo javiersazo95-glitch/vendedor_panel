@@ -1,3 +1,5 @@
+import { encId } from './url';
+
 const isLocalHost =
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
@@ -66,7 +68,10 @@ export function resolveImageUri(uri: string | undefined): string {
     }
 
     if (fileId) {
-      return `${API_BASE_URL}/api/v1/uploads/drive/${fileId}`;
+      // El fileId se escapa como cualquier otro segmento de ruta (SEC-MARKET-A33): la
+      // rama que lo saca del parametro `id` no lo filtra, y un valor con '/' o '?' cambiaria
+      // la ruta que se termina pidiendo.
+      return `${API_BASE_URL}/api/v1/uploads/drive/${encId(fileId)}`;
     }
   }
 
