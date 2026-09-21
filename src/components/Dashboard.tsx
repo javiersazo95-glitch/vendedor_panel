@@ -476,7 +476,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
               onTogglePause={handleTogglePauseProduct}
               onManageTop={openTop}
               onQuickUpdate={handleQuickUpdateProduct}
-            /> : <InventoryGrid products={sortedProducts} grupos={inventoryGroups} onEdit={handleOpenEditModal} onDelete={handleDeleteProduct} onTogglePause={handleTogglePauseProduct} onManageTop={openTop} />}
+            /> : <InventoryGrid
+              key={`${searchQuery}-${categoryFilter}-${partBrandFilter}-${vehicleBrandFilter}-${yearFilter}-${inventoryOrder}`}
+              products={sortedProducts}
+              grupos={inventoryGroups}
+              onEdit={handleOpenEditModal}
+              onDelete={handleDeleteProduct}
+              onTogglePause={handleTogglePauseProduct}
+              onManageTop={openTop}
+            />}
           </>
         )}
       </main>
