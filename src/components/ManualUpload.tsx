@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, ChevronUp, Globe, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
+import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
 import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount, FLOW_RATE_BASE } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
@@ -138,9 +139,13 @@ const MAX_PHOTOS = 4;
 const CATALOG_ERROR_MESSAGE =
   'No pudimos cargar las categorías del sistema. Revisa tu conexión y vuelve a abrir el formulario.';
 
+// Estas dos llamadas van por apiFetch y no por fetch() crudo para heredar el timeout de la
+// API (SEC-MARKET-A30/A31): sin el, un backend que acepta la conexion y nunca responde dejaba
+// el desplegable de catalogo cargando sin final. El endpoint es publico, asi que no llevan
+// Authorization; lo que se hereda es el limite de tiempo y el manejo comun de sesion.
 async function loadCatalog(path: string): Promise<CatalogOption[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/catalogos/inventario/${path}`);
+    const response = await apiFetch(`${API_BASE_URL}/api/v1/catalogos/inventario/${path}`);
     if (!response.ok) return [];
     return response.json();
   } catch {
@@ -151,7 +156,7 @@ async function loadCatalog(path: string): Promise<CatalogOption[]> {
 async function loadVehicleCatalogDetails(ids: number[]): Promise<VehicleCatalogDetail[]> {
   if (ids.length === 0) return [];
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/catalogos/inventario/vehiculo-catalogos?ids=${ids.join(',')}`);
+    const response = await apiFetch(`${API_BASE_URL}/api/v1/catalogos/inventario/vehiculo-catalogos?ids=${ids.join(',')}`);
     if (!response.ok) return [];
     return response.json();
   } catch {
