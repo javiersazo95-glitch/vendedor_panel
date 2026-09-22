@@ -100,23 +100,40 @@ function getSession(): { token: string; sellerId: string } | null {
 }
 
 /**
- * Cierra la sesion tambien en el servidor.
+ * Revoca un token en el servidor.
  *
- * Borrar el almacenamiento local solo esconde el token: el JWT sigue valido hasta su `exp`,
- * asi que uno capturado antes de cerrar sesion seguia abriendo inventario y monedero
- * (SEC-MARKET-B06). Importa en mostradores y equipos compartidos, que es donde se usa el panel.
+ * Borrar el almacenamiento local solo esconde el token: el JWT sigue valido hasta su `exp` -- 8 h
+ * deslizantes segun el backend --, asi que uno capturado antes seguia abriendo inventario y
+ * monedero. Importa en mostradores y equipos compartidos, que es donde se usa el panel.
  *
- * La sesion se lee al entrar, antes de que el llamador limpie el almacenamiento: de ahi sale
- * el token que autoriza esta misma llamada.
+ * Limitacion conocida: `AuthService.logout()` exige que el token siga siendo valido, asi que uno
+ * que ya paso su `exp` no se puede revocar por esta via. Cubre el caso que importa -- la sesion
+ * que el panel da por vencida a las 2 h sigue viva para el backend -- pero no el regreso despues
+ * de 8 h.
  */
+async function revocarToken(token: string): Promise<void> {
+  await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+}
+
+/** Cierra la sesion actual tambien en el servidor (SEC-MARKET-B06). */
 export async function logout(): Promise<void> {
   const session = getSession();
   if (!session) return;
 
-  await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${session.token}` },
-  });
+  await revocarToken(session.token);
+}
+
+/**
+ * Revoca una sesion que el panel ya descarto por vencimiento (SEC-MARKET-B03).
+ *
+ * Va aparte de `logout()` porque para entonces la sesion ya no esta en el almacenamiento: el
+ * token llega desde `tomarTokenPorRevocar()`, que lo retuvo al descartarla.
+ */
+export async function revocarSesionVencida(token: string): Promise<void> {
+  await revocarToken(token);
 }
 
 // Shape of ProveedorProductoResponseDTO as returned by the Spring Boot backend.

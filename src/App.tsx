@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
-import { logout } from './db';
-import { clearSession, getStoredSession, saveSession, type UserSession } from './utils/session';
+import { logout, revocarSesionVencida } from './db';
+import { EVENTO_SESION_VENCIDA, clearSession, getStoredSession, saveSession, tomarTokenPorRevocar, type UserSession } from './utils/session';
 
 function App() {
   const [session, setSession] = useState<UserSession | null>(() => getStoredSession());
@@ -21,6 +21,26 @@ function App() {
     setSession(null);
     clearSession();
   };
+
+  useEffect(() => {
+    // Vencer la sesion en el navegador no la cerraba en el servidor (SEC-MARKET-B03): el panel la
+    // daba por terminada a las 2 h mientras el token seguia canjeable durante horas. Se revoca
+    // aca, que es donde vive el ciclo de vida de la sesion.
+    //
+    // Se hacen las dos cosas porque el vencimiento puede detectarse antes o despues de montar:
+    // al entrar con una sesion ya vencida lo descubre el propio useState de arriba, y con la
+    // pestana abierta lo descubre la primera llamada que pida la sesion.
+    const revocarPendiente = () => {
+      const token = tomarTokenPorRevocar();
+      if (!token) return;
+      void revocarSesionVencida(token).catch(() => {});
+      setSession(null);
+    };
+
+    revocarPendiente();
+    window.addEventListener(EVENTO_SESION_VENCIDA, revocarPendiente);
+    return () => window.removeEventListener(EVENTO_SESION_VENCIDA, revocarPendiente);
+  }, []);
 
   useEffect(() => {
     // apiFetch() clears the session and fires this event on any 401/403, so a

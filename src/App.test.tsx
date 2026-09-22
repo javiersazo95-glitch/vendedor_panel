@@ -3,11 +3,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import App from './App';
-import { getAllProducts, getWalletBalance, logout } from './db';
+import { getAllProducts, getWalletBalance, logout, revocarSesionVencida } from './db';
 import { getStoredSession, saveSession } from './utils/session';
 
 vi.mock('./db', () => ({
   logout: vi.fn(),
+  revocarSesionVencida: vi.fn(),
   getAllProducts: vi.fn(),
   deleteProduct: vi.fn(),
   addProduct: vi.fn(),
@@ -34,6 +35,7 @@ describe('App: cierre de sesión (SEC-MARKET-B06)', () => {
     vi.mocked(getAllProducts).mockResolvedValue([]);
     vi.mocked(getWalletBalance).mockResolvedValue({ saldo: 0 });
     vi.mocked(logout).mockResolvedValue(undefined);
+    vi.mocked(revocarSesionVencida).mockResolvedValue(undefined);
     saveSession({ email: 'vendedor@repuestop.cl', role: 'Vendedor', token: 'jwt-de-prueba', sellerId: '42' });
   });
 
@@ -63,5 +65,45 @@ describe('App: cierre de sesión (SEC-MARKET-B06)', () => {
 
     expect(await screen.findByRole('button', { name: /Ingresar al Panel/i })).toBeInTheDocument();
     expect(getStoredSession()).toBeNull();
+  });
+});
+
+describe('App: sesión vencida por TTL (SEC-MARKET-B03)', () => {
+  beforeEach(() => {
+    vi.mocked(getAllProducts).mockResolvedValue([]);
+    vi.mocked(getWalletBalance).mockResolvedValue({ saldo: 0 });
+    vi.mocked(revocarSesionVencida).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    sessionStorage.clear();
+    vi.useRealTimers();
+  });
+
+  /**
+   * El panel daba la sesión por terminada a las 2 h y no le avisaba al servidor: el token seguía
+   * abriendo inventario y monedero hasta su `exp`, que son 8 h deslizantes.
+   */
+  it('revoca en el servidor el token de la sesión que venció', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    saveSession({ email: 'vendedor@repuestop.cl', role: 'Vendedor', token: 'tok-vencido', sellerId: '42' });
+    vi.setSystemTime(new Date('2026-01-01T02:00:01Z'));
+
+    renderApp();
+
+    await waitFor(() => expect(revocarSesionVencida).toHaveBeenCalledWith('tok-vencido'));
+    // Y el vendedor queda en el login, no dentro del panel.
+    expect(await screen.findByRole('button', { name: /Ingresar al Panel/i })).toBeInTheDocument();
+  });
+
+  it('no revoca nada cuando la sesión sigue vigente', async () => {
+    saveSession({ email: 'vendedor@repuestop.cl', role: 'Vendedor', token: 'tok-vivo', sellerId: '42' });
+
+    renderApp();
+
+    await screen.findByRole('button', { name: /Cerrar Sesión/i });
+    expect(revocarSesionVencida).not.toHaveBeenCalled();
   });
 });
