@@ -345,7 +345,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
               <div className="user-info">
                 <span className="user-name">{userEmail}</span>
                 <span className="user-role">{userRole}</span>
-                {founder ? <span className="founder-badge-web"><Crown size={13} className="founder-crown-icon" /> Fundador <button type="button" className="founder-info" aria-label="Información sobre Vendedor Fundador"><Info size={13} /><span className="founder-tooltip">Confiaste en RepuesTop antes del lanzamiento. Tu comisión RepuesTop es fija en 5% + IVA; el costo de Flow se deduce en la liquidación.</span></button></span> : null}
+                {founder ? <span className="founder-badge-web"><Crown size={13} className="founder-crown-icon" /> Fundador <button type="button" className="founder-info" aria-label="Información sobre Vendedor Fundador"><Info size={13} /><span className="founder-tooltip">Eres de las primeras tiendas de RepuesTop: durante tus primeros 3 meses tu comisión RepuesTop es fija en 5% + IVA; el costo de Flow se deduce en la liquidación.</span></button></span> : null}
               </div>
             </div>
           </div>
