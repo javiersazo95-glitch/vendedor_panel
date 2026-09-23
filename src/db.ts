@@ -106,10 +106,10 @@ function getSession(): { token: string; sellerId: string } | null {
  * deslizantes segun el backend --, asi que uno capturado antes seguia abriendo inventario y
  * monedero. Importa en mostradores y equipos compartidos, que es donde se usa el panel.
  *
- * Limitacion conocida: `AuthService.logout()` exige que el token siga siendo valido, asi que uno
- * que ya paso su `exp` no se puede revocar por esta via. Cubre el caso que importa -- la sesion
- * que el panel da por vencida a las 2 h sigue viva para el backend -- pero no el regreso despues
- * de 8 h.
+ * Funciona tambien con un token ya vencido: `logout` revoca con la misma ventana de gracia con la
+ * que el backend deja refrescar (SEC-BACKEND-140). Hasta el 2026-09-22 exigia un `exp` futuro, y
+ * entonces esta llamada fallaba en silencio para quien volvia pasadas las 8 h -- justo cuando el
+ * token seguia canjeable por una sesion nueva. Ya no.
  */
 async function revocarToken(token: string): Promise<void> {
   await apiFetch(`${API_BASE_URL}/api/v1/auth/logout`, {
