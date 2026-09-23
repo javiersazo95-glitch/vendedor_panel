@@ -587,6 +587,51 @@ export async function getSellerProfileImage(): Promise<string | null> {
 }
 
 /**
+ * ¿Falta aceptar el Contrato de Adhesión? `true` sólo si la tienda está aprobada y el contrato no
+ * está firmado, que es cuando el backend rechaza publicar (O14, pruebas de lanzamiento).
+ *
+ * Como la foto de perfil, no pasa por apiFetch: un 403 aquí (tienda bloqueada) no debe cerrar la
+ * sesión, y si no se puede saber no se bloquea la pantalla, porque el backend igual lo exige al
+ * publicar y devuelve el mensaje.
+ */
+export async function isAdhesionContractPending(): Promise<boolean> {
+  const session = getSession();
+  if (!session) return false;
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/verificacion`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+    });
+    if (!response.ok) return false;
+    const data = await response.json() as { reviewStatus?: string; adhesionContractDoc?: string | null };
+    return data.reviewStatus === 'APPROVED' && !(data.adhesionContractDoc && data.adhesionContractDoc.trim());
+  } catch {
+    return false;
+  }
+}
+
+/** El PDF real del contrato, para leerlo antes de aceptarlo. No firma nada. */
+export async function getAdhesionContractPdf(): Promise<Blob> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/adhesion/preview`, {
+    method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/pdf' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No pudimos abrir el contrato. Recarga la página.'));
+  return response.blob();
+}
+
+/** Registra la aceptación: el backend genera y guarda el PDF firmado. */
+export async function acceptAdhesionContract(): Promise<void> {
+  const session = getSession();
+  if (!session) throw new Error('No hay sesión activa.');
+  const response = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/adhesion`, {
+    method: 'POST', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+  });
+  if (!response.ok) throw new Error(await getApiError(response, 'No pudimos registrar tu aceptación. Intenta nuevamente.'));
+}
+
+/**
  * Saldo mas el historial de movimientos, del mas nuevo al mas viejo.
  *
  * Es la misma fuente que da el saldo, y por eso se leen juntos: el encabezado del historial

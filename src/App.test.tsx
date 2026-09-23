@@ -20,6 +20,9 @@ vi.mock('./db', () => ({
   // El Dashboard lo llama al montar (avatar del encabezado, 905e1477). Es decorativo: sin foto
   // queda la inicial, asi que el mock devuelve null.
   getSellerProfileImage: vi.fn().mockResolvedValue(null),
+  isAdhesionContractPending: vi.fn().mockResolvedValue(false),
+  getAdhesionContractPdf: vi.fn(),
+  acceptAdhesionContract: vi.fn(),
   setProductTop: vi.fn(),
   saveProductsBatch: vi.fn(),
   savePreciosStockBatch: vi.fn(),

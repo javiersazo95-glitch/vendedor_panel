@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AdhesionContractModal } from './components/AdhesionContractModal';
 import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
 import { logout, revocarSesionVencida } from './db';
@@ -54,7 +55,11 @@ function App() {
   return (
     <>
       {session ? (
-        <Dashboard userEmail={session.email} userRole={session.role} founder={session.founder === true} onLogout={handleLogout} />
+        <>
+          <Dashboard userEmail={session.email} userRole={session.role} founder={session.founder === true} onLogout={handleLogout} />
+          {/* key: si cambia el vendedor en la misma pestaña, se vuelve a consultar su contrato. */}
+          <AdhesionContractModal key={session.sellerId} onLogout={handleLogout} />
+        </>
       ) : (
         <Auth onLogin={handleLogin} />
       )}

@@ -2291,6 +2291,15 @@ h1, h2, h3, h4, h5, h6 {
 .document-viewer-spinner { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #cbd5e1; border-top-color: #0f4aa8; animation: document-viewer-spin .8s linear infinite; }
 @keyframes document-viewer-spin { to { transform: rotate(360deg); } }
 .document-viewer-download { display: inline-flex; align-items: center; gap: .4rem; text-decoration: none; }
+/* Contrato de adhesion: mismas medidas que `.legal-doc-modal` del market (1180px x 92vh, PDF a todo el
+   ancho). `.modal-content` limita a 700px x 85vh y dejaba el contrato ilegible. */
+.document-viewer.adhesion-modal { max-width: none; width: min(1180px, 96vw); height: 92vh; max-height: 92vh; overflow: hidden; }
+.adhesion-modal .document-viewer-frame { margin: 0; border: 0; border-radius: 0; background: #f1f5f9; }
+.adhesion-modal .modal-footer { padding: .85rem 1.25rem; background: #fbfcfe; }
+/* Aceptar sin la casilla marcada: azul atenuado (como el market), no el gris generico de .btn-primary:disabled. */
+.adhesion-modal .btn-primary:disabled { background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.85)); color: #fff; opacity: .45; cursor: not-allowed; }
+.adhesion-checkbox { display: flex; align-items: flex-start; gap: .55rem; margin: .75rem 1.25rem 0; font-size: .86rem; color: var(--text-primary, #0f172a); cursor: pointer; }
+.adhesion-checkbox input { margin-top: .15rem; }
 
 /* Lluvia de monedas al volver de Flow con la recarga acreditada. Es decorativa: no recibe clics. */
 .coin-rain-layer { position: fixed; inset: 0; z-index: 1800; display: grid; justify-items: center; align-content: center; gap: .3rem; background: rgba(6, 40, 92, .82); color: #fff; text-align: center; }
