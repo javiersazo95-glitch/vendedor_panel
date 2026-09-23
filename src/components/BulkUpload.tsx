@@ -539,7 +539,9 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               const row = rows[i];
               const rowNum = i + 2; // Row 1 is header
 
-              const rawSku = row.sku || row.SKU || '';
+              // `sku_proveedor` es el nombre de la columna en la plantilla de Publicacion Completa:
+              // un vendedor que reusa ese archivo para actualizar precios no tiene por que renombrarla.
+              const rawSku = row.sku || row.SKU || row.sku_proveedor || row.SKU_PROVEEDOR || '';
               const rawPrice = row.precio !== undefined ? row.precio : (row.Precio !== undefined ? row.Precio : row.price);
               const rawStock = row.stock !== undefined ? row.stock : (row.Stock !== undefined ? row.Stock : row.units);
 
@@ -683,7 +685,10 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
   const handleStartUpload = async (productsOverride?: PreparedProduct[], genericImageSkus?: Set<string>) => {
     const productsToSave = productsOverride ?? preparedProducts;
-    if (productsToSave.length === 0 || stats.errors > 0) return;
+    // Las filas con error del analisis ya quedaron fuera de preparedProducts: no bloquean a las
+    // validas. Es el mismo criterio de la Publicacion Completa y del backend, que responde por
+    // fila justamente para no perder 499 filas buenas por una mala (SEC-BACKEND-137).
+    if (productsToSave.length === 0) return;
 
     setProcessing(true);
     const startProgress = genericImageSkus && genericImageSkus.size > 0 ? 15 : 0;
@@ -785,7 +790,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
 
   // Abre el popup de asignación de imágenes antes de guardar los productos analizados
   const handleOpenImagesModal = () => {
-    if (preparedProducts.length === 0 || stats.errors > 0 || processing || uploadDone) return;
+    if (preparedProducts.length === 0 || processing || uploadDone) return;
     setMissingImageRows([]);
     setImagesModalOpen(true);
   };
@@ -851,6 +856,11 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
       setProcessing(false);
     }
   };
+
+  // Lo que se puede reintentar son las filas VALIDAS que fallaron al guardarse. Las que el
+  // analisis rechazo (precio negativo, SKU repetido...) siguen en stats.errors para el resumen,
+  // pero reintentarlas daria el mismo error: no cuentan aca.
+  const reintentables = uploadDone ? preparedProducts.filter((p) => !savedSkusSet.has(p.sku)).length : 0;
 
   // Reintenta la carga ÚNICAMENTE de los registros que resultaron con estado ERROR o fueron corregidos
   const handleRetryFailedRecords = async () => {
@@ -1777,7 +1787,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                     </div>
                   </div>
 
-                  {uploadDone && stats.errors > 0 && (
+                  {reintentables > 0 && (
                     <div
                       style={{
                         display: 'flex',
@@ -1797,7 +1807,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                         <AlertTriangle size={20} style={{ color: '#b45309', flexShrink: 0 }} />
                         <div>
                           <span style={{ fontSize: '0.82rem', color: '#92400e', fontWeight: 800, display: 'block' }}>
-                            {stats.errors} {stats.errors === 1 ? 'registro no se pudo guardar' : 'registros no se pudieron guardar'} en la base de datos
+                            {reintentables} {reintentables === 1 ? 'registro no se pudo guardar' : 'registros no se pudieron guardar'} en la base de datos
                           </span>
                           <span style={{ fontSize: '0.74rem', color: '#92400e' }}>
                             Puedes hacer clic en el botón para reintentar cargar únicamente las filas con fallos.
@@ -1823,7 +1833,7 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                         }}
                       >
                         <RefreshCw size={15} className={processing ? 'spin' : ''} />
-                        Reintentar Carga de {stats.errors} Fallidos
+                        Reintentar Carga de {reintentables} Fallidos
                       </button>
                     </div>
                   )}
@@ -2143,13 +2153,15 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
               )}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
                 {(!analysisDone || stats.errors > 0) && !uploadDone && (
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', maxWidth: '26rem', textAlign: 'right' }}>
                     {!analysisDone
                       ? 'Primero analiza la carga.'
-                      : 'Corrige los errores del análisis para poder iniciar la carga.'}
+                      : preparedProducts.length === 0
+                        ? 'No hay filas válidas para cargar. Corrige el archivo y vuelve a analizarlo.'
+                        : `${stats.errors} ${stats.errors === 1 ? 'fila con error no se va' : 'filas con error no se van'} a cargar. Puedes iniciar la carga con ${preparedProducts.length === 1 ? 'la fila válida' : `las ${preparedProducts.length} válidas`}, o corregir el archivo y volver a analizarlo.`}
                   </span>
                 )}
-                {uploadDone && stats.errors > 0 ? (
+                {uploadDone && reintentables > 0 ? (
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -2166,19 +2178,19 @@ export const BulkUpload: React.FC<BulkUploadProps> = ({
                     }}
                   >
                     <RefreshCw size={16} className={processing ? 'spin' : ''} />
-                    Reintentar Carga ({stats.errors} fallidos)
+                    Reintentar Carga ({reintentables} fallidos)
                   </button>
                 ) : (
                   <button
                     type="button"
                     className="btn btn-primary"
                     onClick={handleOpenImagesModal}
-                    disabled={processing || !analysisDone || stats.errors > 0 || preparedProducts.length === 0 || uploadDone}
+                    disabled={processing || !analysisDone || preparedProducts.length === 0 || uploadDone}
                     title={
                       !analysisDone
                         ? 'Primero debes analizar la carga.'
-                        : stats.errors > 0
-                          ? 'Corrige los errores del análisis antes de continuar.'
+                        : preparedProducts.length === 0
+                          ? 'No hay filas válidas para cargar.'
                           : undefined
                     }
                   >

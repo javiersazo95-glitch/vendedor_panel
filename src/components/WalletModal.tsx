@@ -28,12 +28,14 @@ interface WalletModalProps {
    * que perdió la plata y vuelve a pagar.
    */
   pendiente?: boolean;
+  /** Flow rechazó el pago (`?recarga=rechazada`): no hubo cargo y no hay nada que esperar. */
+  rechazada?: boolean;
   onCelebracionLista?: () => void;
   onBalance: (saldo: number) => void;
   onClose: () => void;
 }
 
-export function WalletModal({ balance, loading, summary, celebrar = false, pendiente = false, onCelebracionLista, onBalance, onClose }: WalletModalProps) {
+export function WalletModal({ balance, loading, summary, celebrar = false, pendiente = false, rechazada = false, onCelebracionLista, onBalance, onClose }: WalletModalProps) {
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   // La lluvia solo corre si se llegó acá volviendo de un pago, y nunca para quien pidió menos
@@ -49,6 +51,7 @@ export function WalletModal({ balance, loading, summary, celebrar = false, pendi
         <div className="modal-header"><div><RepuestopCoin size={42} /><div><h2>Monedas RepuesTop</h2><small className="recharge-subtitle">Recarga monedas y revisa tus recargas y canjes</small></div></div><button className="icon-close" onClick={onClose} aria-label="Cerrar"><X size={20} /></button></div>
         <div className="modal-body wallet-modal-body">
           {pendiente && <p className="wallet-pending"><AlertCircle size={18} /> <span><strong>Estamos confirmando tu recarga.</strong> Flow todavía no nos avisó el resultado. En unos minutos tus monedas aparecen acá solas: <b>no vuelvas a pagar</b>. Si en una hora no aparecen, escríbenos.</span></p>}
+          {rechazada && <p className="wallet-pending" role="alert"><AlertCircle size={18} /> <span><strong>Tu pago fue rechazado.</strong> No se realizó ningún cargo y no se acreditaron monedas. Puedes intentarlo de nuevo con otro medio de pago.</span></p>}
           <div className="wallet-card">
             <RepuestopCoin size={72} />
             <div className="wallet-card-copy">

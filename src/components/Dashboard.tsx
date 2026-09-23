@@ -44,7 +44,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const [profileImageFailed, setProfileImageFailed] = useState(false);
   /** Cómo volvió el vendedor de Flow, si es que volvió de Flow. */
-  const [rechargeReturn, setRechargeReturn] = useState<'exitosa' | 'pendiente' | null>(null);
+  const [rechargeReturn, setRechargeReturn] = useState<'exitosa' | 'pendiente' | 'rechazada' | null>(null);
   const [topProduct, setTopProduct] = useState<Product | null>(null);
   const [topSummary, setTopSummary] = useState<ProductTopSummary | null>(null);
   const [topLoading, setTopLoading] = useState(false);
@@ -128,7 +128,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const recarga = params.get('recarga');
-    if (recarga !== 'exitosa' && recarga !== 'pendiente') return;
+    if (recarga !== 'exitosa' && recarga !== 'pendiente' && recarga !== 'rechazada') return;
     params.delete('recarga');
     const query = params.toString();
     window.history.replaceState({}, '', window.location.pathname + (query ? `?${query}` : ''));
@@ -509,6 +509,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         summary={topSummary}
         celebrar={rechargeReturn === 'exitosa'}
         pendiente={rechargeReturn === 'pendiente'}
+        rechazada={rechargeReturn === 'rechazada'}
         onCelebracionLista={() => setRechargeReturn(null)}
         onBalance={setWalletBalance}
         onClose={() => { setWalletOpen(false); setRechargeReturn(null); }}
