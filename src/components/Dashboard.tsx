@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2 } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
-import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, setProductTop, type ProductTopSummary } from '../db';
+import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, getSellerProfileImage, setProductTop, type ProductTopSummary } from '../db';
 import { KPIs } from './KPIs';
 import { Filters } from './Filters';
 import { InventoryTable } from './InventoryTable';
@@ -41,6 +41,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+  const [profileImageFailed, setProfileImageFailed] = useState(false);
   /** Cómo volvió el vendedor de Flow, si es que volvió de Flow. */
   const [rechargeReturn, setRechargeReturn] = useState<'exitosa' | 'pendiente' | null>(null);
   const [topProduct, setTopProduct] = useState<Product | null>(null);
@@ -110,6 +112,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
     // El saldo es global de la cuenta y debe cargarse igual que el inventario;
     // antes el encabezado quedaba en el valor inicial (0) hasta abrir el popup.
     void refreshWallet();
+    void getSellerProfileImage().then((url) => setProfileImageUrl(url));
   }, []);
 
   /**
@@ -335,7 +338,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             {/* Profile Avatar Widget */}
             <div className="user-profile">
               <div className="avatar">
-                {userEmail.charAt(0).toUpperCase()}
+                {profileImageUrl && !profileImageFailed
+                  ? <img src={profileImageUrl} alt="" referrerPolicy="no-referrer" onError={() => setProfileImageFailed(true)} />
+                  : userEmail.charAt(0).toUpperCase()}
               </div>
               <div className="user-info">
                 <span className="user-name">{userEmail}</span>

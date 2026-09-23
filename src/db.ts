@@ -1,4 +1,4 @@
-import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL } from './utils/imageHelper';
+import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from './utils/imageHelper';
 import { apiFetch } from './utils/apiFetch';
 import { getStoredSession } from './utils/session';
 import { encId } from './utils/url';
@@ -547,6 +547,43 @@ export async function getWalletBalance(): Promise<WalletBalance> {
   });
   if (!response.ok) throw new Error(await getApiError(response, 'No se pudo consultar el monedero.'));
   return response.json() as Promise<WalletBalance>;
+}
+
+/** Foto del perfil de vendedor para el avatar del encabezado. Un 403 de perfil no debe cerrar
+ * una sesión válida: vendedores bloqueados pueden seguir entrando al panel, aunque no vean este
+ * endpoint. Por eso esta lectura opcional no usa apiFetch, que trata 403 como sesión vencida. */
+export async function getSellerProfileImage(): Promise<string | null> {
+  const session = getSession();
+  if (!session) return null;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}/api/v1/users/perfil`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    if (!response.ok) return null;
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== 'object') return null;
+    const data = payload as Record<string, unknown>;
+    const profile = data.usuario && typeof data.usuario === 'object'
+      ? data.usuario as Record<string, unknown>
+      : data.perfil && typeof data.perfil === 'object'
+        ? data.perfil as Record<string, unknown>
+        : data;
+    const image = [profile.sellerProfileUrl, profile.userProfileUrl, profile.logoUrl, profile.storeLogoUrl, profile.avatarUrl]
+      .find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return image ? resolveImageUri(image) : null;
+  } catch {
+    // El avatar es decorativo: si la lectura falla, el encabezado conserva la inicial.
+    return null;
+  }
 }
 
 /**
