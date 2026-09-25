@@ -307,8 +307,12 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               />
             </div>
 
+            {/* O48 (pruebas de lanzamiento, 25-sep): el panel no recupera contrasenas; se indica
+                donde hacerlo. Sin enlace porque el panel no conoce la URL del Market por ambiente. */}
             <p className="auth-help-text">
-              ¿No recuerdas tus datos? Usa tu misma contraseña de la App móvil.
+              ¿Olvidaste tu contraseña? El panel usa la misma de tu cuenta RepuesTop y solo se
+              recupera en el Market web o en la app móvil, desde el enlace "¿Olvidaste tu
+              contraseña?" del inicio de sesión.
             </p>
           </div>
         </div>
