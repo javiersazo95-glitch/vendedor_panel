@@ -87,7 +87,7 @@ export interface EsquemaPlantilla {
  * y no de la base de datos (tipo de precio, condición) sí se copian.
  */
 export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
-  version: '2.1.0',
+  version: '2.2.0',
   columnas: [...PLANTILLA_COLUMNAS],
   columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor', 'stock'],
   hojaCompatibilidadesColumnas: [

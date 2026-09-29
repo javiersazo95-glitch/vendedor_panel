@@ -4,6 +4,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 
 import { useEsquemaPlantilla } from './plantillaEsquema';
 import { useMapeosGuardados } from './plantillaMapeos';
+import { ESQUEMA_FALLBACK } from './plantillaMapping';
 
 /**
  * Regresión: con StrictMode (que es como corre el panel en desarrollo) React monta el
@@ -65,7 +66,7 @@ describe('los hooks de la carga masiva bajo StrictMode', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(result.current.usandoRespaldo).toBe(true);
-    expect(result.current.esquema.version).toBe('2.1.0');
+    expect(result.current.esquema.version).toBe(ESQUEMA_FALLBACK.version);
   });
 
   it('sin la carga masiva abierta no se pide nada', () => {
