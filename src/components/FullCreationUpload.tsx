@@ -56,6 +56,9 @@ interface CargaExcelResponse {
   productosConAdvertencia: number;
   errores: string[];
   advertencias: string[];
+  // Fase 2 del plan de auditoría de carga: avisos que no son de una fila de la hoja
+  // 'inventario' (hoy: filas de la hoja 'compatibilidades' con un código que no existe).
+  avisosGenerales?: string[];
   filas: FilaResultado[];
 }
 
@@ -1936,6 +1939,32 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       {result.totalFilas} filas totales
                     </span>
                   </div>
+
+                  {result.avisosGenerales && result.avisosGenerales.length > 0 && (
+                    // Avisos que no pertenecen a ninguna fila de la tabla: si sólo vivieran en
+                    // el reporte por fila, nadie los vería. Mismos colores que la insignia de
+                    // advertencia de arriba.
+                    <div
+                      role="status"
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.35rem',
+                        backgroundColor: 'var(--warning-bg)',
+                        color: 'hsl(var(--warning))',
+                        padding: '0.65rem 0.85rem',
+                        borderRadius: '10px',
+                        fontSize: '0.95rem',
+                      }}
+                    >
+                      {result.avisosGenerales.map((aviso, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                          <span>{aviso}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {photoUploading && (
                     // Antes el único indicador era el texto dentro del botón "Subir fotos",
