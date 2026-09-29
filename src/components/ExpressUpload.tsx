@@ -211,7 +211,10 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
       const filas: (string | number)[][] = [['Código', 'Nombre', 'Precio', 'Stock']];
       for (const p of productos) {
         // Un "Sólo cotizar" va sin precio: si el vendedor no lo toca, al subirlo sólo cambia el stock.
-        filas.push([p.sku, p.name, p.pricingMode === 'quote_only' ? '' : p.price, p.stock]);
+        // Igual un precio 0 guardado de antes: exportarlo haría que el archivo recién descargado
+        // se rechazara a sí mismo al subirlo ("el precio tiene que ser mayor que cero").
+        const sinPrecio = p.pricingMode === 'quote_only' || !(p.price > 0);
+        filas.push([p.sku, p.name, sinPrecio ? '' : p.price, p.stock]);
       }
       if (productos.length === 0) filas.push(['PF-100', 'Ejemplo: pastilla de freno', 24990, 10]);
       const XLSX = await import('xlsx');
