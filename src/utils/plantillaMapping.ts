@@ -183,7 +183,9 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     seccion: 'obligatorios',
     descripcion: 'Tu código interno de producto o número de parte con el que identificas el repuesto en bodega.',
     ejemplo: 'Ej: PF-100, 0986AB01',
-    synonyms: ['sku', 'codigo', 'cod', 'referencia', 'ref', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte', 'cod art', 'cod articulo', 'codigo articulo', 'cod producto', 'nro parte', 'n parte'],
+    // 'referencia'/'ref' al final: una columna así suele ser el OEM y sólo se toma como SKU si
+    // no hay ninguna otra que lo sea (Fase 3).
+    synonyms: ['sku', 'codigo', 'cod', 'codigo interno', 'codigo proveedor', 'part number', 'numero de parte', 'no parte', 'cod art', 'cod articulo', 'codigo articulo', 'cod producto', 'nro parte', 'n parte', 'referencia', 'ref'],
   },
   marca_repuesto: {
     label: 'Marca del repuesto',
@@ -212,7 +214,9 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     seccion: 'precio_condicion',
     descripcion: 'Precio de venta al público en pesos (CLP) sin puntos ni símbolos.',
     ejemplo: 'Ej: 24990',
-    synonyms: ['valor', 'pvp', 'precio venta', 'price', 'monto', 'precio unitario', 'p u', 'pu', 'precio unit', 'valor unitario', 'precio neto', 'precio publico'],
+    // El precio público va antes que el neto: si la planilla trae los dos, el que se publica
+    // es el que paga el comprador, no el sin IVA (Fase 3).
+    synonyms: ['valor', 'pvp', 'precio venta', 'precio publico', 'price', 'monto', 'precio unitario', 'p u', 'pu', 'precio unit', 'valor unitario', 'precio neto'],
   },
   tipo_precio: {
     label: 'Tipo de precio',
@@ -226,7 +230,11 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     seccion: 'precio_condicion',
     descripcion: 'Indica si el repuesto es original de fábrica (genuino) o alternativo homologado.',
     ejemplo: 'ORIGINAL (genuino de fábrica) · ALTERNATIVO (homologado)',
-    synonyms: ['estado', 'tipo repuesto', 'origen', 'original alternativo'],
+    // 'estado' y 'origen' ya no son sinónimos: en una lista de mostrador "Origen: JAPÓN" es la
+    // procedencia y "Estado" el stock, y se publicaban como ORIGINAL (Fase 3).
+    // 'estado' queda al final: en una lista de mostrador puede ser el stock, pero la plantilla
+    // dev lo usa para la condicion. Un valor que no sea ORIGINAL/ALTERNATIVO ya se retiene.
+    synonyms: ['condicion repuesto', 'tipo repuesto', 'original alternativo', 'original o alternativo', 'calidad', 'estado'],
   },
 
   compatibilidad_general: {
@@ -234,7 +242,8 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     seccion: 'compatibilidad',
     descripcion: 'Marca "SI" si la pieza sirve para cualquier auto (como aceites, ampolletas o fusibles) o "NO" si es para modelos específicos.',
     ejemplo: 'SI (para cualquier auto) · NO (para modelos específicos)',
-    synonyms: ['universal', 'compatibilidad general', 'generico', 'aplica a todos', 'es universal'],
+    // 'generico' no: en Chile "genérico" es el repuesto alternativo, no el universal (Fase 3).
+    synonyms: ['universal', 'compatibilidad general', 'aplica a todos', 'es universal', 'todos los vehiculos'],
   },
   compatibilidad_marca: {
     label: 'Marca del vehículo',
@@ -618,6 +627,29 @@ export function autoDetectMapping(userCols: UserColumn[], camposEsquema: CampoMe
     }
   }
 
+  // Contexto de encabezados (Fase 3): una columna que sólo dice "Marca" y está pegada a una
+  // "Modelo" o "Año" es la marca del VEHÍCULO, no la del repuesto. Antes iba a marca del
+  // repuesto por el sinónimo exacto, la compatibilidad quedaba sin marca (y se descartaba)
+  // y "Nissan" se creaba como marca de repuesto.
+  const idMarca = mapping.oficial.marca_repuesto;
+  if (idMarca && !mapping.oficial.compatibilidad_marca) {
+    const colMarca = userCols.find((c) => c.id === idMarca);
+    const normMarca = colMarca ? normalizeForMatch(colMarca.rawHeader) : '';
+    if (colMarca && (normMarca === 'marca' || normMarca === 'mca')) {
+      const vecinos = ['compatibilidad_modelo', 'anio_desde']
+        .map((key) => mapping.oficial[key])
+        .filter((id): id is string => !!id)
+        .map((id) => userCols.find((c) => c.id === id))
+        .filter((c): c is UserColumn => !!c);
+      const pegadaAlVehiculo = vecinos.some((vecino) => Math.abs(vecino.index - colMarca.index) === 1
+        && !/aplicacion|compatib|vehiculo/.test(normalizeForMatch(vecino.rawHeader)));
+      if (pegadaAlVehiculo) {
+        mapping.oficial.compatibilidad_marca = idMarca;
+        mapping.oficial.marca_repuesto = null;
+      }
+    }
+  }
+
   for (const col of userCols) {
     if (!usados.has(col.id)) mapping.extras[col.id] = 'descripcion';
   }
@@ -648,8 +680,25 @@ export function reconcileMapping(
     const pol = saved.extras?.[col.id];
     base.extras[col.id] = pol === 'ignore' ? 'ignore' : 'descripcion';
   }
+  // Fase 3: los interruptores del paso 2 y lo completado por grupo también se recuerdan. Sin
+  // esto la promesa "relaciona una sola vez" no valía para "separar marca, modelo y años", y
+  // al mes siguiente la aplicación volvía a pasar en verde sin separarse.
+  for (const bandera of BANDERAS_DEL_MAPEO) {
+    if (typeof saved[bandera] === 'boolean') base[bandera] = saved[bandera];
+  }
+  if (saved.completar && typeof saved.completar === 'object') base.completar = { ...saved.completar };
+  if (saved.columnaFotos && validIds.has(saved.columnaFotos) && !usados.has(saved.columnaFotos)) {
+    base.columnaFotos = saved.columnaFotos;
+    base.extras[saved.columnaFotos] = 'ignore';
+  }
   return base;
 }
+
+/** Las decisiones sí/no del paso 2 que viajan con el mapeo guardado. */
+export const BANDERAS_DEL_MAPEO = [
+  'dividirAnios', 'parsearAplicacion', 'separarAplicaciones', 'deducirDelNombre',
+  'quitarFilasDeTotales', 'usarBandasComoCategoria', 'agruparPorSku',
+] as const;
 
 export interface ParsedUserFile {
   cols: UserColumn[];
@@ -993,8 +1042,19 @@ export function buildOfficialAoADetallado(
     ? mapping.oficial.compatibilidad_modelo ?? mapping.oficial.compatibilidad_marca ?? null
     : null;
   const idxAplicacion = colAplicacion ? idToIndex.get(colAplicacion) : undefined;
+  const idxMarcaVehiculo = mapping.oficial.compatibilidad_marca
+    ? idToIndex.get(mapping.oficial.compatibilidad_marca) : undefined;
+  const modelosDe = (marca: string) => modelosPorMarca[normalizarParaComparar(marca)] ?? [];
   const filas: FilaConOrigen[] = idxAplicacion === undefined ? utiles : utiles.flatMap((f) => {
-    const vehiculos = separarAplicaciones(String(f.row[idxAplicacion] ?? ''), marcasVehiculo);
+    let textoAplicacion = String(f.row[idxAplicacion] ?? '');
+    // Con la marca en su propia columna, "Corolla, Yaris 2012" se lee junto a ella: así los
+    // trozos sin marca tienen de dónde heredarla.
+    const marcaDeAlLado = idxMarcaVehiculo !== undefined && idxMarcaVehiculo !== idxAplicacion
+      ? String(f.row[idxMarcaVehiculo] ?? '').trim() : '';
+    if (marcaDeAlLado && !parsearAplicacion(textoAplicacion, marcasVehiculo)) {
+      textoAplicacion = `${marcaDeAlLado} ${textoAplicacion}`;
+    }
+    const vehiculos = separarAplicaciones(textoAplicacion, marcasVehiculo, modelosDe);
     if (vehiculos.length < 2) return [f];
     return vehiculos.map((vehiculo, k) => {
       const copia = [...f.row];
@@ -1037,12 +1097,27 @@ export function buildOfficialAoADetallado(
     // auto si el auto sigue escrito de corrido en la columna de modelo.
     if (mapping.parsearAplicacion || mapping.separarAplicaciones) {
       const fuente = cells.compatibilidad_modelo || cells.compatibilidad_marca || '';
-      const app = parsearAplicacion(fuente, marcasVehiculo);
-      if (app) {
+      let app = parsearAplicacion(fuente, marcasVehiculo);
+      // "Corolla 2014-2018" en la aplicación y "Toyota" en su columna de marca: se leen juntos.
+      if (!app && cells.compatibilidad_marca && cells.compatibilidad_modelo
+          && fuente === cells.compatibilidad_modelo) {
+        app = parsearAplicacion(`${cells.compatibilidad_marca} ${cells.compatibilidad_modelo}`, marcasVehiculo);
+      }
+      if (app?.universal) {
+        // "Todos" o "Universal" en la aplicación: es el repuesto diciendo que sirve para
+        // cualquier auto, no un modelo llamado "Todos".
+        cambios.push({ columna: 'compatibilidad_general', antes: fuente, despues: 'SI' });
+        cells.compatibilidad_general = 'SI';
+        cells.compatibilidad_marca = '';
+        cells.compatibilidad_modelo = '';
+      } else if (app) {
         cells.compatibilidad_marca = app.marca;
         cells.compatibilidad_modelo = app.modelo;
         if (!cells.anio_desde) cells.anio_desde = app.anioDesde;
         if (!cells.anio_hasta) cells.anio_hasta = app.anioHasta;
+        if (app.abierto && cells.anio_hasta === app.anioHasta) {
+          cambios.push({ columna: 'anio_hasta', antes: 'en adelante', despues: app.anioHasta });
+        }
       }
     }
 
@@ -1052,7 +1127,10 @@ export function buildOfficialAoADetallado(
       const rango = partirRangoAnios(cells.anio_desde ?? '');
       if (rango) {
         cells.anio_desde = rango.desde;
-        if (!cells.anio_hasta) cells.anio_hasta = rango.hasta;
+        if (!cells.anio_hasta) {
+          cells.anio_hasta = rango.hasta;
+          if (rango.abierto) cambios.push({ columna: 'anio_hasta', antes: 'en adelante', despues: rango.hasta });
+        }
       }
     }
 
@@ -1120,7 +1198,7 @@ export function buildOfficialAoADetallado(
     if (mapping.deducirDelNombre && cells.nombre_publicado) {
       if (!cells.marca_repuesto) {
         cells.marca_repuesto = buscarEnTexto(
-          cells.nombre_publicado, catalogos.marcasRepuesto, marcasVehiculo,
+          cells.nombre_publicado, catalogos.marcasRepuesto, marcasVehiculo, modelosDe,
         ) ?? '';
       }
       if (!cells.categoria) {

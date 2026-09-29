@@ -232,6 +232,10 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [fotosDeclaradas, setFotosDeclaradas] = useState<Record<string, string[]> | null>(null);
   // El Excel propio del vendedor (no el generado), para poder volver al paso de mapeo.
   const [archivoDelVendedor, setArchivoDelVendedor] = useState<File | null>(null);
+  /** Fase 3: de qué fila del Excel del vendedor sale cada fila del archivo adaptado. */
+  const [origenDelVendedor, setOrigenDelVendedor] = useState<
+    { hoja: number; filaTitulos: number; filasDeDatos: number[] } | null
+  >(null);
   // La columna de fotos puede traer enlaces (los bajamos nosotros) o solo el nombre del
   // archivo (el vendedor igual tiene que subir la carpeta o el ZIP). Sin separarlos, el
   // aviso prometia "no necesitas subir carpeta ni ZIP" tambien cuando eran nombres.
@@ -459,7 +463,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
 
   const handleMappedFileGenerated = (
     file: File,
-    extras?: { fotos?: Record<string, string[]>; archivoOriginal?: File },
+    extras?: { fotos?: Record<string, string[]>; archivoOriginal?: File; origen?: { hoja: number; filaTitulos: number; filasDeDatos: number[] } },
   ) => {
     onFileSelected(file);
     setDataFromMapper(true);
@@ -469,6 +473,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     // Se conserva el Excel propio del vendedor para poder volver a relacionar columnas sin
     // pedirle que lo busque otra vez en su computador.
     setArchivoDelVendedor(extras?.archivoOriginal ?? null);
+    setOrigenDelVendedor(extras?.origen ?? null);
   };
 
   /** Vuelve al mapeo con el archivo original y la relacion que el vendedor ya definio. */
@@ -1079,16 +1084,28 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     const XLSX = await import('xlsx');
     let worksheet: import('xlsx').WorkSheet | null = null;
 
-    if (sourceFile) {
+    // Fase 3: cuando el archivo salio de "Adaptar mi plantilla", el Excel de errores se arma
+    // sobre el Excel DEL VENDEDOR (su hoja, sus titulos, sus filas), no sobre el generado, que
+    // ya no va fila a fila con el suyo: se sacan subtotales, se duplica por vehiculo y se
+    // juntan los codigos repetidos. Es el unico numero de fila que le sirve para corregir.
+    const desdeElVendedor = dataFromMapper && archivoDelVendedor && origenDelVendedor
+      ? { archivo: archivoDelVendedor, ...origenDelVendedor } : null;
+    const fuente = desdeElVendedor ? desdeElVendedor.archivo : sourceFile;
+    if (fuente) {
       try {
-        const buffer = await sourceFile.arrayBuffer();
+        const buffer = await fuente.arrayBuffer();
         const originalWorkbook = XLSX.read(buffer, { type: 'array' });
-        const originalSheet = originalWorkbook.Sheets[originalWorkbook.SheetNames[0]];
+        const nombreHoja = originalWorkbook.SheetNames[desdeElVendedor ? desdeElVendedor.hoja : 0]
+          ?? originalWorkbook.SheetNames[0];
+        const originalSheet = originalWorkbook.Sheets[nombreHoja];
         const originalRows = XLSX.utils.sheet_to_json<unknown[]>(originalSheet, { header: 1, defval: '' });
-        const headerRow = originalRows[0] as string[] | undefined;
+        const headerRow = originalRows[desdeElVendedor ? desdeElVendedor.filaTitulos : 0] as string[] | undefined;
         if (headerRow && headerRow.length > 0) {
           const filas = filasConError.map((f) => {
-            const original = (originalRows[f.fila - 1] as unknown[]) ?? [];
+            // El backend numera sobre el archivo que recibio (titulos en la fila 1); la fila
+            // de datos k es f.fila - 2, y el mapper dice de que fila del vendedor salio.
+            const filaVendedor = desdeElVendedor ? desdeElVendedor.filasDeDatos[f.fila - 2] : undefined;
+            const original = (originalRows[(filaVendedor ?? f.fila) - 1] as unknown[]) ?? [];
             return [...headerRow.map((_, i) => original[i] ?? ''), f.mensajes.join(' | ')];
           });
           worksheet = XLSX.utils.aoa_to_sheet(sanitizeAoaForExport([[...headerRow, 'motivo_error'], ...filas]));

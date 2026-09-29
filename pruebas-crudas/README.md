@@ -29,7 +29,7 @@ Excel del vendedor.
 | 06 dos tablas apiladas | ⚠️ **Avisado, no arreglado.** Sigue leyéndose sólo la primera tabla, pero el paso 2 dice que la hoja tiene más de una y no deja avanzar | — |
 | 07 categoría como banda | ✅ **Arreglado.** 3 de 3 publicables. Cada fila de título es la categoría de los repuestos que vienen debajo, escrita con el nombre del catálogo | 3, 4, 6 |
 | 08 sin precio ni stock | ✅ **Arreglado.** El paso 2 exige el precio además de los obligatorios del esquema, y ofrece `SOLO_COTIZAR` como salida en vez de obligar a inventar un precio | 2, 3 |
-| 09 varios autos por celda | ✅ **Arreglado.** Con el interruptor "varios autos en la misma celda" salen 2 repuestos con 3 compatibilidades extra; sin activarlo, la revisión avisa en vez de pasar en verde | 2, 3 |
+| 09 varios autos por celda | ✅ **Arreglado.** El interruptor "varios autos en la misma celda" viene encendido cuando se detecta (Fase 3 del plan de auditoría, 2026-09-29) y salen 2 repuestos con 3 compatibilidades extra; si se apaga, la revisión **retiene** las filas en vez de avisar | 2, 3 |
 | 10 todo junto | ⚠️ 1 de 2 publicables. Ya sólo falla por un "sin stock" que no es número | 4, 6 |
 | 11 sin subcategoría | ✅ 6 de 6 publicables. Un catálogo ordenado al que sólo le falta un dato cuyos valores dependen de la categoría: es el que prueba "Completa lo que falta" | 2–7 |
 | 12 prueba guiada | 🧪 **Para probar a mano.** No es un caso más: junta a propósito lo que conviene revisar en el paso 3 —subcategoría por completar, marca parecida, precio con decimales, stock que no es número, modelo escrito distinto del catálogo, varios autos en una celda, el mismo código repetido y un subtotal—. Los pasos para recorrerlo están más abajo | 2–10 |
@@ -116,6 +116,23 @@ conteo de arriba, que es la forma de ver que hizo algo.
    Agrega una con el botón, elige marca y modelo, y quítala para ver que se va.
 5. **Generar** — abre el `.xlsx`: la hoja `inventario` con un repuesto por código y la hoja
    `compatibilidades` con los demás autos, incluida la que agregaste.
+
+## Fase 3 del plan de auditoría de carga (2026-09-29)
+
+Lo que cambió en el adaptador desde esta fecha, y que fija `plantillaCompatibilidad.test.ts`,
+`plantillaRevision.test.ts` y `plantillaMapping.test.ts`:
+
+- Los interruptores del paso 2 (separar aplicación, juntar códigos repetidos, separar varios
+  autos, dividir rangos de años) **vienen encendidos** cuando se detectan, y el mapeo guardado
+  los recuerda.
+- El parser de aplicación entiende marcas con guion o puntos, años de dos cifras ("14-18"),
+  "2012 en adelante" (cierra en el año que viene y lo anota) y "Todos"/"Universal".
+- La coma y la "y" separan vehículos, y un modelo sin marca hereda la del anterior.
+- Una columna "Marca" pegada a "Modelo"/"Año" es la marca del vehículo, no de la pieza.
+- La revisión **retiene** (antes avisaba): condición o SI/NO desconocidos, años al revés o
+  imposibles, varios autos o la marca dentro del modelo, precio 0, y filas sin vehículo ni
+  universal (el backend ya no las publica desde la Fase 2).
+- El Excel de errores que devuelve el backend se arma sobre el archivo **del vendedor**.
 
 ## Retener o avisar
 

@@ -12,11 +12,17 @@
  * Dos severidades, porque el backend tiene dos comportamientos distintos:
  * - `error`: la fila no se publica.
  * - `aviso`: la fila se publica, pero con un valor distinto del que el vendedor escribió
- *   (el backend normaliza en silencio: una condición que no reconoce queda como ORIGINAL).
+ *   (el punto que se leyó como separador de miles).
+ *
+ * Fase 3 del plan de auditoría de carga: lo que el backend "normalizaba en silencio" (una
+ * condición desconocida, un SI/NO raro, los años al revés) pasó a retenerse, porque quien
+ * usa este panel no lee una lista de avisos y un dato mal publicado no se nota hasta que
+ * cuesta plata. Y el vehículo o el universal son obligatorios, como en el backend.
  */
 import type { CampoMeta } from './plantillaMapping';
-import { COLUMNAS_NUMERICAS, normalizarNumero } from './plantillaNormalizacion';
-import { buscarEnCatalogo, sugerirDelCatalogo } from './plantillaCatalogos';
+import { ANIO_MAXIMO, ANIO_MINIMO, COLUMNAS_NUMERICAS, normalizarNumero } from './plantillaNormalizacion';
+import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
+import { buscarEnCatalogo, normalizarParaComparar, sugerirDelCatalogo } from './plantillaCatalogos';
 import type { EsquemaPlantilla } from './plantillaMapping';
 
 export { normalizarNumero };
@@ -114,6 +120,14 @@ export function revisarAoA(
   // preferible no decir nada a inventar un error con una copia local desactualizada.
   const categorias = catalogos?.categorias ?? [];
   const marcas = catalogos?.marcasRepuesto ?? [];
+  const marcasVehiculo = catalogos?.marcasVehiculo?.length ? catalogos.marcasVehiculo : MARCAS_VEHICULO_BASE;
+  const empiezaPorMarcaDeVehiculo = (modelo: string) => {
+    const n = normalizarParaComparar(modelo);
+    return marcasVehiculo.some((m) => {
+      const nm = normalizarParaComparar(m);
+      return nm && n.startsWith(`${nm} `);
+    });
+  };
   const subcategoriasPorCategoria = catalogos?.subcategoriasPorCategoria ?? {};
   // Una sugerencia sólo se nombra si existe; el mensaje ya sirve sin ella.
   const conSugerencia = (valor: string, catalogo: string[]) => {
@@ -167,6 +181,10 @@ export function revisarAoA(
           ? `En pesos los precios son enteros y "${bruto}" tiene decimales. Corrígelo: `
             + `¿querías decir ${Math.round(numero).toLocaleString('es-CL')}?`
           : `${etiquetaDe(campos, key)} no puede tener decimales: "${bruto}".`);
+      } else if ((key === 'anio_desde' || key === 'anio_hasta') && (numero < ANIO_MINIMO || numero > ANIO_MAXIMO)) {
+        agregar(key, 'error', `"${bruto}" no es un año válido: usa uno entre ${ANIO_MINIMO} y ${ANIO_MAXIMO}.`);
+      } else if (key === 'precio' && numero === 0 && !leer('tipo_precio').toUpperCase().includes('COTIZ')) {
+        agregar(key, 'error', 'El precio no puede ser 0. Si este repuesto se cotiza, pon "SOLO_COTIZAR" en tipo de precio.');
       } else if (comoMiles) {
         agregar(key, 'aviso', `"${bruto}" se va a publicar como ${numero.toLocaleString('es-CL')}.`);
       }
@@ -182,14 +200,14 @@ export function revisarAoA(
 
     const condicion = leer('condicion').toUpperCase();
     if (condicion && condicion !== 'ORIGINAL' && condicion !== 'ALTERNATIVO' && condicion !== 'ALT') {
-      agregar('condicion', 'aviso', `No reconocemos "${leer('condicion')}": se va a publicar como ORIGINAL.`);
+      agregar('condicion', 'error', `No reconocemos "${leer('condicion')}" como condición: escribe ORIGINAL o ALTERNATIVO.`);
     }
 
     for (const key of ['compatibilidad_general', 'requiere_chasis']) {
       const bruto = leer(key);
       const upper = bruto.toUpperCase();
       if (bruto && !SI_NO.has(upper) && !NO_EXPLICITO.has(upper)) {
-        agregar(key, 'aviso', `No reconocemos "${bruto}": se va a tomar como NO.`);
+        agregar(key, 'error', `No reconocemos "${bruto}": escribe SI o NO.`);
       }
     }
 
@@ -221,16 +239,39 @@ export function revisarAoA(
     // mal: se publicaba un modelo que no existe y el repuesto no aparecía en ninguna
     // búsqueda por vehículo. El aviso va aunque el vendedor no active la separación.
     const modelo = leer('compatibilidad_modelo');
+    const marcaVehiculo = leer('compatibilidad_marca');
     if (pareceVariosVehiculos(modelo)) {
-      agregar('compatibilidad_modelo', 'aviso',
-        `"${modelo}" parece traer varios autos en una sola celda: se publicaría como un `
-        + 'modelo solo. Vuelve atrás y activa la separación por vehículo.');
+      agregar('compatibilidad_modelo', 'error',
+        `"${modelo}" parece traer varios autos en una sola celda: así no se publica. `
+        + 'Vuelve atrás y activa la separación por vehículo, o deja un auto por fila.');
+    } else if (modelo && empiezaPorMarcaDeVehiculo(modelo)) {
+      // "Toyota Corolla" en la celda del modelo: la marca quedó dentro del modelo, que es
+      // lo que pasa cuando la aplicación viene de corrido y no se separó.
+      agregar('compatibilidad_modelo', 'error',
+        `"${modelo}" trae la marca dentro del modelo. Vuelve atrás y activa "separar marca, `
+        + 'modelo y años", o deja sólo el modelo en esta celda.');
     }
 
     const desde = normalizarNumero(leer('anio_desde')).numero;
     const hasta = normalizarNumero(leer('anio_hasta')).numero;
     if (desde !== null && hasta !== null && desde > hasta) {
-      agregar('anio_hasta', 'aviso', `El año desde (${desde}) es mayor que el año hasta (${hasta}).`);
+      agregar('anio_hasta', 'error', `El año desde (${desde}) es mayor que el año hasta (${hasta}). Revisa el orden.`);
+    }
+
+    // Vehículo o universal: sin eso el repuesto no aparece en ninguna búsqueda por auto, y
+    // el backend ya no lo publica (Fase 2). Se dice acá, antes de subir.
+    const universal = SI_NO.has(leer('compatibilidad_general').toUpperCase());
+    if (!universal) {
+      if (!marcaVehiculo && !modelo) {
+        agregar('compatibilidad_marca', 'error',
+          'Falta el vehículo: indica marca, modelo y año, o pon SI en compatibilidad universal si sirve para todos.');
+      } else if (!modelo) {
+        agregar('compatibilidad_modelo', 'error', 'Falta el modelo del vehículo.');
+      } else if (!marcaVehiculo) {
+        agregar('compatibilidad_marca', 'error', 'Falta la marca del vehículo.');
+      } else if (!leer('anio_desde')) {
+        agregar('anio_desde', 'error', 'Falta el año desde del vehículo.');
+      }
     }
 
     const tieneError = problemas.some((p) => p.severidad === 'error');

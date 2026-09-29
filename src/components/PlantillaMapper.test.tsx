@@ -134,7 +134,8 @@ describe('PlantillaMapper', () => {
     ].join('\n'));
 
     // El mismo código en dos filas se junta en un repuesto con dos autos.
-    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
+    expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -306,6 +307,8 @@ describe('PlantillaMapper', () => {
       'A-2,Pastilla de freno,Brembo,Frenos,consultar,4',
       'A-3,,Gates,Correas,9990,7',
     ].join('\n'));
+    // Sin columna de vehículo el repuesto no se publica (Fase 2/3): este archivo es universal.
+    fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -396,6 +399,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Pastilla,Brembo,Frenos delanteros,4990,10',
     ].join('\n'));
+    fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -420,9 +424,10 @@ describe('PlantillaMapper', () => {
     ].join('\n'));
 
     // El archivo repite A-1: en vez de dos repuestos duplicados, uno con dos aplicaciones.
-    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
+    expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
     // Y la columna "Aplicacion" trae marca, modelo y años juntos.
-    fireEvent.click(screen.getByLabelText('Separar marca, modelo y años de la columna de compatibilidad'));
+    expect(screen.getByLabelText('Separar marca, modelo y años de la columna de compatibilidad')).toBeChecked();
 
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
@@ -862,7 +867,8 @@ describe('PlantillaMapper', () => {
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Nissan,V16',
     ].join('\n'));
-    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
+    expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -891,7 +897,8 @@ describe('PlantillaMapper', () => {
       filas.push(`${sku},Pastilla,Brembo,Frenos,4990,10,Toyota,${i === 9 ? '' : 'Yaris'},2015,2020`);
     }
     await subirYRelacionar(filas.join('\n'));
-    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
+    expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -974,7 +981,8 @@ describe('PlantillaMapper', () => {
       'A-1,Pastilla,Brembo,Frenos,4990,10,Nissan,V16',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Yaris',
     ].join('\n'));
-    fireEvent.click(screen.getByLabelText('Juntar las filas repetidas del mismo código'));
+    // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
+    expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 

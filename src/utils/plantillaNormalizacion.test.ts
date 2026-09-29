@@ -135,8 +135,28 @@ describe('limites de lo que el vendedor escribe a mano', () => {
 
   it('el año tiene que ser un año, no cualquier número', () => {
     expect(validarValorFijo('anio_desde', '14', 'Año desde')).toMatch(/4 cifras/);
-    expect(validarValorFijo('anio_desde', '1800', 'Año desde')).toMatch(/entre 1900/);
+    expect(validarValorFijo('anio_desde', '1800', 'Año desde')).toMatch(/entre 1950/);
     expect(validarValorFijo('anio_desde', '2014')).toBeNull();
+  });
+});
+
+describe('Fase 3: rangos con espacio, abiertos, y años con formato de fecha', () => {
+  it('"2006 2010" es un rango, no el número 20062010', () => {
+    expect(partirRangoAnios('2006 2010')).toEqual({ desde: '2006', hasta: '2010' });
+    // Sin dividir, la celda queda tal cual y la revisión la marca; nunca 20062010.
+    expect(normalizarCelda('anio_desde', '2006 2010').valor).toBe('2006 2010');
+  });
+
+  it('"2012 en adelante" se cierra en el año que viene y lo dice', () => {
+    const rango = partirRangoAnios('2012 en adelante');
+    expect(rango).toMatchObject({ desde: '2012', hasta: String(new Date().getFullYear() + 1), abierto: true });
+    expect(pareceColumnaDeRangos(['2012 en adelante'])).toBe(true);
+  });
+
+  it('un año con formato de fecha llega como número de serie y se convierte al año', () => {
+    // 41640 = 1 de enero de 2014 en Excel.
+    expect(normalizarCelda('anio_desde', '41640')).toMatchObject({ valor: '2014' });
+    expect(normalizarCelda('stock', '41640').valor).toBe('41640');
   });
 });
 

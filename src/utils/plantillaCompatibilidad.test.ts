@@ -11,7 +11,7 @@ import {
   separarPorSku,
 } from './plantillaCompatibilidad';
 
-const MARCAS = ['Toyota', 'Nissan', 'Chevrolet', 'Land Rover', 'Citroën'];
+const MARCAS = ['Toyota', 'Nissan', 'Chevrolet', 'Land Rover', 'Citroën', 'Mercedes-Benz', 'GMC', 'Hyundai'];
 
 describe('parsearAplicacion', () => {
   it('parte la aplicación escrita de corrido', () => {
@@ -52,6 +52,65 @@ describe('parsearAplicacion', () => {
     // `marca_vehiculo` viene junto a `modelo_vehiculo` y `ano_vehiculo` en archivos
     // como Plantilla_Carga_Masiva_RepuesTop_1500_pruebas.xlsx.
     expect(pareceColumnaDeAplicacion(['Toyota', 'Nissan', 'Chevrolet'], MARCAS)).toBe(false);
+  });
+});
+
+describe('parsearAplicacion (Fase 3): lo que antes se leía mal', () => {
+  it('una marca con guion o puntos no se come el modelo', () => {
+    expect(parsearAplicacion('MERCEDES-BENZ SPRINTER 2010', MARCAS)).toMatchObject({ marca: 'Mercedes-Benz', modelo: 'SPRINTER', anioDesde: '2010' });
+    expect(parsearAplicacion('G.M.C. Sierra 2015', MARCAS)).toMatchObject({ marca: 'GMC', modelo: 'Sierra', anioDesde: '2015' });
+  });
+
+  it('"2012 en adelante" cierra en el año que viene y lo marca como abierto', () => {
+    const app = parsearAplicacion('Chevrolet Sail 2012 en adelante', MARCAS);
+    expect(app).toMatchObject({ marca: 'Chevrolet', modelo: 'Sail', anioDesde: '2012', abierto: true });
+    expect(app?.anioHasta).toBe(String(new Date().getFullYear() + 1));
+  });
+
+  it('entiende los años de dos cifras', () => {
+    expect(parsearAplicacion('TOYOTA COROLLA 14-18', MARCAS)).toMatchObject({ modelo: 'COROLLA', anioDesde: '2014', anioHasta: '2018' });
+    expect(parsearAplicacion("Nissan V16 '98-'02", MARCAS)).toMatchObject({ modelo: 'V16', anioDesde: '1998', anioHasta: '2002' });
+    // La cilindrada no es un año.
+    expect(parsearAplicacion('Toyota Yaris 1.5 2016', MARCAS)).toMatchObject({ modelo: 'Yaris 1.5', anioDesde: '2016' });
+  });
+
+  it('"Todos" y "Universal" no son un modelo: son el repuesto diciendo que sirve para todo', () => {
+    expect(parsearAplicacion('Todos', MARCAS)).toMatchObject({ universal: true });
+    expect(parsearAplicacion('UNIVERSAL', MARCAS)).toMatchObject({ universal: true });
+  });
+
+  it('"Hyundai Accent 2006 2010" son dos años sueltos: desde y hasta', () => {
+    expect(parsearAplicacion('Hyundai Accent 2006 2010', MARCAS)).toMatchObject({ modelo: 'Accent', anioDesde: '2006', anioHasta: '2010' });
+  });
+});
+
+describe('separarAplicaciones (Fase 3): coma, "y" y marca heredada', () => {
+  it('la coma separa vehículos y el segundo hereda la marca', () => {
+    expect(separarAplicaciones('Toyota Corolla 2014-2018, Yaris 2015-2019', MARCAS))
+      .toEqual(['Toyota Corolla 2014-2018', 'Toyota Yaris 2015-2019']);
+  });
+
+  it('sin años propios, el modelo heredado también hereda los años', () => {
+    expect(separarAplicaciones('Toyota Corolla, Yaris 2012-2016', MARCAS))
+      .toEqual(['Toyota Corolla', 'Toyota Yaris 2012-2016']);
+    expect(separarAplicaciones('Toyota Corolla 2012-2016, Yaris', MARCAS))
+      .toEqual(['Toyota Corolla 2012-2016', 'Toyota Yaris 2012-2016']);
+  });
+
+  it('la "y" también separa', () => {
+    expect(separarAplicaciones('Toyota Corolla y Yaris 2014', MARCAS))
+      .toEqual(['Toyota Corolla', 'Toyota Yaris 2014']);
+  });
+
+  it('detrás de una barra no se hereda nada, salvo que el modelo sea conocido', () => {
+    expect(separarAplicaciones('Toyota Corolla / Yaris 2012', MARCAS)).toEqual(['Toyota Corolla / Yaris 2012']);
+    const modelos = (marca: string) => (marca === 'Toyota' ? ['Corolla', 'Yaris'] : []);
+    expect(separarAplicaciones('Toyota Corolla / Yaris 2012', MARCAS, modelos))
+      .toEqual(['Toyota Corolla', 'Toyota Yaris 2012']);
+  });
+
+  it('sin ninguna marca no hay de dónde heredar: la celda queda entera', () => {
+    expect(separarAplicaciones('Yaris/Corolla 2012', MARCAS)).toEqual(['Yaris/Corolla 2012']);
   });
 });
 

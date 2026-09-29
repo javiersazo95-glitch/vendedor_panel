@@ -4,6 +4,7 @@ import {
   ESQUEMA_FALLBACK,
   PLANTILLA_COLUMNAS,
   autoDetectMapping,
+  reconcileMapping,
   buildOfficialAoA,
   buildOfficialAoADetallado,
   buildOfficialXlsxFile,
@@ -69,6 +70,41 @@ describe('autoDetectMapping', () => {
     const m = autoDetectMapping(cols(['Marca auto', 'Modelo']));
     expect(m.oficial.compatibilidad_marca).toBe('0');
     expect(m.oficial.marca_repuesto).toBeNull();
+  });
+
+  it('una columna "Marca" pegada a "Modelo" es la marca del vehículo, no la del repuesto (Fase 3)', () => {
+    const m = autoDetectMapping(cols(['Codigo', 'Producto', 'Marca', 'Modelo', 'Año', 'Precio']));
+    expect(m.oficial.compatibilidad_marca).toBe('2');
+    expect(m.oficial.marca_repuesto).toBeNull();
+    expect(m.oficial.compatibilidad_modelo).toBe('3');
+  });
+
+  it('una columna "Marca" lejos de "Aplicacion" sigue siendo la marca del repuesto', () => {
+    const m = autoDetectMapping(cols(['Codigo', 'Titulo', 'Marca', 'Categoria', 'Precio', 'Cantidad', 'Aplicacion']));
+    expect(m.oficial.marca_repuesto).toBe('2');
+    expect(m.oficial.compatibilidad_marca).toBeNull();
+  });
+
+  it('"Origen" y "Genérico" ya no se toman por condición ni universal; "Precio público" gana a "Precio neto"', () => {
+    const m = autoDetectMapping(cols(['sku', 'Origen', 'Generico', 'Precio Neto', 'Precio Publico']));
+    expect(m.oficial.condicion).toBeNull();
+    expect(m.oficial.compatibilidad_general).toBeNull();
+    expect(m.oficial.precio).toBe('4');
+  });
+
+  it('el mapeo guardado recuerda los interruptores del paso 2 (Fase 3)', () => {
+    const columnas = cols(['sku', 'nombre', 'precio', 'stock', 'aplicacion']);
+    const guardado = {
+      ...autoDetectMapping(columnas),
+      parsearAplicacion: true, separarAplicaciones: true, agruparPorSku: false, dividirAnios: true,
+      completar: { subcategoria: { Frenos: 'Pastillas' } },
+    };
+    const otraVez = reconcileMapping(guardado, columnas);
+    expect(otraVez.parsearAplicacion).toBe(true);
+    expect(otraVez.separarAplicaciones).toBe(true);
+    expect(otraVez.agruparPorSku).toBe(false);
+    expect(otraVez.dividirAnios).toBe(true);
+    expect(otraVez.completar).toEqual({ subcategoria: { Frenos: 'Pastillas' } });
   });
 
   it('un encabezado genérico de una sola palabra ("Proveedor") no se fuerza a sku_proveedor', () => {

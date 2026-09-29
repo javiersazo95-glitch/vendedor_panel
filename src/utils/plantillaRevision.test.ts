@@ -98,20 +98,23 @@ describe('revisarAoA', () => {
     expect(r.filas[0].problemas).toEqual([]);
   });
 
-  it('avisa cuando el backend va a reinterpretar la condición en silencio', () => {
+  it('retiene una condición que no es ORIGINAL ni ALTERNATIVO', () => {
+    // Fase 3: antes era aviso ("se va a publicar como ORIGINAL"); quien usa el panel no lee
+    // avisos, y un "Usado" publicado como original es un dato falso en la vitrina.
     const r = revisar([filaBase({ condicion: 'Usado' })]);
-    expect(r.conError).toBe(0);
-    expect(r.filas[0].problemas[0]).toMatchObject({ columna: 'condicion', severidad: 'aviso' });
+    expect(r.conError).toBe(1);
+    expect(r.filas[0].problemas[0]).toMatchObject({ columna: 'condicion', severidad: 'error' });
     expect(r.filas[0].problemas[0].mensaje).toContain('ORIGINAL');
   });
 
-  it('avisa cuando un SI/NO no se entiende', () => {
+  it('retiene un SI/NO que no se entiende', () => {
     const r = revisar([filaBase({ requiere_chasis: 'a veces' })]);
-    expect(r.filas[0].problemas[0]).toMatchObject({ columna: 'requiere_chasis', severidad: 'aviso' });
+    expect(r.filas[0].problemas[0]).toMatchObject({ columna: 'requiere_chasis', severidad: 'error' });
   });
 
-  it('avisa cuando los años están al revés', () => {
+  it('retiene los años al revés', () => {
     const r = revisar([filaBase({ anio_desde: '2020', anio_hasta: '2014' })]);
+    expect(r.conError).toBe(1);
     expect(r.filas[0].problemas[0].mensaje).toMatch(/mayor que el año hasta/);
   });
 
@@ -204,7 +207,7 @@ const CATALOGOS = {
   categorias: ['Frenos', 'Filtros'],
   subcategoriasPorCategoria: { Frenos: ['Pastillas', 'Discos'], Filtros: ['Filtro de aceite'] },
   marcasRepuesto: ['Bosch', 'Brembo'],
-  marcasVehiculo: [],
+  marcasVehiculo: ['Toyota', 'Nissan'],
   tiposPrecio: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'],
   condiciones: ['ORIGINAL', 'ALTERNATIVO'],
 };
@@ -247,6 +250,51 @@ describe('revisarAoA contra los catálogos', () => {
     const r = revisar([filaBase({ categoria: 'Cualquier cosa', marca_repuesto: 'Marca X' })]);
     expect(r.conError).toBe(0);
     expect(r.filas[0].problemas).toEqual([]);
+  });
+});
+
+describe('Fase 3: vehículo o universal, años posibles y lo que ya no pasa en verde', () => {
+  it('una fila sin vehículo y sin universal se retiene, con la salida', () => {
+    const r = revisar([filaBase({ compatibilidad_marca: '', compatibilidad_modelo: '', anio_desde: '', anio_hasta: '', motor: '' })]);
+    expect(r.conError).toBe(1);
+    expect(r.filas[0].problemas[0].mensaje).toMatch(/Falta el vehículo/);
+    expect(r.filas[0].problemas[0].mensaje).toMatch(/compatibilidad universal/);
+  });
+
+  it('una fila universal no necesita vehículo', () => {
+    const r = revisar([filaBase({ compatibilidad_general: 'SI', compatibilidad_marca: '', compatibilidad_modelo: '', anio_desde: '', anio_hasta: '', motor: '' })]);
+    expect(r.filas[0].problemas).toEqual([]);
+  });
+
+  it('marca y modelo sin año desde se retienen: el backend no resuelve sin el año', () => {
+    const r = revisar([filaBase({ anio_desde: '', anio_hasta: '' })]);
+    expect(r.conError).toBe(1);
+    expect(r.filas[0].problemas[0]).toMatchObject({ columna: 'anio_desde', severidad: 'error' });
+  });
+
+  it('un año imposible se retiene: "2006 2010" leído como 20062010, o 1925', () => {
+    expect(revisar([filaBase({ anio_desde: '20062010' })]).conError).toBe(1);
+    expect(revisar([filaBase({ anio_desde: '1925', anio_hasta: '1930' })]).conError).toBe(1);
+    expect(revisar([filaBase({ anio_desde: '2014', anio_hasta: String(new Date().getFullYear() + 5) })]).conError).toBe(1);
+  });
+
+  it('la marca dentro del modelo se retiene: la aplicación no se separó', () => {
+    const r = revisarConCatalogos({ compatibilidad_modelo: 'Toyota Corolla' });
+    expect(r.conError).toBe(1);
+    expect(r.filas[0].problemas[0].mensaje).toMatch(/trae la marca dentro del modelo/);
+  });
+
+  it('varios autos en la celda del modelo ya no es aviso: se retiene', () => {
+    const r = revisar([filaBase({ compatibilidad_modelo: 'Corolla 2014-2018 / Yaris 2015-2019' })]);
+    expect(r.conError).toBe(1);
+    expect(r.filas[0].problemas[0].severidad).toBe('error');
+  });
+
+  it('el precio 0 con precio a la vista se retiene', () => {
+    const r = revisar([filaBase({ precio: '0' })]);
+    expect(r.conError).toBe(1);
+    expect(r.filas[0].problemas[0].mensaje).toMatch(/no puede ser 0/);
+    expect(revisar([filaBase({ precio: '0', tipo_precio: 'SOLO_COTIZAR' })]).conError).toBe(0);
   });
 });
 

@@ -85,12 +85,16 @@ export function numeroConUnidad(valor: string): string | null {
  * de repuestos: "2014-2020", "2014 a 2020", "2014/2020", "2014 al 2020", "2014 – 2020".
  * Un año suelto no es un rango y devuelve null: no hay nada que dividir.
  */
-export function partirRangoAnios(valor: string): { desde: string; hasta: string } | null {
+export function partirRangoAnios(valor: string): { desde: string; hasta: string; abierto?: boolean } | null {
   const texto = String(valor ?? '').trim();
   if (!texto) return null;
-  const m = texto.match(/^(\d{4})\s*(?:-|–|—|\/|>|a|al|hasta)\s*(\d{4})$/i);
-  if (!m) return null;
-  return { desde: m[1], hasta: m[2] };
+  // Fase 3: también el espacio como separador ("2006 2010" se leía como el número 20062010).
+  const m = texto.match(/^(\d{4})\s*(?:-|–|—|\/|>|a|al|hasta|\s)\s*(\d{4})$/i);
+  if (m) return { desde: m[1], hasta: m[2] };
+  // "2012 en adelante": el rango sigue abierto. Se cierra en el año que viene y se avisa.
+  const abierto = texto.match(/^(\d{4})\s*(?:en adelante|adelante|a la fecha|al presente|\+|>|→|->)$/i);
+  if (abierto) return { desde: abierto[1], hasta: String(new Date().getFullYear() + 1), abierto: true };
+  return null;
 }
 
 /** ¿Esta columna trae rangos de años? Basta con una celda para que valga preguntarlo. */
@@ -142,7 +146,19 @@ export function normalizarCelda(columna: string, valor: string): { valor: string
   let salida = limpiarTexto(original);
 
   if (salida) {
-    if (COLUMNAS_NUMERICAS.has(columna)) {
+    if (columna === 'anio_desde' || columna === 'anio_hasta') {
+      // Fase 3: una celda de año con formato de fecha llega como el número de serie de
+      // Excel (41640 = 1 de enero de 2014). Se convierte al año, y queda a la vista.
+      const serial = /^\d{5}$/.test(salida) ? Number(salida) : NaN;
+      if (serial >= 20000 && serial <= 60000) {
+        salida = String(new Date(Math.round((serial - 25569) * 86400000)).getUTCFullYear());
+      } else if (partirRangoAnios(salida)) {
+        // Un rango que nadie dividió ("2006 2010") se deja tal cual: pegarlo daba 20062010,
+        // que parecía un número y pasaba en verde. Así la revisión dice que no es un año.
+      } else {
+        salida = numeroConUnidad(salida) ?? salida;
+      }
+    } else if (COLUMNAS_NUMERICAS.has(columna)) {
       salida = numeroConUnidad(salida) ?? salida;
     } else if (COLUMNAS_SI_NO.has(columna)) {
       salida = normalizarSiNo(salida) ?? salida;
@@ -220,8 +236,9 @@ export function limiteDeColumna(columna: string): LimiteColumna {
   return LIMITES[columna] ?? LIMITE_POR_DEFECTO;
 }
 
-const ANIO_MINIMO = 1900;
-const ANIO_MAXIMO = new Date().getFullYear() + 2;
+/** Mismo piso que el backend (InventarioValidationSupport.ANIO_MINIMO). */
+export const ANIO_MINIMO = 1950;
+export const ANIO_MAXIMO = new Date().getFullYear() + 2;
 
 /**
  * Revisa un valor escrito a mano y devuelve el motivo en lenguaje llano, o null si sirve.

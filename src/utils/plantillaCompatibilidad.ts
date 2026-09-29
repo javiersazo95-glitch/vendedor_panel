@@ -11,7 +11,7 @@
  * La plantilla oficial ya soporta la hoja `compatibilidades` (una fila por vehículo,
  * agrupadas por `sku_proveedor`); acá se arma.
  */
-import { normalizarParaComparar } from './plantillaCatalogos';
+import { buscarEnCatalogo, normalizarParaComparar } from './plantillaCatalogos';
 
 /** Columnas de la hoja `compatibilidades`, en el orden que lee el backend. */
 export const COLUMNAS_COMPATIBILIDADES = [
@@ -58,42 +58,92 @@ export interface AplicacionParseada {
   modelo: string;
   anioDesde: string;
   anioHasta: string;
+  /** "Todos", "Universal": la celda dice que sirve para cualquier vehículo. */
+  universal?: boolean;
+  /** "2012 en adelante": el año hasta se puso en el año que viene y conviene decirlo. */
+  abierto?: boolean;
 }
+
+/** Lo que un vendedor escribe en la columna de aplicación cuando el repuesto sirve para todo. */
+const PALABRAS_UNIVERSAL = /^(todos|todas|todo|universal|general|generico|generica|cualquiera|cualquier vehiculo|cualquier auto|todos los vehiculos|todos los autos|todas las marcas|todo vehiculo|multimarca)$/;
+
+const ANIO_ACTUAL = new Date().getFullYear();
+
+/** Sin tildes pero con mayúsculas y separadores: mismo largo que el original, para recortar. */
+const sinAcentosConCase = (texto: string) => texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const escapeRe = (texto: string) => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** "14" → 2014, "98" → 1998: dos cifras se leen como el año más cercano que no sea futuro. */
+const expandirAnio = (dosCifras: string): string => {
+  const n = Number(dosCifras);
+  return String(n <= (ANIO_ACTUAL + 2) % 100 ? 2000 + n : 1900 + n);
+};
+
+const RANGO_4 = /((?:19|20)\d{2})\s*(?:-|–|—|\/|>|a|al|hasta)\s*((?:19|20)\d{2})/i;
+const ABIERTO = /((?:19|20)\d{2})\s*(?:en adelante|adelante|a la fecha|al presente|en adelante|\+|→|->|>)/i;
+const RANGO_2 = /(?<![\d.])'?(\d{2})\s*(?:-|–|—|\/|a|al)\s*'?(\d{2})(?![\d.])/i;
+const ANIO_4 = /(?:19|20)\d{2}/g;
 
 /**
  * Parte una aplicación escrita de corrido ("Toyota Corolla 2014-2020") usando el catálogo
  * de marcas de vehículo como ancla. Sin marca reconocida devuelve null: adivinar cuál de
  * las palabras es la marca terminaría inventando compatibilidades, que es peor que no
  * declarar ninguna.
+ *
+ * Fase 3 del plan de auditoría de carga: la marca se recorta por posición en el texto y no
+ * por cantidad de palabras ("MERCEDES-BENZ SPRINTER" perdía el modelo), se entienden los
+ * años de dos cifras ("14-18"), "2012 en adelante" cierra en el año que viene y lo dice,
+ * y "Todos" o "Universal" marcan el repuesto como universal en vez de quedar como modelo.
  */
 export function parsearAplicacion(texto: string, marcasVehiculo: string[]): AplicacionParseada | null {
   const original = String(texto ?? '').trim();
   if (!original) return null;
 
   const normalizado = normalizarParaComparar(original);
-  // La marca más larga que calce al principio: "Land Rover" antes que "Land".
-  const marca = marcasVehiculo
-    .filter((m) => {
-      const n = normalizarParaComparar(m);
-      return n && (normalizado === n || normalizado.startsWith(`${n} `));
-    })
-    .sort((a, b) => b.length - a.length)[0];
-  if (!marca) return null;
+  if (PALABRAS_UNIVERSAL.test(normalizado)) {
+    return { marca: '', modelo: '', anioDesde: '', anioHasta: '', universal: true };
+  }
 
-  let resto = original.slice(0, original.length).trim();
-  // Se recorta por palabras para no depender de acentos ni de mayúsculas.
-  const palabrasMarca = normalizarParaComparar(marca).split(' ').length;
-  resto = resto.split(/\s+/).slice(palabrasMarca).join(' ').trim();
+  // La marca más larga que calce al principio: "Land Rover" antes que "Land". Se compara
+  // letra a letra, admitiendo puntos, guiones o espacios entre medio: "MERCEDES-BENZ",
+  // "G.M.C." y "Land-Rover" son la misma marca escrita como la escribe cada vendedor.
+  const sinAcentos = sinAcentosConCase(original);
+  const candidatas = marcasVehiculo
+    .map((m) => {
+      const letras = normalizarParaComparar(m).replace(/\s+/g, '');
+      if (!letras) return null;
+      const patron = new RegExp(`^[^a-z0-9]*${[...letras].map(escapeRe).join('[^a-z0-9]*')}(?![a-z0-9])`, 'i');
+      const recorte = sinAcentos.match(patron);
+      return recorte ? { marca: m, largo: recorte[0].length, letras: letras.length } : null;
+    })
+    .filter((c): c is { marca: string; largo: number; letras: number } => !!c)
+    .sort((a, b) => b.letras - a.letras);
+  if (candidatas.length === 0) return null;
+  const { marca, largo } = candidatas[0];
+  let resto = original.slice(largo).replace(/^[^A-Za-z0-9À-ɏ]+/, '').trim();
 
   let anioDesde = '';
   let anioHasta = '';
-  const rango = resto.match(/((?:19|20)\d{2})\s*(?:-|–|—|\/|>|a|al|hasta)\s*((?:19|20)\d{2})/i);
+  let abierto = false;
+  const rango = resto.match(RANGO_4);
+  const rangoAbierto = rango ? null : resto.match(ABIERTO);
+  const rangoCorto = rango || rangoAbierto || ANIO_4.test(resto) ? null : resto.match(RANGO_2);
+  ANIO_4.lastIndex = 0;
   if (rango) {
     anioDesde = rango[1];
     anioHasta = rango[2];
     resto = resto.replace(rango[0], ' ');
+  } else if (rangoAbierto) {
+    anioDesde = rangoAbierto[1];
+    anioHasta = String(ANIO_ACTUAL + 1);
+    abierto = true;
+    resto = resto.replace(rangoAbierto[0], ' ');
+  } else if (rangoCorto) {
+    anioDesde = expandirAnio(rangoCorto[1]);
+    anioHasta = expandirAnio(rangoCorto[2]);
+    resto = resto.replace(rangoCorto[0], ' ');
   } else {
-    const sueltos = resto.match(/(?:19|20)\d{2}/g);
+    const sueltos = resto.match(ANIO_4);
     if (sueltos?.length) {
       anioDesde = sueltos[0];
       if (sueltos.length > 1) anioHasta = sueltos[sueltos.length - 1];
@@ -101,8 +151,13 @@ export function parsearAplicacion(texto: string, marcasVehiculo: string[]): Apli
     }
   }
 
-  const modelo = resto.replace(/[\s,;·|-]+/g, ' ').trim();
-  return { marca, modelo, anioDesde, anioHasta };
+  const modelo = resto
+    .replace(/\b(en adelante|adelante|a la fecha|al presente)\b/gi, ' ')
+    .replace(/[\s,;·|/-]+/g, ' ')
+    .trim();
+  const salida: AplicacionParseada = { marca, modelo, anioDesde, anioHasta };
+  if (abierto) salida.abierto = true;
+  return salida;
 }
 
 /**
@@ -208,34 +263,79 @@ export function separarPorSku(aoa: (string | number)[][]): SeparacionPorSku {
 }
 
 /**
- * Separadores con los que un vendedor lista varios vehículos en una sola celda. La barra
- * queda fuera a propósito: también separa años ("2014/2018") y se trata aparte.
+ * Separadores con los que un vendedor lista varios vehículos en una sola celda, sin
+ * ambigüedad: salto de línea, punto y coma y barra vertical.
  */
 const SEPARADOR_DURO = /[\n\r;|]+/;
+/** Los separadores que también podrían ser otra cosa: la barra parte años ("2014/2018"). */
+const SEPARADOR_BLANDO = /\s*(?:\/|,|\s+y\s+|\s+e\s+)\s*/i;
+const TIENE_SEPARADOR_BLANDO = /\/|,|\s+y\s+|\s+e\s+/i;
+const ES_SOLO_ANIOS = /^[\d\s'.\-–—/]*$/;
 
 /**
  * Parte una celda que trae varios vehículos ("Corolla 2014-2018 / Yaris 2015-2019") en un
  * texto por vehículo. Devuelve un solo elemento cuando la celda trae una aplicación sola,
  * y ninguno cuando viene vacía.
+ *
+ * Fase 3: además de la barra, separan la coma y la " y ". Un trozo sin marca hereda la del
+ * trozo anterior ("Toyota Corolla, Yaris 2012-2016"), y si tampoco trae años hereda los
+ * años ("Toyota Corolla, Yaris 2012"), siempre que el trozo sea un modelo: uno conocido de
+ * esa marca cuando hay catálogo de modelos, o una o dos palabras detrás de una coma o una
+ * "y". Detrás de una barra sola no se hereda nada: "Toyota Corolla / delantero" queda
+ * entero, porque adivinar ahí inventaría un auto.
  */
-export function separarAplicaciones(texto: string, marcasVehiculo: string[]): string[] {
+export function separarAplicaciones(
+  texto: string,
+  marcasVehiculo: string[],
+  modelosDeMarca?: (marca: string) => string[],
+): string[] {
   const original = String(texto ?? '').trim();
   if (!original) return [];
 
   const partes = original.split(SEPARADOR_DURO).map((t) => t.trim()).filter(Boolean);
   const finales: string[] = [];
+  let contexto: AplicacionParseada | null = null;
+
   for (const parte of partes) {
-    if (!parte.includes('/')) {
+    const entera = parsearAplicacion(parte, marcasVehiculo);
+    if (!TIENE_SEPARADOR_BLANDO.test(parte)) {
       finales.push(parte);
+      if (entera && !entera.universal) contexto = entera;
       continue;
     }
-    // La barra sólo separa vehículos si cada trozo es una aplicación reconocible por sí
-    // misma. Así "Corolla 2014/2018" se queda entero y no se convierte en dos repuestos.
-    const trozos = parte.split('/').map((t) => t.trim()).filter(Boolean);
-    const todosValidos = trozos.length > 1
-      && trozos.every((t) => parsearAplicacion(t, marcasVehiculo) !== null);
-    if (todosValidos) finales.push(...trozos);
+    const blando = /,|\s+y\s+|\s+e\s+/i.test(parte);
+    const trozos = parte.split(SEPARADOR_BLANDO).map((t) => t.trim()).filter(Boolean);
+    const salida: string[] = [];
+    let ok = trozos.length > 1;
+    let ctx = contexto;
+    for (const trozo of trozos) {
+      if (!ok) break;
+      const app = parsearAplicacion(trozo, marcasVehiculo);
+      if (app && !app.universal) {
+        salida.push(trozo);
+        ctx = app;
+        continue;
+      }
+      // Sin marca: sólo puede ser un modelo que hereda la marca anterior.
+      if (!ctx || app?.universal || ES_SOLO_ANIOS.test(trozo)) {
+        ok = false;
+        break;
+      }
+      const soloModelo = trozo.replace(ANIO_4, ' ').replace(RANGO_2, ' ').replace(/[\s,;·|/-]+/g, ' ').trim();
+      const conocido = modelosDeMarca ? buscarEnCatalogo(soloModelo, modelosDeMarca(ctx.marca)) : null;
+      const pareceModelo = blando && soloModelo.split(' ').filter(Boolean).length <= 2 && /[a-z]/i.test(soloModelo);
+      if (!conocido && !pareceModelo) {
+        ok = false;
+        break;
+      }
+      const traeAnios = ANIO_4.test(trozo) || RANGO_2.test(trozo);
+      ANIO_4.lastIndex = 0;
+      const anios = traeAnios ? '' : [ctx.anioDesde, ctx.anioHasta].filter(Boolean).join('-');
+      salida.push(`${ctx.marca} ${trozo}${anios ? ` ${anios}` : ''}`.trim());
+    }
+    if (ok && salida.length > 1) finales.push(...salida);
     else finales.push(parte);
+    if (entera && !entera.universal) contexto = entera;
   }
   return finales;
 }
@@ -252,12 +352,13 @@ export interface AplicacionesMultiples {
 export function detectarAplicacionesMultiples(
   valores: string[],
   marcasVehiculo: string[],
+  modelosDeMarca?: (marca: string) => string[],
 ): AplicacionesMultiples {
   let celdas = 0;
   let vehiculos = 0;
   let ejemplo: AplicacionesMultiples['ejemplo'] = null;
   for (const valor of valores) {
-    const partes = separarAplicaciones(valor, marcasVehiculo);
+    const partes = separarAplicaciones(valor, marcasVehiculo, modelosDeMarca);
     if (partes.length < 2) continue;
     celdas += 1;
     vehiculos += partes.length;

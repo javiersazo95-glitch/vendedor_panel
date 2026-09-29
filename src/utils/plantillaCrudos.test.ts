@@ -41,7 +41,13 @@ const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
   if (!encontrado) throw new Error(`No existe el caso crudo ${id}`);
   const filaEncabezados = detectarFilaEncabezados(encontrado.aoa);
   const { cols, rows, filasOriginales } = columnasDeHoja(encontrado.aoa, filaEncabezados);
-  const mapping = { ...autoDetectMapping(cols, PLANTILLA_CAMPOS), ...banderas };
+  const mapping: Mapping = { ...autoDetectMapping(cols, PLANTILLA_CAMPOS), ...banderas };
+  // Vehículo o universal es obligatorio (Fase 2/3). Los casos crudos que no traen columna de
+  // vehículo son listas de mostrador sin auto: el vendedor las marca universales en el paso 2.
+  const traeVehiculo = !!(mapping.oficial.compatibilidad_marca || mapping.oficial.compatibilidad_modelo);
+  if (!traeVehiculo && !(mapping.defaults?.compatibilidad_general ?? '').trim()) {
+    mapping.defaults = { ...(mapping.defaults ?? {}), compatibilidad_general: 'SI' };
+  }
   const { aoa: oficial, filasOrigen, porCompletar } = buildOfficialAoADetallado(
     rows, cols, mapping, PLANTILLA_CAMPOS, CATALOGOS,
   );
@@ -100,10 +106,11 @@ describe('archivos crudos: lo que ya funciona', () => {
     expect(revisarAoA(inventario, PLANTILLA_CAMPOS).conError).toBe(0);
   });
 
-  it('avisa cuando la celda trae varios autos y el vendedor no activó la separación', () => {
+  it('retiene la fila cuando la celda trae varios autos y el vendedor apagó la separación', () => {
     const r = leerComoElPanel('09-varios-autos-por-celda');
-    // Sin el interruptor los datos siguen saliendo mal, pero ya no salen en silencio.
-    expect(r.revision.conAviso).toBe(2);
+    // Sin el interruptor los datos salen mal: desde la Fase 3 la fila se retiene, no se avisa.
+    expect(r.revision.conError).toBe(2);
+    expect(r.revision.publicables).toBe(0);
     const mensajes = r.revision.filas.flatMap((f) => f.problemas.map((p) => p.mensaje));
     expect(mensajes[0]).toContain('varios autos en una sola celda');
   });

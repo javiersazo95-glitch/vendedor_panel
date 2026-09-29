@@ -14,7 +14,6 @@ import {
   CAMPO_AGRUPADO_POR,
   reconcileMapping,
   requiereValorEnPanel,
-  buildOfficialAoA,
   buildOfficialAoADetallado,
   buildOfficialXlsxFile,
   leerLibro,
@@ -74,12 +73,26 @@ import {
   type DecisionCatalogo,
 } from '../utils/plantillaCatalogos';
 
+/** Lo que acompaña al archivo generado. */
+export interface MapperGeneratedExtras {
+  /** Fotos declaradas en el Excel del vendedor, por SKU. */
+  fotos?: Record<string, string[]>;
+  /** El Excel propio del vendedor, para volver a relacionar sin pedirlo otra vez. */
+  archivoOriginal?: File;
+  /**
+   * Fase 3: de qué fila del Excel del vendedor sale cada fila de datos del archivo generado,
+   * para que el Excel de errores que devuelve el backend se arme sobre SU archivo y no sobre
+   * el generado, que ya no va fila a fila con el suyo.
+   */
+  origen?: { hoja: number; filaTitulos: number; filasDeDatos: number[] };
+}
+
 interface PlantillaMapperProps {
   /**
    * `fotos` son las que el vendedor declaró en su Excel (URL o nombre de archivo), por
    * SKU: no van en el archivo oficial, van al paso de fotos.
    */
-  onGenerated: (file: File, extras?: { fotos?: Record<string, string[]>; archivoOriginal?: File }) => void;
+  onGenerated: (file: File, extras?: MapperGeneratedExtras) => void;
   onCancel: () => void;
   /** Esquema vigente de la plantilla. Por defecto, el contrato de respaldo del panel. */
   esquema?: EsquemaPlantilla;
@@ -241,12 +254,46 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     setUserCols(cols);
     setUserRows(rows);
     setFilasOriginales(filasOriginales);
-    // Si la columna de años trae rangos ("2014-2020"), se propone dividirla de entrada:
-    // es el formato más común en las listas de repuestos, y el vendedor puede desactivarlo.
-    setMapping({ ...base, dividirAnios: base.dividirAnios ?? traeRangosDeAnios(base, cols, rows) });
+    setMapping(conArreglosPropuestos(base, cols, rows));
     setReused(!!saved);
     setHojaIndex(indiceHoja);
     setFilaEncabezados(fila);
+  };
+
+  /**
+   * Fase 3 del plan de auditoría de carga: lo que detectamos en el archivo se aplica de
+   * entrada, y el vendedor lo apaga si no corresponde. Antes cada interruptor arrancaba
+   * apagado y "si no marcas nada, tus datos van tal como están": una columna "Aplicación"
+   * sin separar pasaba en verde y el backend descartaba la compatibilidad sin avisar. Las
+   * decisiones guardadas con el mapeo (`??`) mandan sobre la detección.
+   */
+  const conArreglosPropuestos = (base: Mapping, cols: UserColumn[], rows: unknown[][]): Mapping => {
+    const marcas = esquema.catalogos.marcasVehiculo?.length ? esquema.catalogos.marcasVehiculo : MARCAS_VEHICULO_BASE;
+    const propuesto: Mapping = { ...base, oficial: { ...base.oficial } };
+
+    const aplicacion = buscarColumnaAplicacion(propuesto, cols, rows, marcas);
+    if (base.parsearAplicacion === undefined) {
+      propuesto.parsearAplicacion = !!aplicacion;
+      if (aplicacion?.necesitaAsignar) propuesto.oficial.compatibilidad_modelo = aplicacion.col.id;
+    }
+
+    const idSku = propuesto.oficial.sku_proveedor;
+    const colSku = idSku ? cols.find((c) => c.id === idSku) : undefined;
+    if (base.agruparPorSku === undefined) {
+      propuesto.agruparPorSku = !!colSku && detectarSkusRepetidos(rows, colSku.index).skus > 0;
+    }
+
+    const idModelo = propuesto.oficial.compatibilidad_modelo ?? propuesto.oficial.compatibilidad_marca;
+    const colModelo = idModelo ? cols.find((c) => c.id === idModelo) : undefined;
+    if (base.separarAplicaciones === undefined && colModelo) {
+      const muestra = rows.slice(0, 50).map((r) => String((r as unknown[])[colModelo.index] ?? ''));
+      propuesto.separarAplicaciones = detectarAplicacionesMultiples(muestra, marcas).celdas > 0;
+    }
+
+    // Si la columna de años trae rangos ("2014-2020"), se propone dividirla de entrada:
+    // es el formato más común en las listas de repuestos, y el vendedor puede desactivarlo.
+    propuesto.dividirAnios = base.dividirAnios ?? traeRangosDeAnios(propuesto, cols, rows);
+    return propuesto;
   };
 
   const handleFile = async (file: File | null) => {
@@ -1129,10 +1176,13 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     [mapping, campos, getAutoDerivado, requiereValor],
   );
 
-  const buildFile = async (): Promise<File> => {
-    const aoa = buildOfficialAoA(
+  const buildFile = async (): Promise<{ file: File; filasDeDatos: number[] }> => {
+    const { aoa, filasOrigen } = buildOfficialAoADetallado(
       userRows, userCols, mapping as Mapping, campos, esquema.catalogos, modelosPorMarca,
     );
+    // Número de fila en el Excel del vendedor (como lo cuenta Excel, desde 1) de cada fila
+    // de datos del archivo generado, en el orden en que se escriben.
+    const filaDelVendedor = (i: number) => (filasOriginales[filasOrigen[i]] ?? filasOrigen[i]) + 1;
     const nombre = `plantilla-adaptada_${getIsoTimestampString()}.xlsx`;
     // Los vehículos que el vendedor agregó a mano no salen de ninguna fila del archivo,
     // así que se suman al final de la hoja. Si son los únicos, la hoja igual se escribe:
@@ -1142,13 +1192,15 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       .map((fila) => COLUMNAS_COMPATIBILIDADES.map((c) => fila[c] ?? ''));
 
     if (!mapping?.agruparPorSku && !mapping?.separarAplicaciones) {
-      return buildOfficialXlsxFile(aoa, nombre, esquema.version,
+      const file = await buildOfficialXlsxFile(aoa, nombre, esquema.version,
         agregados.length > 0 ? [[...COLUMNAS_COMPATIBILIDADES], ...agregados] : undefined);
+      return { file, filasDeDatos: filasOrigen.map((_, i) => filaDelVendedor(i)) };
     }
-    const { inventario, compatibilidades } = separarPorSku(aoa);
-    return buildOfficialXlsxFile(
+    const { inventario, compatibilidades, indices } = separarPorSku(aoa);
+    const file = await buildOfficialXlsxFile(
       inventario, nombre, esquema.version, [...compatibilidades, ...agregados],
     );
+    return { file, filasDeDatos: indices.map((i) => filaDelVendedor(i)) };
   };
 
   /**
@@ -1170,7 +1222,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     // Deja pintar el spinner antes de un build potencialmente pesado.
     setTimeout(async () => {
       try {
-        const file = await buildFile();
+        const { file, filasDeDatos } = await buildFile();
         const firma = headerSignature(userCols);
         saveMapping(firma, mapping);
         onGuardarMapeo?.(firma, mapping, userFile?.name);
@@ -1179,6 +1231,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           // El archivo del vendedor viaja de vuelta para poder volver a relacionar sin
           // pedirle que lo suba de nuevo.
           archivoOriginal: userFile ?? undefined,
+          origen: { hoja: hojaIndex, filaTitulos: filaEncabezados, filasDeDatos },
         });
       } catch (err) {
         setParseError(err instanceof Error ? err.message : 'No se pudo generar el archivo.');
@@ -1190,7 +1243,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const handleDownloadGenerated = async () => {
     if (!mapping) return;
     try {
-      const file = await buildFile();
+      const { file } = await buildFile();
       const url = URL.createObjectURL(file);
       const link = document.createElement('a');
       link.href = url;
@@ -1545,8 +1598,8 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               )}
             </div>
             <p className="mapper-section-desc">
-              Miramos tus datos y encontramos estas cosas que podemos arreglar por ti. Marca las
-              que correspondan a tu inventario; si no marcas nada, tus datos van tal como están.
+              Miramos tus datos y encontramos estas cosas. Las que están marcadas las vamos a
+              arreglar por ti; desmarca sólo lo que no corresponda a tu inventario.
             </p>
           </div>
           {skusRepetidos && skusRepetidos.skus > 0 && (

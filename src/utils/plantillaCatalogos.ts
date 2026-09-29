@@ -114,9 +114,13 @@ const UMBRAL_SUGERENCIA = 0.55;
 
 /** Los nombres del catálogo más parecidos al valor, del más parecido al menos. */
 export function sugerirDelCatalogo(valor: string, catalogo: string[], max = 3): string[] {
+  // Con palabras cortas el parecido engaña ("Motos" se parece a "Motor" en 0,8): se exige
+  // más para no sugerir, y para que "Usar todas las sugerencias" no aplique, una traducción
+  // equivocada (Fase 3 del plan de auditoría de carga).
+  const umbral = String(valor ?? '').trim().length <= 6 ? 0.75 : UMBRAL_SUGERENCIA;
   return catalogo
     .map((c) => ({ c, p: parecido(valor, c) }))
-    .filter(({ p }) => p >= UMBRAL_SUGERENCIA)
+    .filter(({ p }) => p >= umbral)
     .sort((x, y) => y.p - x.p)
     .slice(0, max)
     .map(({ c }) => c);
@@ -194,6 +198,12 @@ export function buscarEnTexto(
   texto: string,
   catalogo: string[],
   ambiguos: string[] = [],
+  /**
+   * Fase 3: los modelos de cada nombre ambiguo. Si el texto trae "Toyota" y también un
+   * modelo de Toyota ("Corolla"), esa marca es el auto y no el fabricante de la pieza,
+   * aunque no haya otro candidato.
+   */
+  modelosDeAmbiguo?: (nombre: string) => string[],
 ): string | null {
   const palabras = enRaices(texto);
   if (palabras.length === 0 || catalogo.length === 0) return null;
@@ -212,6 +222,13 @@ export function buscarEnTexto(
     .map((nombre) => ({ nombre, largo: enRaices(nombre).length, donde: posicion(nombre) }))
     .filter((x) => x.donde >= 0);
   if (candidatos.length === 0) return null;
+  if (modelosDeAmbiguo && ambiguos.length > 0) {
+    const esElAuto = (nombre: string) => buscarEnCatalogo(nombre, ambiguos)
+      && modelosDeAmbiguo(nombre).some((modelo) => posicion(modelo) >= 0);
+    const sinElAuto = candidatos.filter((x) => !esElAuto(x.nombre));
+    if (sinElAuto.length < candidatos.length) candidatos = sinElAuto;
+    if (candidatos.length === 0) return null;
+  }
   if (candidatos.length > 1 && ambiguos.length > 0) {
     const sinAmbiguos = candidatos.filter((x) => !buscarEnCatalogo(x.nombre, ambiguos));
     if (sinAmbiguos.length > 0) candidatos = sinAmbiguos;
