@@ -207,7 +207,8 @@ const CATALOGOS = {
   categorias: ['Frenos', 'Filtros'],
   subcategoriasPorCategoria: { Frenos: ['Pastillas', 'Discos'], Filtros: ['Filtro de aceite'] },
   marcasRepuesto: ['Bosch', 'Brembo'],
-  marcasVehiculo: ['Toyota', 'Nissan'],
+  marcasVehiculo: ['Toyota', 'Nissan', 'Mazda'],
+  modelosPorMarcaVehiculo: { toyota: ['Corolla', 'Yaris'], mazda: ['Mazda 2', 'Mazda 3'] },
   tiposPrecio: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'],
   condiciones: ['ORIGINAL', 'ALTERNATIVO'],
 };
@@ -295,6 +296,39 @@ describe('Fase 3: vehículo o universal, años posibles y lo que ya no pasa en v
     expect(r.conError).toBe(1);
     expect(r.filas[0].problemas[0].mensaje).toMatch(/no puede ser 0/);
     expect(revisar([filaBase({ precio: '0', tipo_precio: 'SOLO_COTIZAR' })]).conError).toBe(0);
+  });
+});
+
+describe('Fase 4: marca y modelo del vehículo contra el catálogo', () => {
+  const revisarConModelos = (over: Record<string, string>) =>
+    revisarAoA([columnas, filaBase(over)], PLANTILLA_CAMPOS, {
+      catalogos: CATALOGOS, modelosPorMarca: CATALOGOS.modelosPorMarcaVehiculo,
+    });
+
+  it('una marca de vehículo que no está en el catálogo se retiene, con la sugerencia', () => {
+    const r = revisarConModelos({ compatibilidad_marca: 'Toyoya' });
+    expect(r.conError).toBe(1);
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'compatibilidad_marca');
+    expect(problema?.mensaje).toContain('"Toyoya" no está en el catálogo');
+    expect(problema?.mensaje).toContain('¿Querías decir "Toyota"?');
+  });
+
+  it('un modelo que no existe para la marca se retiene, con la sugerencia', () => {
+    const r = revisarConModelos({ compatibilidad_modelo: 'Corola' });
+    expect(r.conError).toBe(1);
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'compatibilidad_modelo');
+    expect(problema?.mensaje).toContain('"Corola" no existe para Toyota');
+    expect(problema?.mensaje).toContain('¿Querías decir "Corolla"?');
+  });
+
+  it('el modelo se acepta sin espacios ni mayúsculas: "MAZDA2" es "Mazda 2"', () => {
+    const r = revisarConModelos({ compatibilidad_marca: 'MAZDA', compatibilidad_modelo: 'MAZDA2' });
+    expect(r.filas[0].problemas).toEqual([]);
+  });
+
+  it('sin la lista de modelos de esa marca no se dice nada del modelo', () => {
+    const r = revisarConModelos({ compatibilidad_marca: 'Nissan', compatibilidad_modelo: 'V16' });
+    expect(r.filas[0].problemas).toEqual([]);
   });
 });
 

@@ -66,6 +66,11 @@ export interface EsquemaPlantilla {
     subcategoriasPorCategoria: Record<string, string[]>;
     marcasRepuesto: string[];
     marcasVehiculo: string[];
+    /**
+     * Fase 4: modelos de cada marca de vehículo, con la marca como clave normalizada
+     * (`normalizarParaComparar`). Vacío cuando el esquema no los trae.
+     */
+    modelosPorMarcaVehiculo: Record<string, string[]>;
     tiposPrecio: string[];
     condiciones: string[];
   };
@@ -99,6 +104,7 @@ export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
     subcategoriasPorCategoria: {},
     marcasRepuesto: [],
     marcasVehiculo: MARCAS_VEHICULO_BASE,
+    modelosPorMarcaVehiculo: {},
     tiposPrecio: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'],
     condiciones: ['ORIGINAL', 'ALTERNATIVO'],
   },
@@ -515,6 +521,12 @@ export interface Mapping {
    */
   agruparPorSku?: boolean;
   /**
+   * Fase 4: el archivo no trae columna de vehículo y el vendedor decidió seguir igual,
+   * porque algunos repuestos sí sirven para un auto y otros no: las filas sin vehículo se
+   * marcan en el paso 3 y las completa ahí, una por una.
+   */
+  vehiculoPorFila?: boolean;
+  /**
    * Columna del vendedor que trae la foto de cada repuesto (URL o nombre de archivo). No
    * es una columna oficial: la plantilla no tiene columna de imagen. Se usa para el paso
    * de fotos, después de publicar.
@@ -697,7 +709,7 @@ export function reconcileMapping(
 /** Las decisiones sí/no del paso 2 que viajan con el mapeo guardado. */
 export const BANDERAS_DEL_MAPEO = [
   'dividirAnios', 'parsearAplicacion', 'separarAplicaciones', 'deducirDelNombre',
-  'quitarFilasDeTotales', 'usarBandasComoCategoria', 'agruparPorSku',
+  'quitarFilasDeTotales', 'usarBandasComoCategoria', 'agruparPorSku', 'vehiculoPorFila',
 ] as const;
 
 export interface ParsedUserFile {
@@ -1293,8 +1305,11 @@ export function buildOfficialAoADetallado(
       }
     }
 
-    // Blanqueo universal.
+    // Blanqueo universal. Si la fila traía un vehículo, el cambio queda a la vista en
+    // "Arreglos que hicimos por ti" (Fase 4): antes se borraba en silencio.
     if (UNIVERSAL_TRUTHY.has(normalizeHeader(cells.compatibilidad_general ?? ''))) {
+      const tenia = [cells.compatibilidad_marca, cells.compatibilidad_modelo].filter(Boolean).join(' ');
+      if (tenia) cambios.push({ columna: 'compatibilidad_marca', antes: tenia, despues: '(universal: sin vehículo)' });
       for (const key of universalBlankKeys) cells[key] = '';
     }
 

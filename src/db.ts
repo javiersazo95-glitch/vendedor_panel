@@ -433,8 +433,10 @@ export async function updateProduct(
       esUniversal: product.esUniversal === true,
       compatibilidadMarca: product.esUniversal ? '' : product.vehicleBrand,
       compatibilidadModelo: product.esUniversal ? '' : product.vehicleModel,
-      anioDesde: product.esUniversal ? undefined : product.vehicleYear,
-      anioHasta: product.esUniversal ? undefined : (product.vehicleYearTo ?? product.vehicleYear),
+      // 0 significa "sin año" en el panel; al backend va vacío, no 0: un 0 guardado como año
+      // hasta sacaba al producto de toda búsqueda por año del comprador (Fase 4).
+      anioDesde: product.esUniversal || !product.vehicleYear ? undefined : product.vehicleYear,
+      anioHasta: product.esUniversal ? undefined : (product.vehicleYearTo || product.vehicleYear || undefined),
       motor: product.esUniversal ? '' : product.vehicleVersion,
       pricingMode: product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE',
       precio: product.price,

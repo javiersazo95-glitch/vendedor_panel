@@ -17,6 +17,7 @@ import { API_BASE_URL } from './imageHelper';
 import { getStoredSession } from './session';
 import { encId } from './url';
 import { ESQUEMA_FALLBACK, type EsquemaPlantilla } from './plantillaMapping';
+import { normalizarParaComparar } from './plantillaCatalogos';
 
 const listaDeTextos = (valor: unknown): string[] =>
   Array.isArray(valor) ? valor.filter((v): v is string => typeof v === 'string' && v.trim() !== '') : [];
@@ -41,6 +42,14 @@ export function normalizarEsquema(data: unknown): EsquemaPlantilla | null {
 
   const tiposPrecio = listaDeTextos(catalogos.tiposPrecio);
   const condiciones = listaDeTextos(catalogos.condiciones);
+  // Fase 4: modelos por marca, con la marca como clave normalizada, que es como los busca
+  // el asistente ("TOYOTA", "toyota" y "Toyota" son la misma marca).
+  const modelosBruto = (catalogos.modelosPorMarcaVehiculo ?? {}) as Record<string, unknown>;
+  const modelosPorMarcaVehiculo: Record<string, string[]> = {};
+  for (const [marca, modelos] of Object.entries(modelosBruto)) {
+    const clave = normalizarParaComparar(marca);
+    if (clave) modelosPorMarcaVehiculo[clave] = listaDeTextos(modelos);
+  }
 
   return {
     version: typeof bruto.version === 'string' && bruto.version.trim() ? bruto.version.trim() : ESQUEMA_FALLBACK.version,
@@ -54,6 +63,7 @@ export function normalizarEsquema(data: unknown): EsquemaPlantilla | null {
       marcasVehiculo: listaDeTextos(catalogos.marcasVehiculo).length
         ? listaDeTextos(catalogos.marcasVehiculo)
         : ESQUEMA_FALLBACK.catalogos.marcasVehiculo,
+      modelosPorMarcaVehiculo,
       // Estos dos son parte del contrato del Excel, no de la base de datos: si el
       // backend no los manda, los del respaldo siguen siendo correctos.
       tiposPrecio: tiposPrecio.length ? tiposPrecio : ESQUEMA_FALLBACK.catalogos.tiposPrecio,

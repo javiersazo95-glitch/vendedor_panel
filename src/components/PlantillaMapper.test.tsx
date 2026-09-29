@@ -13,6 +13,7 @@ const ESQUEMA_CON_CATALOGOS: EsquemaPlantilla = {
     ...ESQUEMA_FALLBACK.catalogos,
     categorias: ['Frenos', 'Filtros', 'Suspensión'],
     marcasVehiculo: ['Toyota', 'Nissan'],
+    modelosPorMarcaVehiculo: { toyota: ['Corolla', 'Yaris'], nissan: ['V16'] },
     subcategoriasPorCategoria: { Frenos: ['Pastillas'], Filtros: ['Filtro de aceite'] },
     marcasRepuesto: ['Bosch', 'Brembo'],
   },
@@ -57,6 +58,15 @@ const subir = (contenido: string, nombre = 'mi-inventario.csv') => {
 
 const clic = (nombre: RegExp) => fireEvent.click(screen.getByRole('button', { name: nombre }));
 
+/**
+ * Fase 4: sin columna de vehículo el paso 2 no deja seguir hasta elegir una salida. Los
+ * archivos de estos tests que no traen auto son listas universales.
+ */
+const universalSiHaceFalta = () => {
+  const salida = screen.queryByRole('button', { name: /Sirven para todos los vehículos/ });
+  if (salida) fireEvent.click(salida);
+};
+
 /** Sube el archivo y avanza del paso 1 (hoja y títulos) al paso 2 (relacionar). */
 async function subirYRelacionar(contenido = CSV) {
   subir(contenido);
@@ -76,6 +86,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Pastilla,Brembo,Frenos,4990,10',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -93,6 +104,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion',
       'A-1,Pastilla,Brembo,Frenos,$ 4.990,10,Toyota Corolla 2014-2018',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -116,6 +128,7 @@ describe('PlantillaMapper', () => {
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota Corolla 2014-2018',
       'B-2,Disco,Brembo,Frenos,9990,5,Nissan V16 1995-2010',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -136,6 +149,7 @@ describe('PlantillaMapper', () => {
     // El mismo código en dos filas se junta en un repuesto con dos autos.
     // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
     expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -158,6 +172,7 @@ describe('PlantillaMapper', () => {
     render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
     await subirYRelacionar(['Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Aplicacion', ...filas].join('\n'));
 
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -197,6 +212,7 @@ describe('PlantillaMapper', () => {
     // Paso 1: confirmamos qué estamos leyendo antes de mapear nada.
     expect(await screen.findByRole('heading', { name: /Revisemos que estemos leyendo bien tu archivo/ })).toBeInTheDocument();
     expect(screen.getByText(/2 filas · 7 columnas/)).toBeInTheDocument();
+    universalSiHaceFalta();
     clic(/Siguiente/);
 
     // Paso 2: relación de columnas con autodetección.
@@ -207,6 +223,7 @@ describe('PlantillaMapper', () => {
     // que se elija una columna o se dé un valor para todas las filas.
     expect(screen.getByRole('button', { name: /Siguiente/ })).toBeDisabled();
     fireEvent.change(screen.getByLabelText('Valor fijo para Categoría'), { target: { value: 'Filtros' } });
+    universalSiHaceFalta();
     clic(/Siguiente/);
 
     // Paso 3: revisar y generar.
@@ -235,6 +252,7 @@ describe('PlantillaMapper', () => {
     const first = render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} />);
     await subirYRelacionar();
     fireEvent.change(screen.getByLabelText('Valor fijo para Categoría'), { target: { value: 'Filtros' } });
+    universalSiHaceFalta();
     clic(/Siguiente/);
     clic(/Generar y continuar/);
     await waitFor(() => expect(localStorage.getItem('repuestop_column_mappings')).toBeTruthy());
@@ -251,6 +269,7 @@ describe('PlantillaMapper', () => {
 
     // La fila 3 del archivo es la de títulos: encima hay un encabezado de planilla.
     expect(await screen.findByText(/2 filas · 7 columnas/)).toBeInTheDocument();
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Relaciona tus columnas/ });
     expect(screen.getByLabelText('SKU / Código')).toHaveDisplayValue('Codigo');
@@ -278,6 +297,7 @@ describe('PlantillaMapper', () => {
     fireEvent.change(screen.getByLabelText('Valor fijo para Marca del repuesto'), { target: { value: 'Bosch' } });
     fireEvent.change(screen.getByLabelText('Valor fijo para Precio'), { target: { value: '4990' } });
 
+    universalSiHaceFalta();
     await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
   });
 
@@ -296,6 +316,7 @@ describe('PlantillaMapper', () => {
       target: { value: 'SOLO_COTIZAR' },
     });
 
+    universalSiHaceFalta();
     await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
   });
 
@@ -309,6 +330,7 @@ describe('PlantillaMapper', () => {
     ].join('\n'));
     // Sin columna de vehículo el repuesto no se publica (Fase 2/3): este archivo es universal.
     fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -343,6 +365,7 @@ describe('PlantillaMapper', () => {
     expect(interruptor).toBeChecked();
     expect(screen.getByText(/"2014-2020" queda como 2014 y 2020/)).toBeInTheDocument();
 
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -362,6 +385,7 @@ describe('PlantillaMapper', () => {
     expect(select.tagName).toBe('SELECT');
     fireEvent.change(select, { target: { value: 'ALTERNATIVO' } });
 
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText('Alternativo', { selector: '.mapper-ficha-chip.cond' })).toBeInTheDocument();
@@ -375,6 +399,7 @@ describe('PlantillaMapper', () => {
       'A-2,Pastilla trasera,Brembo,Frenos delanteros,5990,4',
       'A-3,Filtro,Bosh,Filtros,3990,7',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -400,6 +425,7 @@ describe('PlantillaMapper', () => {
       'A-1,Pastilla,Brembo,Frenos delanteros,4990,10',
     ].join('\n'));
     fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -429,6 +455,7 @@ describe('PlantillaMapper', () => {
     // Y la columna "Aplicacion" trae marca, modelo y años juntos.
     expect(screen.getByLabelText('Separar marca, modelo y años de la columna de compatibilidad')).toBeChecked();
 
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText(/1 compatibilidad extra/)).toBeInTheDocument();
@@ -449,6 +476,51 @@ describe('PlantillaMapper', () => {
     expect(compat[1]).toEqual(['A-1', 'Toyota', 'Yaris', '2017', '2020', '', '']);
   });
 
+  it('sin columna de vehículo no deja seguir, y ofrece las tres salidas (Fase 4)', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar(['Codigo,Titulo,Marca,Categoria,Precio,Cantidad', 'A-1,Filtro,Bosch,Filtros,4990,10'].join('\n'));
+
+    expect(screen.getByText(/no dice para qué vehículos sirve/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Siguiente/ })).toBeDisabled();
+
+    // Segunda salida: seguir y marcar fila por fila.
+    fireEvent.click(screen.getByRole('button', { name: /Algunos sí y otros no/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+    // Y el paso 3 retiene la fila que sigue sin auto, con la salida en el mensaje.
+    expect(screen.getByText('1', { selector: '.mapper-counts .mal b' })).toBeInTheDocument();
+    expect(screen.getByText(/Falta el vehículo/)).toBeInTheDocument();
+  });
+
+  it('con el auto en el archivo, si el vendedor no confirma el universal no se marca', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
+    ].join('\n'));
+
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));
+    expect(confirmar).toHaveBeenCalled();
+    expect(screen.getByLabelText('Todo mi inventario es universal')).not.toBeChecked();
+    confirmar.mockRestore();
+  });
+
+  it('un modelo que no existe para la marca se retiene en el paso 3, con la sugerencia (Fase 4)', async () => {
+    render(<PlantillaMapper onGenerated={vi.fn()} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
+    await subirYRelacionar([
+      'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto,Desde,Hasta',
+      'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corola,2014,2018',
+    ].join('\n'));
+    clic(/Siguiente/);
+    await screen.findByRole('heading', { name: /Revisa antes de generar/ });
+
+    expect(screen.getByText('1', { selector: '.mapper-counts .mal b' })).toBeInTheDocument();
+    expect(screen.getByText(/El modelo "Corola" no existe para Toyota/)).toBeInTheDocument();
+    expect(screen.getByText(/¿Querías decir "Corolla"\?/)).toBeInTheDocument();
+  });
+
   it('el interruptor de inventario universal deja todas las filas sin compatibilidad por auto', async () => {
     const onGenerated = vi.fn();
     render(<PlantillaMapper onGenerated={onGenerated} onCancel={vi.fn()} esquema={ESQUEMA_CON_CATALOGOS} />);
@@ -457,7 +529,12 @@ describe('PlantillaMapper', () => {
       'A-1,Ampolleta,Bosch,Filtros,990,50,Toyota Corolla 2014-2016',
     ].join('\n'));
 
+    // El archivo trae el auto: marcar todo universal pregunta antes (Fase 4).
+    const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
     fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));
+    expect(confirmar).toHaveBeenCalledWith(expect.stringMatching(/1 fila/));
+    confirmar.mockRestore();
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText(/Compatible con todos los vehículos/)).toBeInTheDocument();
@@ -479,6 +556,7 @@ describe('PlantillaMapper', () => {
     ].join('\n'));
 
     fireEvent.click(screen.getByLabelText('Usar la columna de fotos de mi Excel'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText(/con foto en tu Excel/)).toBeInTheDocument();
@@ -506,7 +584,8 @@ describe('PlantillaMapper', () => {
         oficial: { sku_proveedor: '0', nombre_publicado: '1', precio: '2' },
         extras: {},
         valueMap: {},
-        defaults: { categoria: 'Filtros', marca_repuesto: 'Bosch', stock: '1' },
+        // La decisión del vehículo también viene guardada con el mapeo (Fase 4).
+        defaults: { categoria: 'Filtros', marca_repuesto: 'Bosch', stock: '1', compatibilidad_general: 'SI' },
       },
     };
     render(
@@ -524,6 +603,7 @@ describe('PlantillaMapper', () => {
     // Y los obligatorios ya venían resueltos con los valores fijos guardados.
     expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled();
 
+    universalSiHaceFalta();
     clic(/Siguiente/);
     clic(/Generar y continuar/);
     await waitFor(() => expect(onGuardarMapeo).toHaveBeenCalledTimes(1));
@@ -555,6 +635,7 @@ describe('PlantillaMapper', () => {
     expect(screen.getByText(/Revisa lo que escribiste a mano/)).toBeInTheDocument();
 
     fireEvent.change(stock, { target: { value: '10' } });
+    universalSiHaceFalta();
     await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
   });
 
@@ -608,6 +689,7 @@ describe('PlantillaMapper', () => {
       'A-2,Pastilla trasera,Brembo,Frenos,5990,8',
       'A-3,Filtro de aceite,Bosch,Filtros,3990,30',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -642,6 +724,7 @@ describe('PlantillaMapper', () => {
       'A-1,Pastilla delantera,Brembo,Frenos,4990,10',
       'A-3,Filtro de aceite,Bosch,Filtros,3990,30',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -669,6 +752,7 @@ describe('PlantillaMapper', () => {
       'A-1,Pastilla delantera,Brembo,Frenos,4990,10',
       'A-2,Disco ventilado,Brembo,Frenos,9990,4',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -696,6 +780,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Pastilla delantera,Brembo,Frenos,4990,10',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -718,6 +803,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Pastilla delantera,Brembo,Frenos,4990,SIN STOCK',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText(/"SIN STOCK" no es un número/)).toBeInTheDocument();
@@ -740,6 +826,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Pastilla,Bosh,Frenos,4990,10',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     // "Bosh" no está en el catálogo: aparece como decisión pendiente abajo.
@@ -772,6 +859,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Pastilla,Mann,Frenos,4990,10',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -797,6 +885,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Pastilla,Brembo,Frenos,4990,10',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -824,6 +913,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Años',
       'A-1,Pastilla,Brembo,Frenos,4990,10,2014',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -845,6 +935,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto,Desde,Hasta',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla,2014,2018',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -869,6 +960,7 @@ describe('PlantillaMapper', () => {
     ].join('\n'));
     // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
     expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -877,9 +969,8 @@ describe('PlantillaMapper', () => {
     expect(screen.getByText(/Compatibilidades: los demás autos/)).toBeInTheDocument();
     expect((screen.getByLabelText('Marca del vehículo, compatibilidad 1') as HTMLSelectElement).value)
       .toBe('Nissan');
-    // Sin catálogo de modelos cargado la celda es texto, y el texto que ya está bien se
-    // muestra como texto hasta que se usa.
-    expect(screen.getByTitle(/^Modelo del vehículo, compatibilidad 1/).textContent).toBe('V16');
+    // Con los modelos de la marca en el esquema (Fase 4), el modelo se elige de la lista.
+    expect((screen.getByLabelText('Modelo del vehículo, compatibilidad 1') as HTMLSelectElement).value).toBe('V16');
   });
 
 
@@ -899,6 +990,7 @@ describe('PlantillaMapper', () => {
     await subirYRelacionar(filas.join('\n'));
     // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
     expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -933,6 +1025,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
     expect(screen.getByText(/Ningún repuesto tiene más de un auto/)).toBeInTheDocument();
@@ -961,6 +1054,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -983,6 +1077,7 @@ describe('PlantillaMapper', () => {
     ].join('\n'));
     // Fase 3: el interruptor viene encendido cuando se detecta el código repetido.
     expect(screen.getByLabelText('Juntar las filas repetidas del mismo código')).toBeChecked();
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -1019,6 +1114,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -1040,6 +1136,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corolla',
     ].join('\n'));
+    universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 

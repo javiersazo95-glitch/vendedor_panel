@@ -62,6 +62,7 @@ import {
   pareceColumnaDeAplicacion,
   parsearAplicacion,
   detectarAplicacionesMultiples,
+  separarAplicaciones,
   COLUMNAS_COMPATIBILIDADES,
   separarPorSku,
 } from '../utils/plantillaCompatibilidad';
@@ -241,6 +242,17 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
   const campos = useMemo(() => camposDesdeEsquema(esquema), [esquema]);
 
   /**
+   * Modelos por marca: los que trae el esquema del backend (Fase 4) más los que se pidieron
+   * aparte cuando el esquema no los traía. Es lo que usan la revisión, la tabla y el armado.
+   */
+  const modelosDisponibles = useMemo(() => ({
+    ...(esquema.catalogos.modelosPorMarcaVehiculo ?? {}), ...modelosPorMarca,
+  }), [esquema, modelosPorMarca]);
+  const esquemaTraeModelos = Object.keys(esquema.catalogos.modelosPorMarcaVehiculo ?? {}).length > 0;
+  /** El catálogo de modelos no se pudo pedir (sin red): se dice, no se calla. */
+  const [catalogoModelosCaido, setCatalogoModelosCaido] = useState(false);
+
+  /**
    * Aplica una elección de hoja + fila de títulos: recalcula columnas y filas, y vuelve a
    * proponer la relación entre columnas. Se llama desde los handlers y no desde un efecto
    * para que el vendedor vea el resultado en el mismo clic.
@@ -413,7 +425,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     const {
       aoa, cambios: hechos, filasOrigen, clavesParche, porCompletar: huecos,
     } = buildOfficialAoADetallado(
-      userRows, userCols, mapping, campos, esquema.catalogos, modelosPorMarca,
+      userRows, userCols, mapping, campos, esquema.catalogos, modelosDisponibles,
     );
     // Con el SKU repetido, lo que se revisa es el archivo ya agrupado: es el que se sube.
     // Separar una celda con varios vehículos también genera códigos repetidos, así que
@@ -451,11 +463,12 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
         catalogos: esquema.catalogos,
         numerosDeFila: origenes.map((i) => (filasOriginales[i] ?? i) + 1),
         clavesDeFila: claves,
+        modelosPorMarca: modelosDisponibles,
       }),
       cambios: hechos,
     };
   }, [paso, mapping, userRows, userCols, campos, filaEncabezados, esquema, filasOriginales,
-    opcionesDeGrupo, modelosPorMarca]);
+    opcionesDeGrupo, modelosDisponibles]);
 
   // Cuántas de las filas mostradas piden atención. Es lo que titula la tabla, y no se saca de
   // los contadores de arriba: ésos miran el archivo entero, y acá se nombra lo que se ve.
@@ -470,38 +483,63 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     ? revision.filas.slice((paginaActualRevision - 1) * FILAS_POR_PAGINA, paginaActualRevision * FILAS_POR_PAGINA)
     : [];
 
-  // Las marcas se piden al llegar a revisar y no antes: es el único paso que las usa, y
-  // pedirlas al abrir el asistente cargaría el catálogo a quien sólo viene a mapear.
+  // Fase 4: los modelos vienen en el esquema del backend. Sólo si no vinieron (esquema de
+  // respaldo o backend anterior) se piden aparte, y desde el paso 2, para TODAS las marcas
+  // del archivo y no sólo las de las 100 filas que se muestran. Si el catálogo no responde
+  // se dice en el paso 3, en vez de revisar en silencio contra una lista vacía.
   useEffect(() => {
-    if (paso !== 3 || idsDeMarca.size > 0) return;
+    if (paso < 2 || esquemaTraeModelos || idsDeMarca.size > 0 || catalogoModelosCaido) return;
     let vivo = true;
-    cargarMarcasDeVehiculo().then((ids) => { if (vivo) setIdsDeMarca(ids); });
+    cargarMarcasDeVehiculo().then((ids) => {
+      if (!vivo) return;
+      if (ids.size === 0) setCatalogoModelosCaido(true);
+      else setIdsDeMarca(ids);
+    });
     return () => { vivo = false; };
-  }, [paso, idsDeMarca]);
+  }, [paso, esquemaTraeModelos, idsDeMarca, catalogoModelosCaido]);
 
-  /**
-   * Los modelos de las marcas que aparecen en las filas que se están mostrando. Se piden
-   * de a una y sólo las que hacen falta: son decenas de marcas y en un archivo aparecen
-   * tres o cuatro.
-   */
+  /** Marcas de vehículo distintas que trae el archivo (en su columna o dentro de la aplicación). */
+  const marcasDelArchivo = useMemo(() => {
+    if (!mapping || paso < 2) return [] as string[];
+    const marcas = esquema.catalogos.marcasVehiculo?.length ? esquema.catalogos.marcasVehiculo : MARCAS_VEHICULO_BASE;
+    const colMarca = mapping.oficial.compatibilidad_marca
+      ? userCols.find((c) => c.id === mapping.oficial.compatibilidad_marca) : undefined;
+    const colModelo = mapping.oficial.compatibilidad_modelo
+      ? userCols.find((c) => c.id === mapping.oficial.compatibilidad_modelo) : undefined;
+    const encontradas = new Set<string>();
+    for (const row of userRows) {
+      const r = row as unknown[];
+      if (colMarca) {
+        const v = String(r[colMarca.index] ?? '').trim();
+        if (v) encontradas.add(normalizarParaComparar(v));
+      }
+      if (colModelo && (mapping.parsearAplicacion || mapping.separarAplicaciones)) {
+        for (const parte of separarAplicaciones(String(r[colModelo.index] ?? ''), marcas)) {
+          const app = parsearAplicacion(parte, marcas);
+          if (app?.marca) encontradas.add(normalizarParaComparar(app.marca));
+        }
+      }
+      // Tope: más de 40 marcas distintas en un archivo no es un inventario, es otra cosa.
+      if (encontradas.size >= 40) break;
+    }
+    return [...encontradas];
+  }, [mapping, paso, userCols, userRows, esquema]);
+
   useEffect(() => {
-    if (!revision || idsDeMarca.size === 0) return;
-    const i = revision.columnas.indexOf('compatibilidad_marca');
-    if (i < 0) return;
-    const pendientes = [...new Set(revision.filas.map((f) => (f.valores[i] ?? '').trim()))]
-      .map((nombre) => ({ nombre, clave: normalizarParaComparar(nombre) }))
-      .filter(({ clave }) => clave && modelosPorMarca[clave] === undefined && idsDeMarca.has(clave));
+    if (idsDeMarca.size === 0) return;
+    const pendientes = marcasDelArchivo
+      .filter((clave) => modelosPorMarca[clave] === undefined && idsDeMarca.has(clave))
+      .slice(0, 40);
     if (pendientes.length === 0) return;
-
     let vivo = true;
-    Promise.all(pendientes.map(async ({ clave }) => (
+    Promise.all(pendientes.map(async (clave) => (
       [clave, await cargarModelos(idsDeMarca.get(clave) as number)] as const
     ))).then((cargados) => {
       if (!vivo) return;
       setModelosPorMarca((prev) => ({ ...prev, ...Object.fromEntries(cargados) }));
     });
     return () => { vivo = false; };
-  }, [revision, idsDeMarca, modelosPorMarca]);
+  }, [marcasDelArchivo, idsDeMarca, modelosPorMarca]);
 
   /** Los arreglos automáticos, agrupados para poder mostrarlos como "antes → después". */
   const arreglos = useMemo(() => agruparCambios(cambios), [cambios]);
@@ -577,7 +615,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     // El modelo cuelga de la marca de esa fila, igual que en la carga 1:1: escribirlo a
     // mano no hace aparecer el repuesto en la búsqueda por vehículo.
     if (columna === 'compatibilidad_modelo') {
-      return modelosPorMarca[normalizarParaComparar(fila.marcaVehiculo)] ?? [];
+      return modelosDisponibles[normalizarParaComparar(fila.marcaVehiculo)] ?? [];
     }
     // El año hasta no puede ser anterior al año desde de su propia fila.
     if (columna === 'anio_desde') return ANIOS;
@@ -590,7 +628,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     if (columna === 'marca_repuesto') return esquema.catalogos.marcasRepuesto;
     if (columna === 'compatibilidad_marca') return esquema.catalogos.marcasVehiculo;
     return [];
-  }, [esquema, campos, modelosPorMarca]);
+  }, [esquema, campos, modelosDisponibles]);
 
   /**
    * Los pocos nombres del catálogo que se parecen a lo que trae la celda. Sólo tiene
@@ -974,6 +1012,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       if (!prev) return prev;
       const parches = { ...(prev.parches ?? {}) };
       parches[clave] = { ...(parches[clave] ?? {}), [columna]: valor };
+      // Cambiar la marca del auto deja el modelo en blanco: el modelo cuelga de la marca y
+      // un "Nissan Corolla" no existe (Fase 4). El vendedor lo elige de la lista nueva.
+      if (columna === 'compatibilidad_marca') parches[clave].compatibilidad_modelo = '';
       return { ...prev, parches };
     });
   };
@@ -984,6 +1025,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
       if (!prev) return prev;
       const filas = [...(prev.compatibilidadesExtra ?? [])];
       filas[indice] = { ...filas[indice], [columna]: valor };
+      if (columna === 'compatibilidad_marca') filas[indice].compatibilidad_modelo = '';
       return { ...prev, compatibilidadesExtra: filas };
     });
   };
@@ -1154,6 +1196,42 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
     };
   }, [mapping, unassignedCols, campos, getAutoDerivado]);
 
+  /** ¿El archivo trae alguna columna con el vehículo (marca, modelo o aplicación)? */
+  const tieneColumnasVehiculo = !!(mapping?.oficial.compatibilidad_marca || mapping?.oficial.compatibilidad_modelo);
+  const todoUniversal = (mapping?.defaults?.compatibilidad_general ?? '') === 'SI';
+  /**
+   * Fase 4, "lo que no se decide": sin vehículo ni universal ninguna fila se publica (el
+   * backend las retiene desde la Fase 2), así que el paso 2 no deja seguir hasta que el
+   * vendedor elija una salida, igual que con el precio.
+   */
+  const faltaDecidirVehiculo = !!mapping && !tieneColumnasVehiculo && !todoUniversal && !mapping.vehiculoPorFila;
+  /** Filas que traen marca o modelo del auto: las que perderían el vehículo si todo pasa a universal. */
+  const filasConVehiculo = useMemo(() => {
+    if (!mapping) return 0;
+    const cols = ['compatibilidad_marca', 'compatibilidad_modelo']
+      .map((k) => mapping.oficial[k]).filter((id): id is string => !!id)
+      .map((id) => userCols.find((c) => c.id === id)).filter((c): c is UserColumn => !!c);
+    if (cols.length === 0) return 0;
+    return userRows.filter((r) => cols.some((c) => String((r as unknown[])[c.index] ?? '').trim())).length;
+  }, [mapping, userCols, userRows]);
+
+  /**
+   * Todos los códigos del archivo, para elegir a qué repuesto va un auto agregado a mano
+   * (Fase 4). Antes era texto libre y un error de tipeo dejaba la compatibilidad huérfana.
+   */
+  const skusDelArchivo = useMemo(() => {
+    const id = mapping?.oficial.sku_proveedor;
+    const col = id ? userCols.find((c) => c.id === id) : undefined;
+    if (!col) return [] as string[];
+    const vistos = new Set<string>();
+    for (const r of userRows) {
+      const v = String((r as unknown[])[col.index] ?? '').trim();
+      if (v) vistos.add(v);
+      if (vistos.size >= 2000) break;
+    }
+    return [...vistos];
+  }, [mapping, userCols, userRows]);
+
   const requiereValor = useCallback(
     (campo: CampoMeta): boolean => (mapping ? requiereValorEnPanel(campo, mapping) : campo.required),
     [mapping],
@@ -1178,7 +1256,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
 
   const buildFile = async (): Promise<{ file: File; filasDeDatos: number[] }> => {
     const { aoa, filasOrigen } = buildOfficialAoADetallado(
-      userRows, userCols, mapping as Mapping, campos, esquema.catalogos, modelosPorMarca,
+      userRows, userCols, mapping as Mapping, campos, esquema.catalogos, modelosDisponibles,
     );
     // Número de fila en el Excel del vendedor (como lo cuenta Excel, desde 1) de cada fila
     // de datos del archivo generado, en el orden en que se escriben.
@@ -1568,6 +1646,33 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           </div>
         )}
 
+        {faltaDecidirVehiculo && (
+          <div className="mapper-alert warn" role="alert">
+            <AlertTriangle size={15} />
+            <span>
+              <b>Tu archivo no dice para qué vehículos sirve cada repuesto.</b> Sin eso no aparecen
+              cuando alguien busca por su auto, y no se publican. Elige una salida:
+              <span style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', margin: '0.5rem 0' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary mapper-btn"
+                  onClick={() => setDefault('compatibilidad_general', 'SI')}
+                >
+                  Sirven para todos los vehículos
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary mapper-btn"
+                  onClick={() => setMapping((prev) => (prev ? { ...prev, vehiculoPorFila: true } : prev))}
+                >
+                  Algunos sí y otros no: seguir y marcar las filas que faltan
+                </button>
+              </span>
+              O relaciona más abajo la columna de tu Excel que trae la marca y el modelo del auto.
+            </span>
+          </div>
+        )}
+
         {missingRequired.length > 0 && (
           <div className="mapper-alert warn">
             <AlertTriangle size={15} />
@@ -1750,11 +1855,23 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               type="checkbox"
               aria-label="Todo mi inventario es universal"
               checked={(mapping.defaults?.compatibilidad_general ?? '') === 'SI'}
-              onChange={(e) => setDefault('compatibilidad_general', e.target.checked ? 'SI' : '')}
+              onChange={(e) => {
+                // Con columnas de vehículo, marcar todo universal borra lo que el archivo ya
+                // decía: se pregunta con el número de filas a la vista (Fase 4).
+                if (e.target.checked && filasConVehiculo > 0) {
+                  const seguro = window.confirm(
+                    `Tu archivo trae la marca o el modelo del auto en ${plural(filasConVehiculo, 'fila', 'filas')}. `
+                    + 'Si marcas todo como universal, esos repuestos se publican sin vehículo. ¿Seguir?',
+                  );
+                  if (!seguro) return;
+                }
+                setDefault('compatibilidad_general', e.target.checked ? 'SI' : '');
+              }}
             />
             <span>
               <b>Todo mi inventario es universal.</b> Marca esto sólo si tus repuestos sirven para
               cualquier vehículo; se publican sin compatibilidad por auto.
+              {filasConVehiculo > 0 && ` Tu archivo trae el auto en ${plural(filasConVehiculo, 'fila', 'filas')}: esas lo perderían.`}
             </span>
           </label>
 
@@ -2111,11 +2228,12 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
             type="button"
             className="btn btn-primary btn-primary-blue mapper-btn"
             onClick={() => setPaso(3)}
-            disabled={missingRequired.length > 0 || defaultsInvalidos.length > 0}
+            disabled={missingRequired.length > 0 || defaultsInvalidos.length > 0 || faltaDecidirVehiculo}
             title={
               missingRequired.length > 0 ? 'Falta indicar datos obligatorios'
                 : defaultsInvalidos.length > 0 ? 'Hay un valor escrito a mano que hay que corregir'
-                  : undefined
+                  : faltaDecidirVehiculo ? 'Falta decidir para qué vehículos sirven los repuestos'
+                    : undefined
             }
           >
             Siguiente <ArrowRight size={16} />
@@ -2210,6 +2328,16 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
           <span><b>{Object.keys(fotosDeclaradas).length.toLocaleString('es-CL')}</b> con foto en tu Excel</span>
         )}
       </div>
+
+            {catalogoModelosCaido && (
+        <div className="mapper-alert warn" role="status">
+          <AlertTriangle size={15} />
+          <span>
+            No pudimos traer la lista de modelos del catálogo (sin conexión). Los modelos se van a
+            comprobar recién al publicar; si alguno no existe, esa fila se va a rechazar ahí.
+          </span>
+        </div>
+      )}
 
       {revision && revision.conError > 0 && (
         <div className="mapper-alert warn">
@@ -2562,7 +2690,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                           <CeldaRevision
                             valor={dato(c)}
                             columna={c}
-                            opciones={opcionesDeCelda(c, contexto)}
+                            opciones={c === 'sku_proveedor' ? skusDelArchivo : opcionesDeCelda(c, contexto)}
                             sugerencias={sugerenciasDeCelda(c, dato(c), contexto)}
                             etiqueta={`${campos.find((campo) => campo.key === c)?.label ?? c}, compatibilidad ${i + 1}`}
                             destacada={!dato(c) && c !== 'motor' && c !== 'referencia_oem'}

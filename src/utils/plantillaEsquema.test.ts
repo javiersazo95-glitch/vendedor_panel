@@ -27,6 +27,16 @@ describe('normalizarEsquema', () => {
     expect(esquema?.catalogos.subcategoriasPorCategoria).toEqual({ Frenos: ['Pastillas'] });
   });
 
+  it('trae los modelos por marca con la marca como clave normalizada (Fase 4)', () => {
+    const esquema = normalizarEsquema({
+      columnas: ['sku_proveedor'],
+      catalogos: { modelosPorMarcaVehiculo: { Toyota: ['Corolla', 'Yaris'], 'Mercedes-Benz': ['Sprinter'] } },
+    });
+    expect(esquema?.catalogos.modelosPorMarcaVehiculo).toEqual({ toyota: ['Corolla', 'Yaris'], 'mercedes benz': ['Sprinter'] });
+    // Un backend que no los manda deja el mapa vacío, y el asistente los pide aparte.
+    expect(normalizarEsquema({ columnas: ['sku_proveedor'], catalogos: {} })?.catalogos.modelosPorMarcaVehiculo).toEqual({});
+  });
+
   it('devuelve null si la respuesta no trae columnas: mejor el respaldo que una pantalla vacía', () => {
     expect(normalizarEsquema({ version: '2.0.0', columnas: [] })).toBeNull();
     expect(normalizarEsquema({ hola: 'mundo' })).toBeNull();

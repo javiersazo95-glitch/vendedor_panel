@@ -61,7 +61,12 @@ export function normalizarTaxonomia(valor: string): string {
 export function buscarEnCatalogo(valor: string, catalogo: string[]): string | null {
   const objetivo = normalizarParaComparar(valor);
   if (!objetivo) return null;
-  return catalogo.find((c) => normalizarParaComparar(c) === objetivo) ?? null;
+  const exacto = catalogo.find((c) => normalizarParaComparar(c) === objetivo);
+  if (exacto) return exacto;
+  // Fase 4: misma clave que el backend (NombreCatalogo.clave): sin espacios ni separadores,
+  // "Mazda 2" y "Mazda2", "CR-V" y "CRV" son el mismo nombre.
+  const clave = objetivo.replace(/\s+/g, '');
+  return catalogo.find((c) => normalizarParaComparar(c).replace(/\s+/g, '') === clave) ?? null;
 }
 
 /** Distancia de edición, para atrapar los errores de tipeo ("Bosh" contra "Bosch"). */

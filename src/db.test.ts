@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getAllProducts, getProductTopSummary, getRechargeDocumentUrl, getWalletHistory, saveProductsBatch, setProductTop, startRecharge } from './db';
+import { getAllProducts, getProductTopSummary, getRechargeDocumentUrl, getWalletHistory, saveProductsBatch, setProductTop, startRecharge, updateProduct } from './db';
 import { saveSession, clearSession } from './utils/session';
 
 const baseRow = {
@@ -166,6 +166,32 @@ describe('saveProductsBatch', () => {
 
     await expect(getRechargeDocumentUrl('10')).resolves.toBe('https://api/boleta/token');
     expect(fetchMock.mock.calls[0][0]).toContain('/fichas/compras/10/documento-url');
+  });
+});
+
+describe('updateProduct: los años vacíos no viajan como 0 (Fase 4)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); clearSession(); });
+
+  it('sin año en el panel, el PUT no manda anioDesde ni anioHasta', async () => {
+    saveSession({ email: 'v@x.cl', role: 'vendedor', token: 'tok', sellerId: '1' });
+    const requests: { url: string; body: unknown }[] = [];
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      requests.push({ url: String(url), body: init?.body });
+      return Promise.resolve(new Response(JSON.stringify({ id: 42 }), { status: 200 }));
+    }));
+
+    await updateProduct({
+      ...baseRow, id: '42', vehicleBrand: 'Toyota', vehicleModel: 'Corolla', vehicleYear: 0, vehicleYearTo: 0,
+      esUniversal: false, pricingMode: 'show_price', condition: 'ORIGINAL', requiresChassis: false,
+      vehiculoCatalogoIds: [1], compatibilityGroupsJson: '', lastUpdated: '', activo: true, pausado: false,
+      destacado: false, topDesde: null,
+    } as never);
+
+    const put = requests.find((r) => r.url.match(/\/inventario\/42$/));
+    const payload = JSON.parse(put!.body as string);
+    expect(payload).not.toHaveProperty('anioDesde');
+    expect(payload).not.toHaveProperty('anioHasta');
+    expect(payload.compatibilidadMarca).toBe('Toyota');
   });
 });
 

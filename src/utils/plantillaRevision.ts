@@ -111,10 +111,15 @@ export function revisarAoA(
     numerosDeFila?: number[];
     /** La clave con la que se corrige cada fila de datos. */
     clavesDeFila?: string[];
+    /**
+     * Fase 4: modelos por marca (clave normalizada). Con esto el modelo se comprueba
+     * contra el catálogo antes de subir; sin esto no se dice nada del modelo.
+     */
+    modelosPorMarca?: Record<string, string[]>;
   } = {},
 ): RevisionArchivo {
   const {
-    maxFilas = 20, primeraFilaArchivo = 2, catalogos, numerosDeFila, clavesDeFila,
+    maxFilas = 20, primeraFilaArchivo = 2, catalogos, numerosDeFila, clavesDeFila, modelosPorMarca = {},
   } = opciones;
   // Sin catálogos —porque el esquema no respondió— no se revisa nada contra ellos: es
   // preferible no decir nada a inventar un error con una copia local desactualizada.
@@ -271,6 +276,22 @@ export function revisarAoA(
         agregar('compatibilidad_marca', 'error', 'Falta la marca del vehículo.');
       } else if (!leer('anio_desde')) {
         agregar('anio_desde', 'error', 'Falta el año desde del vehículo.');
+      }
+    }
+
+    // Marca y modelo del vehículo contra el catálogo (Fase 4). El backend no crea ninguno
+    // de los dos y, desde la Fase 2, retiene la fila si no resuelven: mejor verlo acá.
+    if (!universal && marcaVehiculo && !problemas.some((p) => p.columna === 'compatibilidad_marca')) {
+      const marcaOficial = buscarEnCatalogo(marcaVehiculo, marcasVehiculo);
+      if (!marcaOficial) {
+        agregar('compatibilidad_marca', 'error',
+          `La marca de vehículo "${marcaVehiculo}" no está en el catálogo.${conSugerencia(marcaVehiculo, marcasVehiculo)}`);
+      } else if (modelo && !problemas.some((p) => p.columna === 'compatibilidad_modelo')) {
+        const modelos = modelosPorMarca[normalizarParaComparar(marcaOficial)] ?? [];
+        if (modelos.length > 0 && !buscarEnCatalogo(modelo, modelos)) {
+          agregar('compatibilidad_modelo', 'error',
+            `El modelo "${modelo}" no existe para ${marcaOficial}.${conSugerencia(modelo, modelos)}`);
+        }
       }
     }
 
