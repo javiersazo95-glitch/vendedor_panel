@@ -31,7 +31,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   // usable space for the inventory table (UX-SRC-001). Below 992px it now
   // renders as an off-canvas drawer toggled by this state.
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAssigningImages, setIsAssigningImages] = useState(false);
   /** Cuántos productos actualizó la última carga Express limpia, para avisarlo en el inventario. */
   const [expressCargados, setExpressCargados] = useState<number | null>(null);
   /** Con qué pestaña abre la carga masiva; 'history' sólo al venir del "Ver detalle" del aviso. */
@@ -263,7 +262,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
       {isSidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebarOnMobile} />}
 
       {/* Sidebar Navigation */}
-      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${isAssigningImages ? 'sidebar-hidden' : ''}`}>
+      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="logo-container" style={{ margin: '0.5rem 0 2.5rem 0', justifyContent: 'center' }}>
           <img
             src={logoImg}
@@ -310,7 +309,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
       </aside>
 
       {/* Main Panel Content Area */}
-      <main className={`main-content ${activeView === 'bulk' ? 'main-content-bulk' : ''} ${isAssigningImages ? 'hide-sidebar' : ''}`}>
+      <main className={`main-content ${activeView === 'bulk' ? 'main-content-bulk' : ''}`}>
         {/* Top Header Navigation */}
         <header className="top-header">
           <div className="header-title-section" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
@@ -427,7 +426,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             isOpen={activeView === 'bulk'}
             onClose={() => setActiveView('inventory')}
             onUploadSuccess={fetchProducts}
-            onAssignImagesStateChange={(isAssigning) => setIsAssigningImages(isAssigning)}
             onExpressSuccess={(cargados) => { setActiveView('inventory'); setExpressCargados(cargados); }}
             initialTab={bulkInitialTab}
             embedded

@@ -867,7 +867,7 @@ export async function saveProductsBatch(
  * este camino tambien deja de heredar el bug de activo:true de updateProduct().
  */
 export async function savePreciosStockBatch(
-  items: { skuProveedor: string; precio: number; stock: number }[]
+  items: { skuProveedor: string; precio: number | null; stock: number | null }[]
 ): Promise<PrecioStockUpdateResponse> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa de vendedor.');

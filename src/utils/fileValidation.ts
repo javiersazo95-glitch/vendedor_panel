@@ -14,7 +14,7 @@ export function excedeTamanoMaximoDatos(file: File): boolean {
 export function mensajeArchivoDemasiadoGrande(file: File): string {
   const mb = (file.size / (1024 * 1024)).toFixed(1);
   const limiteMb = MAX_DATA_FILE_SIZE_BYTES / (1024 * 1024);
-  return `El archivo pesa ${mb} MB, más del máximo permitido (${limiteMb} MB). Dividilo en partes más chicas y volvé a intentar.`;
+  return `El archivo pesa ${mb} MB, más del máximo permitido (${limiteMb} MB). Divídelo en partes más pequeñas y vuelve a intentarlo.`;
 }
 
 /**
@@ -42,4 +42,4 @@ export async function pareceExcelValido(file: File): Promise<boolean> {
 }
 
 export const MENSAJE_EXCEL_INVALIDO =
-  'Este archivo tiene extensión .xlsx/.xls pero su contenido no es un Excel válido (puede estar corrupto o haber sido renombrado por error). Revísalo y volvé a intentar.';
+  'Este archivo tiene extensión .xlsx/.xls pero su contenido no es un Excel válido (puede estar corrupto o haber sido renombrado por error). Revísalo y vuelve a intentarlo.';

@@ -18,6 +18,7 @@ import { conReintento429 } from '../utils/reintento429';
 import { useMapeosGuardados } from '../utils/plantillaMapeos';
 import { sanitizeAoaForExport, sanitizeRowsForExport } from '../utils/xlsxSafety';
 import { comprimirImagen } from '../utils/imageCompression';
+import { NOMBRE_EXPRESS } from '../utils/expressPreciosStock';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -1448,7 +1449,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
 
             <p className="bulk-purpose-foot">
               ¿Solo necesitas cambiar precios o stock de productos que ya existen? Usa
-              <strong> Actualización Rápida</strong>: una plantilla de 3 columnas (sku, precio, stock).
+              <strong> {NOMBRE_EXPRESS}</strong>: descargas tus productos, cambias los precios y el stock, y lo subes.
             </p>
           </section>
         )}
@@ -1536,7 +1537,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       </button>
                       <button type="button" className="bulk-mode-tab" onClick={onSwitchToExpress} disabled={busy}>
                         <Zap size={15} />
-                        <span>Actualización Rápida</span>
+                        <span>{NOMBRE_EXPRESS}</span>
                       </button>
                     </div>
 
