@@ -27,6 +27,7 @@ import {
   distinctValuesForColumn,
   mappedEnumColumns,
   getIsoTimestampString,
+  etiquetaValor,
   type CampoMeta,
   type CampoPorCompletar,
   type HojaUsuario,
@@ -1681,7 +1682,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
               datos que RepuesTop necesita para publicar. Elige la columna de tu archivo, o escribe
               al lado el mismo valor para todas las filas.
               {missingRequired.some((c) => c.key === 'precio') && (
-                <> Si tus repuestos se venden a pedido, pon <b>SOLO_COTIZAR</b> en "Tipo de precio"
+                <> Si tus repuestos se venden a pedido, elige <b>Sólo cotizar</b> en "Tipo de precio"
                   y el precio deja de hacer falta.</>
               )}
             </span>
@@ -1996,7 +1997,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                         {campo.enumHint && !campo.ejemplo && (
                           <div className="mapper-card-hint">
                             <span className="mapper-hint-label">Valores válidos:</span>{' '}
-                            <span className="mapper-hint-values">{campo.enumHint.join(' · ')}</span>
+                            <span className="mapper-hint-values">{campo.enumHint.map(etiquetaValor).join(' · ')}</span>
                           </div>
                         )}
                       </div>
@@ -2072,7 +2073,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                                 <option value="">o el mismo valor para todas las filas…</option>
                                 {(campo.enumHint ?? catalogoDe(campo.key)).map((opt) => (
                                   <option key={opt} value={opt}>
-                                    {opt}
+                                    {etiquetaValor(opt)}
                                   </option>
                                 ))}
                               </select>
@@ -2931,7 +2932,7 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                           >
                             <option value="">dejar como está</option>
                             {campo.enumHint?.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
+                              <option key={opt} value={opt}>{etiquetaValor(opt)}</option>
                             ))}
                           </select>
                         </div>

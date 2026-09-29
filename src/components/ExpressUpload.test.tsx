@@ -149,7 +149,7 @@ describe('pantalla "Cambiar precios y stock"', () => {
     const libro = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(libro, hoja, 'Hoja1');
     const bytes = XLSX.write(libro, { bookType: 'xlsx', type: 'array' });
-    render(<ExpressUpload isOpen embedded onClose={() => {}} onUploadSuccess={() => {}} onExpressSuccess={onExpressSuccess} onSwitchToFull={() => {}} />);
+    render(<ExpressUpload isOpen embedded onClose={() => {}} onUploadSuccess={() => {}} onExpressSuccess={onExpressSuccess} onVolver={() => {}} />);
 
     subir(new File([bytes], 'precios.xlsx'));
 
@@ -167,7 +167,7 @@ describe('pantalla "Cambiar precios y stock"', () => {
   it('si quedan filas fuera no manda al inventario: muestra cuáles y por qué', async () => {
     const onExpressSuccess = vi.fn();
     const csv = 'sku,precio,stock\nPF-100,"4,99",8\nNO-EXISTE,1000,1\nQC-1,,2\n';
-    render(<ExpressUpload isOpen embedded onClose={() => {}} onUploadSuccess={() => {}} onExpressSuccess={onExpressSuccess} onSwitchToFull={() => {}} />);
+    render(<ExpressUpload isOpen embedded onClose={() => {}} onUploadSuccess={() => {}} onExpressSuccess={onExpressSuccess} onVolver={() => {}} />);
 
     subir(new File([csv], 'precios.csv', { type: 'text/csv' }));
 
@@ -181,7 +181,7 @@ describe('pantalla "Cambiar precios y stock"', () => {
   });
 
   it('sin columna de código lo dice con las columnas que sí trae el archivo', async () => {
-    render(<ExpressUpload isOpen embedded onClose={() => {}} onUploadSuccess={() => {}} onSwitchToFull={() => {}} />);
+    render(<ExpressUpload isOpen embedded onClose={() => {}} onUploadSuccess={() => {}} onVolver={() => {}} />);
 
     subir(new File(['Nombre,Precio\nPastilla,1000\n'], 'precios.csv', { type: 'text/csv' }));
 

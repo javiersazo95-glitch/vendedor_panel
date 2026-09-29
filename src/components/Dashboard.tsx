@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LogOut, PlusCircle, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2 } from 'lucide-react';
+import { LogOut, History, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2 } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
 import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, getSellerProfileImage, setProductTop, type ProductTopSummary } from '../db';
@@ -8,7 +8,7 @@ import { Filters } from './Filters';
 import { InventoryTable } from './InventoryTable';
 import { InventoryGrid } from './InventoryGrid';
 import { ManualUpload } from './ManualUpload';
-import { BulkUpload } from './BulkUpload';
+import { CargaInventario } from './CargaInventario';
 import { TopModal } from './TopModal';
 import { WalletModal } from './WalletModal';
 import { RepuestopCoin } from './RepuestopCoin';
@@ -33,8 +33,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   /** Cuántos productos actualizó la última carga Express limpia, para avisarlo en el inventario. */
   const [expressCargados, setExpressCargados] = useState<number | null>(null);
-  /** Con qué pestaña abre la carga masiva; 'history' sólo al venir del "Ver detalle" del aviso. */
-  const [bulkInitialTab, setBulkInitialTab] = useState<'upload' | 'history'>('upload');
+  /**
+   * Fase 8: "Cargar inventario" abre la pregunta "¿Qué tienes?"; "Historial de cargas" (y el
+   * "Ver detalle" del aviso) abre el historial. La clave vuelve a la pregunta cada vez que se
+   * entra por el menú, aunque ya se estuviera dentro de un camino.
+   */
+  const [cargaVista, setCargaVista] = useState<'elegir' | 'historial'>('elegir');
+  const [cargaKey, setCargaKey] = useState(0);
+  /** Mientras se revisa, publica o suben fotos, el menú no deja salir (se perdería el avance). */
+  const [cargaOcupada, setCargaOcupada] = useState(false);
   const [inventoryView, setInventoryView] = useState<'table' | 'grid'>('table');
   const [inventoryOrder, setInventoryOrder] = useState<OrdenInventario>('recomendado');
   const [walletOpen, setWalletOpen] = useState(false);
@@ -277,25 +284,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         </div>
 
         <nav className="nav-links">
-          <button className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`} onClick={() => { setActiveView('inventory'); closeSidebarOnMobile(); }}>
-            <Database size={18} />
-            Inventario General
-          </button>
-
-          <button className="nav-item" onClick={() => { setEditingProduct(null); setIsManualOpen(true); closeSidebarOnMobile(); }}>
-            <PlusCircle size={18} />
-            Carga Manual 1:1
-          </button>
-
-          {/* Entrar por el menú siempre abre en "Nueva carga": la pestaña de historial queda
-              reservada para el "Ver detalle" del aviso, que es el único que sabe qué carga mirar. */}
           <button
-            className={`nav-item ${activeView === 'bulk' ? 'active' : ''}`}
-            onClick={() => { setBulkInitialTab('upload'); setExpressCargados(null); setActiveView('bulk'); closeSidebarOnMobile(); }}
+            className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`}
+            onClick={() => { setActiveView('inventory'); closeSidebarOnMobile(); }}
+            disabled={cargaOcupada}
+          >
+            <Database size={18} />
+            Inventario
+          </button>
+
+          <button
+            className={`nav-item ${activeView === 'bulk' && cargaVista === 'elegir' ? 'active' : ''}`}
+            onClick={() => { setCargaVista('elegir'); setCargaKey((k) => k + 1); setExpressCargados(null); setActiveView('bulk'); closeSidebarOnMobile(); }}
+            disabled={cargaOcupada}
           >
             <UploadCloud size={18} />
-            Carga Masiva
+            Cargar inventario
           </button>
+
+          <button
+            className={`nav-item ${activeView === 'bulk' && cargaVista === 'historial' ? 'active' : ''}`}
+            onClick={() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); closeSidebarOnMobile(); }}
+            disabled={cargaOcupada}
+          >
+            <History size={18} />
+            Historial de cargas
+          </button>
+          {cargaOcupada && (
+            <p className="nav-ocupado" role="status">Espera a que termine la carga para cambiar de pantalla.</p>
+          )}
         </nav>
 
         <div className="sidebar-footer">
@@ -405,7 +422,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
                 type="button"
                 className="btn btn-secondary"
                 style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', height: 'auto' }}
-                onClick={() => { setBulkInitialTab('history'); setActiveView('bulk'); setExpressCargados(null); }}
+                onClick={() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); setExpressCargados(null); }}
               >
                 Ver detalle
               </button>
@@ -422,13 +439,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         )}
 
         {activeView === 'bulk' ? (
-          <BulkUpload
+          <CargaInventario
+            key={cargaKey}
             isOpen={activeView === 'bulk'}
             onClose={() => setActiveView('inventory')}
             onUploadSuccess={fetchProducts}
             onExpressSuccess={(cargados) => { setActiveView('inventory'); setExpressCargados(cargados); }}
-            initialTab={bulkInitialTab}
+            onAbrirUnoAUno={() => { setEditingProduct(null); setIsManualOpen(true); }}
+            vista={cargaVista}
             embedded
+            onBusyChange={setCargaOcupada}
           />
         ) : (
 

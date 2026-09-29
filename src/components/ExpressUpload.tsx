@@ -1,10 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, Eye, FileSpreadsheet, FileText, Package, UploadCloud, XCircle, Zap } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Download, FileSpreadsheet, UploadCloud, XCircle, Zap } from 'lucide-react';
 import { getAllProducts, savePreciosStockBatch } from '../db';
-import { apiFetch } from '../utils/apiFetch';
-import { API_BASE_URL } from '../utils/imageHelper';
-import { getStoredSession } from '../utils/session';
-import { encId } from '../utils/url';
 import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from '../utils/fileValidation';
 import { sanitizeAoaForExport } from '../utils/xlsxSafety';
 import {
@@ -31,38 +27,9 @@ interface ExpressUploadProps {
   onUploadSuccess: () => void;
   /** Todos los cambios se guardaron y no quedó ninguna fila fuera. */
   onExpressSuccess?: (cargados: number) => void;
-  onSwitchToFull: () => void;
-  initialTab?: 'upload' | 'history';
+  /** Vuelve a "¿Qué tienes?" (Fase 8). */
+  onVolver: () => void;
   embedded?: boolean;
-}
-
-interface FilaResultado {
-  fila: number;
-  sku: string;
-  estado: 'OK' | 'ADVERTENCIA' | 'ERROR';
-  mensajes: string[];
-}
-
-interface CargaDetalle {
-  totalFilas: number;
-  productosCargados: number;
-  productosConError: number;
-  filas: FilaResultado[];
-}
-
-interface CargaResumen {
-  id: number;
-  estado: string;
-  totalFilas: number;
-  productosCargados: number;
-  productosConError: number;
-  createdAt: string;
-}
-
-interface HistorialResponse {
-  content: CargaResumen[];
-  totalPages: number;
-  currentPage: number;
 }
 
 type Paso = 'archivo' | 'confirmar' | 'resultado';
@@ -143,11 +110,9 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
   onClose,
   onUploadSuccess,
   onExpressSuccess,
-  onSwitchToFull,
-  initialTab = 'upload',
+  onVolver,
   embedded = false,
 }) => {
-  const [activeTab, setActiveTab] = useState<'upload' | 'history'>(initialTab);
   const [paso, setPaso] = useState<Paso>('archivo');
   const [archivoNombre, setArchivoNombre] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -157,41 +122,6 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
   const [resultado, setResultado] = useState<{ guardados: number; fallidos: FilaRetenida[] } | null>(null);
   const enviandoRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const [historial, setHistorial] = useState<HistorialResponse | null>(null);
-  const [historialPage, setHistorialPage] = useState(0);
-  const [historialError, setHistorialError] = useState<string | null>(null);
-  const [historialLoading, setHistorialLoading] = useState(false);
-  const [detalleId, setDetalleId] = useState<number | null>(null);
-  const [detalle, setDetalle] = useState<CargaDetalle | null>(null);
-
-  useEffect(() => {
-    if (!isOpen || activeTab !== 'history') return;
-    const session = getStoredSession();
-    if (!session?.sellerId || !session?.token) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHistorialError('No encontramos tu sesión. Vuelve a iniciar sesión.');
-      return;
-    }
-    let cancelado = false;
-    setHistorialLoading(true);
-    setHistorialError(null);
-    apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargas?page=${historialPage}&size=20&modo=EXPRESS`, {
-      headers: { Authorization: `Bearer ${session.token}` },
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('No se pudo cargar el historial.');
-        const data: HistorialResponse = await response.json();
-        if (!cancelado) setHistorial(data);
-      })
-      .catch((err) => {
-        if (!cancelado) setHistorialError(err instanceof Error ? err.message : 'No se pudo cargar el historial.');
-      })
-      .finally(() => {
-        if (!cancelado) setHistorialLoading(false);
-      });
-    return () => { cancelado = true; };
-  }, [isOpen, activeTab, historialPage]);
 
   if (!isOpen) return null;
 
@@ -298,36 +228,11 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
     }
   };
 
-  const verDetalle = async (id: number) => {
-    const session = getStoredSession();
-    if (!session?.sellerId || !session?.token) return;
-    setDetalleId(id);
-    setDetalle(null);
-    try {
-      const response = await apiFetch(
-        `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargas/${encId(id)}`,
-        { headers: { Authorization: `Bearer ${session.token}` } },
-      );
-      if (!response.ok) throw new Error('No se pudo abrir el detalle.');
-      setDetalle(await response.json());
-    } catch (err) {
-      setDetalleId(null);
-      setHistorialError(err instanceof Error ? err.message : 'No se pudo abrir el detalle.');
-    }
-  };
-
   const renderArchivo = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem', maxWidth: '760px' }}>
-      <div className="bulk-mode-selector">
-        <button type="button" className="bulk-mode-tab" onClick={onSwitchToFull} disabled={leyendo}>
-          <Package size={15} />
-          <span>Publicación Completa</span>
-        </button>
-        <button type="button" className="bulk-mode-tab active-express" disabled>
-          <Zap size={15} />
-          <span>{NOMBRE_EXPRESS}</span>
-        </button>
-      </div>
+      <button type="button" className="btn btn-secondary" style={{ ...TEXTO, alignSelf: 'flex-start', minHeight: '44px', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }} onClick={onVolver} disabled={leyendo}>
+        <ArrowLeft size={16} /> Elegir otra forma de cargar
+      </button>
 
       <div>
         <p style={{ ...TEXTO, margin: 0 }}>
@@ -488,113 +393,6 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
     );
   };
 
-  const renderHistorial = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div>
-        <h4 style={{ fontSize: '1.1rem', margin: 0 }}>Cambios de precios y stock anteriores</h4>
-        <p style={{ ...TEXTO_SUAVE, margin: '0.3rem 0 0' }}>Los hechos desde cualquier computador o desde la app.</p>
-      </div>
-      {historialError && (
-        <p style={{ ...TEXTO, color: 'hsl(var(--danger))', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-          <AlertTriangle size={16} /> {historialError}
-        </p>
-      )}
-      {historialLoading && !historial && <p style={TEXTO_SUAVE}>Cargando…</p>}
-      {historial && historial.content.length === 0 && (
-        <div style={{ border: '1px dashed var(--border-color)', borderRadius: '14px', padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-          <FileText size={30} style={{ opacity: 0.6 }} />
-          <p style={{ ...TEXTO, margin: '0.5rem 0 0' }}>Todavía no has cambiado precios ni stock con un archivo.</p>
-        </div>
-      )}
-      {historial && historial.content.length > 0 && (
-        <div className="log-table-container" style={{ marginTop: 0 }}>
-          <table className="log-table">
-            <thead>
-              <tr>
-                <th style={CELDA}>Fecha</th>
-                <th style={CELDA}>Repuestos</th>
-                <th style={CELDA}>Guardados</th>
-                <th style={CELDA}>Con problema</th>
-                <th style={CELDA}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {historial.content.map((item) => (
-                <tr key={item.id}>
-                  <td style={CELDA}>{new Date(item.createdAt).toLocaleString('es-CL')}</td>
-                  <td style={CELDA}>{item.totalFilas}</td>
-                  <td style={{ ...CELDA, color: 'hsl(var(--success))', fontWeight: 700 }}>{item.productosCargados}</td>
-                  <td style={{ ...CELDA, color: item.productosConError > 0 ? 'hsl(var(--danger))' : undefined, fontWeight: 700 }}>{item.productosConError}</td>
-                  <td style={CELDA}>
-                    <button type="button" className="btn btn-secondary" style={{ ...TEXTO, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }} onClick={() => verDetalle(item.id)}>
-                      <Eye size={15} /> Ver detalle
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {historial && historial.totalPages > 1 && (
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', justifyContent: 'center' }}>
-          <button type="button" className="btn btn-secondary" style={TEXTO} onClick={() => setHistorialPage((p) => Math.max(0, p - 1))} disabled={historialPage === 0 || historialLoading}>Anterior</button>
-          <span style={TEXTO_SUAVE}>Página {historial.currentPage + 1} de {historial.totalPages}</span>
-          <button type="button" className="btn btn-secondary" style={TEXTO} onClick={() => setHistorialPage((p) => Math.min(historial.totalPages - 1, p + 1))} disabled={historialPage >= historial.totalPages - 1 || historialLoading}>Siguiente</button>
-        </div>
-      )}
-      {detalleId !== null && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Detalle del cambio de precios y stock">
-          <div className="modal-content" style={{ maxWidth: '760px', width: '95%', maxHeight: '85vh' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.1rem' }}>Detalle</h3>
-              <button className="btn-icon" onClick={() => setDetalleId(null)} aria-label="Cerrar detalle"><XCircle size={20} /></button>
-            </div>
-            <div className="modal-body">
-              {!detalle && <p style={TEXTO_SUAVE}>Cargando…</p>}
-              {detalle && (
-                <>
-                  <p style={TEXTO}>
-                    {detalle.productosCargados === 1 ? 'Se guardó 1 cambio' : `Se guardaron ${detalle.productosCargados} cambios`}
-                    {detalle.productosConError > 0 && ` y ${detalle.productosConError} no se pudieron guardar`}.
-                  </p>
-                  {detalle.filas.filter((f) => f.estado !== 'OK').length > 0 && (
-                    <ul style={{ paddingLeft: '1.2rem' }}>
-                      {detalle.filas.filter((f) => f.estado !== 'OK').map((f) => (
-                        <li key={`${f.fila}-${f.sku}`} style={{ ...TEXTO, marginBottom: '0.25rem' }}>
-                          <strong>{f.sku}</strong>: {f.mensajes.join(' ')}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const pestana = (tab: 'upload' | 'history', etiqueta: string) => (
-    <button
-      type="button"
-      onClick={() => setActiveTab(tab)}
-      style={{
-        border: 'none',
-        borderBottom: activeTab === tab ? '3px solid hsl(var(--primary))' : '3px solid transparent',
-        background: 'transparent',
-        color: activeTab === tab ? 'hsl(var(--primary))' : 'var(--text-secondary)',
-        fontWeight: 800,
-        fontSize: '0.95rem',
-        padding: '0.65rem 0.85rem',
-        cursor: 'pointer',
-      }}
-    >
-      {etiqueta}
-    </button>
-  );
-
   return (
     <div className={embedded ? 'bulk-upload-page' : 'modal-overlay'}>
       <div
@@ -617,11 +415,6 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
           )}
         </div>
 
-        <div className="bulk-upload-tabs">
-          {pestana('upload', 'Subir archivo')}
-          {pestana('history', 'Cambios anteriores')}
-        </div>
-
         <div className="modal-body">
           {error && (
             <div role="alert" style={{ ...TEXTO, background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.75rem 1rem', borderRadius: '10px', display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -629,9 +422,7 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
               {error}
             </div>
           )}
-          {activeTab === 'history'
-            ? renderHistorial()
-            : paso === 'archivo'
+          {paso === 'archivo'
               ? renderArchivo()
               : paso === 'confirmar'
                 ? renderConfirmar()

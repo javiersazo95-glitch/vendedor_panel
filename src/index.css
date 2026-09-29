@@ -4781,3 +4781,114 @@ h1, h2, h3, h4, h5, h6 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------------------------------------
+   Fase 8: "Cargar inventario" con una pregunta, "¿Qué tienes?". Tarjetas grandes, una por
+   camino, con la misma paleta del panel.
+   ------------------------------------------------------------------------------------------ */
+.carga-inventario {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.5rem;
+}
+
+.carga-inventario-titulo {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #1e293b;
+}
+
+.carga-inventario-sub {
+  margin: 0 0 1rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.carga-inventario-opciones {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.carga-inventario-opcion {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  min-height: 120px;
+  padding: 1.25rem;
+  border: 1px solid #dfe8f3;
+  border-radius: 14px;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.carga-inventario-opcion:hover,
+.carga-inventario-opcion:focus-visible {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  outline: none;
+}
+
+.carga-inventario-icono {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+
+.carga-inventario-texto {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.carga-inventario-texto strong {
+  font-size: 1.1rem;
+  color: #1e293b;
+}
+
+.carga-inventario-texto span {
+  font-size: 0.95rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.tpl-choice-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-start;
+  min-height: 44px;
+  margin-top: 0.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.nav-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nav-ocupado {
+  margin: 0.5rem 0.75rem 0;
+  color: #b45309;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}

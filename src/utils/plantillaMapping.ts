@@ -228,7 +228,7 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     label: 'Tipo de precio',
     seccion: 'precio_condicion',
     descripcion: 'Indica si el precio se muestra públicamente o si el cliente debe cotizarlo.',
-    ejemplo: 'MOSTRAR_PRECIO (precio visible) · SOLO_COTIZAR (a cotizar)',
+    ejemplo: 'Mostrar precio (precio visible) · Sólo cotizar (el comprador pide precio)',
     synonyms: ['tipo precio', 'modalidad precio', 'modalidad', 'cotizar'],
   },
   condicion: {
@@ -368,6 +368,24 @@ export function camposDesdeEsquema(esquema: EsquemaPlantilla): CampoMeta[] {
 
 /** Campos derivados del esquema de respaldo. Default de las funciones de este módulo. */
 export const PLANTILLA_CAMPOS: CampoMeta[] = camposDesdeEsquema(ESQUEMA_FALLBACK);
+
+/**
+ * Cómo se le muestra al vendedor un valor de lista del backend. Fase 8: "SOLO_COTIZAR" o
+ * "MOSTRAR_PRECIO" son el valor técnico que viaja en la plantilla, no un texto para leer.
+ * Sólo cambia lo que se ve; el valor elegido sigue siendo el del backend.
+ */
+const ETIQUETAS_VALOR: Record<string, string> = {
+  SOLO_COTIZAR: 'Sólo cotizar',
+  MOSTRAR_PRECIO: 'Mostrar precio',
+  ORIGINAL: 'Original',
+  ALTERNATIVO: 'Alternativo',
+  SI: 'Sí',
+  NO: 'No',
+};
+
+export function etiquetaValor(valor: string): string {
+  return ETIQUETAS_VALOR[String(valor ?? '').toUpperCase()] ?? valor;
+}
 
 const UNIVERSAL_TRUTHY = new Set(['si', 'sí', 'true', '1', 'universal', 'x', 'yes']);
 

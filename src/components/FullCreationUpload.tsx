@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, FileText, XCircle, CheckCircle2, AlertTriangle, Zap, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Eye, Wand2 } from 'lucide-react';
+import { ArrowLeft, UploadCloud, FileSpreadsheet, XCircle, CheckCircle2, AlertTriangle, Package, RefreshCw, Download, ImageUp, FolderOpen, Play, X, Lock, Wand2 } from 'lucide-react';
 import {
   apiFetch,
   BULK_EXCEL_VALIDATION_TIMEOUT_MS,
@@ -11,6 +11,7 @@ import { getStoredSession } from '../utils/session';
 import { encId } from '../utils/url';
 import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, pareceExcelValido, MENSAJE_EXCEL_INVALIDO } from '../utils/fileValidation';
 import { ordenarFilasPorEstado } from '../utils/cargaResultado';
+import { construirExcelSoloValidos } from '../utils/excelSoloValidos';
 import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 import { descargarFotos, dominiosDeFotos, esUrlDeImagen } from '../utils/plantillaFotos';
@@ -18,7 +19,6 @@ import { conReintento429 } from '../utils/reintento429';
 import { useMapeosGuardados } from '../utils/plantillaMapeos';
 import { sanitizeAoaForExport, sanitizeRowsForExport } from '../utils/xlsxSafety';
 import { comprimirImagen } from '../utils/imageCompression';
-import { NOMBRE_EXPRESS } from '../utils/expressPreciosStock';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -30,7 +30,15 @@ interface FullCreationUploadProps {
   onClose: () => void;
   onUploadSuccess: () => void;
   embedded?: boolean;
-  onSwitchToExpress: () => void;
+  /**
+   * Fase 8: por dónde entró el vendedor en "¿Qué tienes?". "mapper" abre directo el adaptador
+   * de su propio Excel; "plantilla" es la plantilla oficial de RepuesTop.
+   */
+  inicio?: 'plantilla' | 'mapper';
+  /** Vuelve a "¿Qué tienes?". */
+  onVolver: () => void;
+  /** Avisa mientras se revisa, se publica o se suben fotos, para que el menú no deje salir. */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 interface FilaResultado {
@@ -61,28 +69,30 @@ interface CargaExcelResponse {
   // 'inventario' (hoy: filas de la hoja 'compatibilidades' con un código que no existe).
   avisosGenerales?: string[];
   filas: FilaResultado[];
-}
-
-interface CargaResumen {
-  id: number;
-  archivoNombre: string | null;
-  estado: string;
-  totalFilas: number;
-  productosCargados: number;
-  productosConError: number;
-  productosConAdvertencia: number;
-  createdAt: string;
-}
-
-interface HistorialResponse {
-  content: CargaResumen[];
-  totalElements: number;
-  totalPages: number;
-  currentPage: number;
+  /** Fase 8: el mismo archivo ya se había cargado; el backend devuelve esa carga sin repetirla. */
+  archivoRepetido?: boolean;
+  archivoYaCargadoEl?: string | null;
 }
 
 const POLL_INTERVAL_MS = 2000;
 const JOB_ESTADOS_EN_CURSO = new Set(['PENDIENTE', 'PROCESANDO']);
+/** Fase 8: una carga grande no se espera para siempre; pasado esto se manda al historial. */
+const POLL_TOPE_MS = 30 * 60 * 1000;
+const NO_PREGUNTAR_FOTOS_KEY = 'repuestop_no_preguntar_fotos';
+
+class CargaSigueProcesandoError extends Error {
+  constructor() {
+    super('Tu archivo se sigue procesando. Puedes seguir usando el panel y revisar el resultado en "Historial de cargas" en unos minutos.');
+  }
+}
+
+const leerNoPreguntarFotos = () => {
+  try {
+    return localStorage.getItem(NO_PREGUNTAR_FOTOS_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -126,69 +136,20 @@ function recalcularAgregados(base: CargaExcelResponse, filas: FilaResultado[]): 
   return { ...base, filas, productosCargados, productosConAdvertencia, productosConError };
 }
 
-/**
- * Reconstruye el Excel original dejando solo las filas indicadas (las que pasaron el
- * analisis), preservando el orden y el contenido tal cual, mas la hoja opcional
- * "compatibilidades" filtrada a los SKUs que sobreviven. Es el mismo mecanismo que ya usa
- * exportarErrores() para reconstruir un Excel con datos reales, aplicado al revés: en vez
- * de quedarse con los errores, se queda con lo valido para no reenviar filas que ya
- * sabemos que van a fallar.
- */
-async function construirExcelSoloValidos(dataFile: File, filasASubir: number[]): Promise<File> {
-  const XLSX = await import('xlsx');
-  const buffer = await dataFile.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
-
-  const mainSheetName = workbook.SheetNames[0];
-  const mainSheet = workbook.Sheets[mainSheetName];
-  const mainRows = XLSX.utils.sheet_to_json<unknown[]>(mainSheet, { header: 1, defval: '' });
-  const headerRow = (mainRows[0] as unknown[]) ?? [];
-  const filasASubirSet = new Set(filasASubir);
-  const filasValidas = mainRows.filter((_, index) => filasASubirSet.has(index + 1));
-
-  const nuevoWorkbook = XLSX.utils.book_new();
-  const nuevaHojaPrincipal = XLSX.utils.aoa_to_sheet([headerRow, ...filasValidas]);
-  XLSX.utils.book_append_sheet(nuevoWorkbook, nuevaHojaPrincipal, mainSheetName || 'inventario');
-
-  const compatSheet = workbook.Sheets['compatibilidades'];
-  if (compatSheet) {
-    const skuColIndex = (headerRow as string[]).indexOf('sku_proveedor');
-    const skusValidos = new Set(
-      filasValidas.map((row) => String((row as unknown[])[skuColIndex] ?? '').trim().toUpperCase())
-    );
-    const compatRows = XLSX.utils.sheet_to_json<unknown[]>(compatSheet, { header: 1, defval: '' });
-    const compatHeader = (compatRows[0] as unknown[]) ?? [];
-    const compatSkuIndex = 0; // sku_proveedor es siempre la primera columna de esta hoja
-    const compatFiltradas = compatRows
-      .slice(1)
-      .filter((row) => skusValidos.has(String((row as unknown[])[compatSkuIndex] ?? '').trim().toUpperCase()));
-    const nuevaHojaCompat = XLSX.utils.aoa_to_sheet([compatHeader, ...compatFiltradas]);
-    XLSX.utils.book_append_sheet(nuevoWorkbook, nuevaHojaCompat, 'compatibilidades');
-  }
-
-  const wbout = XLSX.write(nuevoWorkbook, { bookType: 'xlsx', type: 'array' });
-  return new File([wbout], dataFile.name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-}
-
-const ESTADO_BADGE: Record<string, { bg: string; color: string; label: string }> = {
-  COMPLETADA: { bg: 'var(--success-bg)', color: 'hsl(var(--success))', label: 'Completada' },
-  CON_ERRORES: { bg: 'var(--warning-bg)', color: 'hsl(var(--warning))', label: 'Con errores' },
-  ERROR: { bg: 'var(--danger-bg)', color: 'hsl(var(--danger))', label: 'Error' },
-  PROCESANDO: { bg: 'rgba(99, 102, 241, 0.1)', color: 'hsl(var(--primary))', label: 'Procesando' },
-  PENDIENTE: { bg: 'rgba(99, 102, 241, 0.1)', color: 'hsl(var(--primary))', label: 'Pendiente' }
-};
 
 export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   isOpen,
   onClose,
   onUploadSuccess,
   embedded = false,
-  onSwitchToExpress
+  inicio = 'plantilla',
+  onVolver,
+  onBusyChange,
 }) => {
   const [dataFile, setDataFile] = useState<File | null>(null);
   // Flujo "Adaptar mi plantilla": el vendedor mapea su propio Excel y genera el archivo
   // oficial en memoria, que luego entra al mismo dry-run / carga.
-  const [showMapper, setShowMapper] = useState(false);
+  const [showMapper, setShowMapper] = useState(inicio === 'mapper');
   const [dataFromMapper, setDataFromMapper] = useState(false);
   const [validating, setValidating] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -199,14 +160,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
-  const [historial, setHistorial] = useState<HistorialResponse | null>(null);
-  const [historialLoading, setHistorialLoading] = useState(false);
-  const [historialPage, setHistorialPage] = useState(0);
-  const [historialError, setHistorialError] = useState<string | null>(null);
-  const [selectedCargaId, setSelectedCargaId] = useState<number | null>(null);
-  const [selectedCarga, setSelectedCarga] = useState<CargaExcelResponse | null>(null);
-  const [selectedCargaLoading, setSelectedCargaLoading] = useState(false);
+  // Fase 8: sin errores en la revisión se pregunta una sola vez "¿Publicar?"; el archivo que ya
+  // se había cargado se dice con su fecha; la carga en vuelo no se puede lanzar dos veces.
+  const [confirmarPublicar, setConfirmarPublicar] = useState(false);
+  const [archivoRepetidoEl, setArchivoRepetidoEl] = useState<string | null>(null);
+  const [noPreguntarFotos, setNoPreguntarFotos] = useState(leerNoPreguntarFotos);
+  const [arrastrando, setArrastrando] = useState(false);
+  const cargandoRef = useRef(false);
 
   // ---- Fase 15: fotos masivas (Fase B, despues de que el Excel ya creo los productos) ----
   const [photoZipFile, setPhotoZipFile] = useState<File | null>(null);
@@ -266,9 +226,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   // solo) de "el vendedor toco 'Elegir fotos' y selecciono una imagen a mano" (NO debe
   // subir solo -- puede estar eligiendo varias, subir en el primer clic le corta el paso).
   const pendingAutoUploadRef = useRef(false);
-  // Evita volver a disparar la descarga automatica del Excel de errores para el mismo
-  // resultado (ver efecto mas abajo, junto a exportarErrores).
-  const autoErrorDownloadRef = useRef(false);
 
   // El contrato de la plantilla (columnas, obligatorias, catalogos y version) se pide al
   // backend al abrir la carga masiva. Si no responde se sigue con el contrato de respaldo
@@ -278,36 +235,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const { mapeos: mapeosGuardados, guardar: guardarMapeo } = useMapeosGuardados(isOpen);
 
 
-
-  useEffect(() => {
-    if (!isOpen || activeTab !== 'history') return;
-    const session = getStoredSession();
-    if (!session?.sellerId || !session?.token) {
-      setHistorialError('Sesión requerida: no encontramos un proveedor activo.');
-      return;
-    }
-    let cancelado = false;
-    setHistorialLoading(true);
-    setHistorialError(null);
-    apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargas?page=${historialPage}&size=20&modo=FULL_CREATION`, {
-      headers: { 'Authorization': `Bearer ${session.token}` }
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error('No se pudo cargar el historial de cargas.');
-        }
-        const data: HistorialResponse = await response.json();
-        if (!cancelado) setHistorial(data);
-      })
-      .catch((err) => {
-        if (cancelado) return;
-        setHistorialError(err instanceof Error ? err.message : 'No se pudo cargar el historial de cargas.');
-      })
-      .finally(() => {
-        if (!cancelado) setHistorialLoading(false);
-      });
-    return () => { cancelado = true; };
-  }, [isOpen, activeTab, historialPage]);
 
   // Filas que crearon o actualizaron un producto real (con productoId): son las unicas
   // candidatas a recibir foto. simulacion (preview) nunca trae productoId (Fase 15,
@@ -430,6 +357,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, availableImages]);
+
+  // Fase 8: el menú lateral no deja salir mientras se revisa, se publica o se suben fotos.
+  const ocupado = validating || uploading || photoUploading || descargandoFotos !== null;
+  useEffect(() => {
+    onBusyChange?.(ocupado);
+  }, [ocupado, onBusyChange]);
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
 
   const requireSession = () => {
     const session = getStoredSession();
@@ -579,7 +513,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       }
       setActionProgress(100);
       const data: CargaExcelResponse = await response.json();
-      setPreview(marcarSkuDuplicados(data));
+      const revisado = marcarSkuDuplicados(data);
+      setPreview(revisado);
+      // Fase 8: si no hay nada que corregir, la única pregunta que queda es "¿Publicar?".
+      if (revisado.productosConError === 0 && revisado.productosCargados > 0) {
+        setConfirmarPublicar(true);
+      }
     } catch (err) {
       clearInterval(progressInterval);
       setActionProgress(0);
@@ -598,8 +537,11 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   const pollCarga = async (sellerId: string, token: string, jobId: number): Promise<CargaExcelResponse> => {
     // El backend procesa en background los archivos que superan el umbral sincrono
     // (Fase 8) y devuelve 202 con el jobId de inmediato; acá se hace polling hasta
-    // que el estado deje de ser PENDIENTE/PROCESANDO.
+    // que el estado deje de ser PENDIENTE/PROCESANDO. Fase 8: con un tope, para no dejar al
+    // vendedor mirando una barra para siempre si el procesamiento se demora.
+    const limite = Date.now() + POLL_TOPE_MS;
     while (true) {
+      if (Date.now() > limite) throw new CargaSigueProcesandoError();
       const response = await apiFetch(
         `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/excel/cargas/${encId(jobId)}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
@@ -638,7 +580,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
    * producto por producto.
    */
   const pedirAnalisis = () => {
-    if (!tieneFotosPreparadas) {
+    if (!tieneFotosPreparadas && !noPreguntarFotos) {
       setAvisoSinFotos(true);
       return;
     }
@@ -646,7 +588,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   };
 
   const handleIniciarCarga = async () => {
-    if (!dataFile || !preview) return;
+    setConfirmarPublicar(false);
+    // Fase 8: el botón se deshabilita con el estado, pero un doble clic llega antes del render.
+    if (!dataFile || !preview || cargandoRef.current) return;
     const session = requireSession();
     if (!session) return;
 
@@ -657,11 +601,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       return;
     }
 
+    cargandoRef.current = true;
     setUploading(true);
     setActionProgress(10);
     setErrorMsg(null);
     setResult(null);
     setPollingStatus(null);
+    setArchivoRepetidoEl(null);
 
     const uploadProgressInterval = setInterval(() => {
       setActionProgress((prev) => {
@@ -680,7 +626,10 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       formData.append('file', archivoASubir);
       const response = await apiFetch(
         `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargar`,
-        { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
+        { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData },
+        // Fase 8: el mismo tiempo que la revisión; antes quedaba con el corto por defecto y un
+        // archivo que tardaba en revisarse podía cortarse al publicarlo.
+        BULK_EXCEL_VALIDATION_TIMEOUT_MS,
       );
       clearInterval(uploadProgressInterval);
       if (!response.ok) {
@@ -689,6 +638,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         return;
       }
       let data: CargaExcelResponse = await response.json();
+      if (data.archivoRepetido) {
+        setArchivoRepetidoEl(data.archivoYaCargadoEl ?? '');
+      }
       if (data.jobId != null && data.estado && JOB_ESTADOS_EN_CURSO.has(data.estado)) {
         setPollingStatus(`Procesando ${data.filasProcesadas ?? 0} de ${data.totalFilas} filas...`);
         data = await pollCarga(session.sellerId, session.token, data.jobId);
@@ -715,7 +667,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     } catch (err) {
       clearInterval(uploadProgressInterval);
       setActionProgress(0);
-      if (err instanceof SessionExpiredError || err instanceof RequestTimeoutError) {
+      if (err instanceof SessionExpiredError || err instanceof RequestTimeoutError || err instanceof CargaSigueProcesandoError) {
         setErrorMsg(err.message);
       } else {
         console.error('Error al cargar Excel:', err);
@@ -723,6 +675,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       }
     } finally {
       clearInterval(uploadProgressInterval);
+      cargandoRef.current = false;
       setUploading(false);
       setPollingStatus(null);
     }
@@ -1041,35 +994,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
 
   const busy = validating || uploading;
 
-  const verDetalleCarga = async (cargaId: number) => {
-    const session = requireSession();
-    if (!session) return;
-    setSelectedCargaId(cargaId);
-    setSelectedCarga(null);
-    setSelectedCargaLoading(true);
-    try {
-      const response = await apiFetch(
-        `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargas/${encId(cargaId)}`,
-        { headers: { 'Authorization': `Bearer ${session.token}` } }
-      );
-      if (!response.ok) {
-        setHistorialError(await readErrorMessage(response, 'No se pudo cargar el detalle de la carga.'));
-        return;
-      }
-      const data: CargaExcelResponse = await response.json();
-      setSelectedCarga(data);
-    } catch (err) {
-      setHistorialError(err instanceof Error ? err.message : 'No se pudo cargar el detalle de la carga.');
-    } finally {
-      setSelectedCargaLoading(false);
-    }
-  };
-
-  const cerrarDetalleCarga = () => {
-    setSelectedCargaId(null);
-    setSelectedCarga(null);
-  };
-
   /**
    * Si `sourceFile` es el mismo archivo que se subio (no aplica al detalle del
    * historial, donde no tenemos los bytes originales), reconstruye un Excel con
@@ -1138,24 +1062,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
-
-  /**
-   * El vendedor tiene que enterarse de que hay filas con error, no solo verlo en un
-   * badge que puede pasar de largo -- se descarga el Excel de errores solo (nunca el
-   * completo) automaticamente apenas llega el resultado de una carga real, sin que tenga
-   * que acordarse de tocar "Exportar errores a Excel". El boton sigue ahi por si el
-   * navegador bloquea la descarga automatica o quiere volver a bajarlo despues.
-   */
-  useEffect(() => {
-    if (!result) {
-      autoErrorDownloadRef.current = false;
-      return;
-    }
-    if (autoErrorDownloadRef.current || result.productosConError === 0) return;
-    autoErrorDownloadRef.current = true;
-    exportarErrores(result, dataFile);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result]);
 
   const renderResumen = (data: CargaExcelResponse, titulo: string, permitirExportarErrores = false, sourceFile: File | null = null) => (
     // flex:1/minHeight:0 son no-op salvo que el padre sea flex (pasa en el panel derecho de
@@ -1266,135 +1172,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     </div>
   );
 
-  const renderHistorial = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', minHeight: '520px', width: '100%', flex: 1 }}>
-      <div>
-        <h3 style={{ fontSize: '1.05rem', margin: 0 }}>Historial de cargas</h3>
-        <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-          Cargas de Publicación Completa hechas desde cualquier dispositivo.
-        </p>
-      </div>
-
-      {historialError && (
-        <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <AlertTriangle size={15} />
-          {historialError}
-        </div>
-      )}
-
-      {historialLoading && !historial && (
-        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Cargando historial…</p>
-      )}
-
-      {historial && historial.content.length === 0 && (
-        <div style={{ border: '1px dashed var(--border-color)', borderRadius: '14px', minHeight: '320px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
-          <div>
-            <FileText size={34} style={{ marginBottom: '0.65rem', opacity: 0.6 }} />
-            <p style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Aún no hay cargas registradas</p>
-            <p style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Cuando completes una carga masiva, aparecerá aquí.</p>
-          </div>
-        </div>
-      )}
-
-      {historial && historial.content.length > 0 && (
-        <>
-          <div className="log-table-container" style={{ marginTop: 0, flex: 1, maxHeight: 'calc(100vh - 360px)', minHeight: '440px' }}>
-            <table className="log-table">
-              <thead>
-                <tr>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>ID carga</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Archivo</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fecha</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Registros</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Éxito</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Fallidos</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Estado</th>
-                  <th style={{ padding: '0.65rem 0.75rem', fontSize: '0.72rem' }}>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {historial.content.map((item) => {
-                  const badge = ESTADO_BADGE[item.estado] ?? { bg: 'var(--border-color)', color: 'var(--text-secondary)', label: item.estado };
-                  return (
-                    <tr key={item.id}>
-                      <td style={{ padding: '0.65rem 0.75rem' }}>
-                        <code style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', fontWeight: 700 }}>{item.id}</code>
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>{item.archivoNombre ?? '—'}</td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                        {new Date(item.createdAt).toLocaleString('es-CL')}
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', fontWeight: 700 }}>{item.totalFilas}</td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--success))', fontWeight: 800 }}>{item.productosCargados}</td>
-                      <td style={{ padding: '0.65rem 0.75rem', fontSize: '0.78rem', color: 'hsl(var(--danger))', fontWeight: 800 }}>{item.productosConError}</td>
-                      <td style={{ padding: '0.65rem 0.75rem' }}>
-                        <span className="log-status-badge" style={{ backgroundColor: badge.bg, color: badge.color, padding: '0.2rem 0.45rem', fontSize: '0.66rem' }}>
-                          {badge.label}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.65rem 0.75rem' }}>
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                          onClick={() => verDetalleCarga(item.id)}
-                        >
-                          <Eye size={13} />
-                          Ver detalle
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {historial.totalPages > 1 && (
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', justifyContent: 'center' }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
-                onClick={() => setHistorialPage((p) => Math.max(0, p - 1))}
-                disabled={historialPage === 0 || historialLoading}
-              >
-                Anterior
-              </button>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                Página {historial.currentPage + 1} de {historial.totalPages}
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
-                onClick={() => setHistorialPage((p) => Math.min(historial.totalPages - 1, p + 1))}
-                disabled={historialPage >= historial.totalPages - 1 || historialLoading}
-              >
-                Siguiente
-              </button>
-            </div>
-          )}
-        </>
-      )}
-
-      {selectedCargaId !== null && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Detalle de carga">
-          <div className="modal-content" style={{ maxWidth: '900px', width: '95%', maxHeight: '85vh' }}>
-            <div className="modal-header">
-              <h3 style={{ fontSize: '1.05rem' }}>Detalle de la carga #{selectedCargaId}</h3>
-              <button className="btn-icon" onClick={cerrarDetalleCarga} aria-label="Cerrar detalle de carga"><XCircle size={19} /></button>
-            </div>
-            <div className="modal-body">
-              {selectedCargaLoading && <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Cargando detalle…</p>}
-              {!selectedCargaLoading && selectedCarga && renderResumen(selectedCarga, 'Detalle de la carga', true)}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
   if (!isOpen) return null;
 
   return (
@@ -1407,50 +1184,19 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           : { maxWidth: '1000px', width: '95%', maxHeight: '92vh' }
         }
       >
-        {activeTab === 'upload' && !result && !showMapper && (
+        {!result && !showMapper && (
           <section className="bulk-purpose-panel">
             <div className="bulk-purpose-head">
               <div className="bulk-purpose-icon"><UploadCloud size={20} /></div>
               <div>
-                <h4>Para qué sirve la Carga Masiva</h4>
+                <h4>Cómo funciona</h4>
                 <p>
-                  Publica o actualiza <strong>cientos de repuestos a la vez</strong> desde un solo
-                  archivo Excel, en lugar de cargarlos uno por uno. Todo lo que subes aquí queda
-                  disponible <strong>al instante en la plataforma web y en la app móvil</strong>,
-                  con el mismo stock, precio y descripción en todos los canales.
+                  Descarga la plantilla, completa una fila por repuesto y súbela. Antes de publicar
+                  revisamos cada fila: si todo está bien, sólo te preguntamos <strong>¿Publicar?</strong>.
+                  Lo que publiques queda al instante en la web y en la app.
                 </p>
               </div>
             </div>
-
-            <div className="bulk-purpose-cols">
-              <div className="bulk-purpose-benefits">
-                <span className="bulk-purpose-label">Beneficios</span>
-                <ul>
-                  <li>Ahorras horas de trabajo: un archivo reemplaza cientos de formularios.</li>
-                  <li>Menos errores: la plantilla valida categorías, marcas y años antes de publicar.</li>
-                  <li>Catálogo consistente: mismos datos en la web y en la app, siempre sincronizados.</li>
-                  <li>Control total: revisas un análisis previo y nada se guarda hasta que confirmas.</li>
-                  <li>Historial completo: cada carga queda registrada y puedes descargar el detalle de errores.</li>
-                </ul>
-              </div>
-              <div className="bulk-purpose-steps">
-                <span className="bulk-purpose-label">Cómo se usa, paso a paso</span>
-                <ol>
-                  <li><strong>Descarga la plantilla oficial</strong> con el botón “Descargar Excel”.</li>
-                  <li><strong>Completa el Excel</strong>: una fila por repuesto, usando los desplegables de categoría, marca y compatibilidad.</li>
-                  <li><strong>Sube el archivo</strong> en el recuadro “DATOS (.XLSX)” (opcionalmente agrega una carpeta o ZIP con las fotos).</li>
-                  <li><strong>Analiza la plantilla</strong>: el panel revisa fila por fila y te muestra válidas, alertas y errores, sin guardar nada todavía.</li>
-                  <li><strong>Corrige si hace falta</strong> y vuelve a analizar, o continúa solo con las filas válidas.</li>
-                  <li><strong>Inicia la carga</strong>: los productos se publican en la web y la app. Los que no tengan foto quedan con una imagen genérica hasta que subas la real.</li>
-                  <li><strong>Revisa el resultado</strong> en “Historial de cargas” y descarga el reporte de errores si corresponde.</li>
-                </ol>
-              </div>
-            </div>
-
-            <p className="bulk-purpose-foot">
-              ¿Solo necesitas cambiar precios o stock de productos que ya existen? Usa
-              <strong> {NOMBRE_EXPRESS}</strong>: descargas tus productos, cambias los precios y el stock, y lo subes.
-            </p>
           </section>
         )}
 
@@ -1458,11 +1204,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           <div>
             <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#1e293b' }}>
               <UploadCloud size={20} style={{ color: '#2563eb' }} />
-              Cargar Inventario Masivo
+              {inicio === 'mapper' ? 'Publicar desde mi propio Excel' : 'Publicar con la plantilla de RepuesTop'}
             </h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-              Sube un Excel con la plantilla oficial. Los productos se crean con una foto genérica hasta que edites cada uno con su foto real.
-            </p>
           </div>
           {!embedded && (
             <button
@@ -1477,49 +1220,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           )}
         </div>
 
-        <div className="bulk-upload-tabs">
-          <button
-            type="button"
-            onClick={() => setActiveTab('upload')}
-            style={{
-              border: 'none',
-              borderBottom: activeTab === 'upload' ? '3px solid #2563eb' : '3px solid transparent',
-              background: 'transparent',
-              color: activeTab === 'upload' ? '#2563eb' : 'var(--text-secondary)',
-              fontWeight: 800,
-              fontSize: '0.82rem',
-              padding: '0.65rem 0.85rem',
-              cursor: 'pointer'
-            }}
-          >
-            Nueva carga
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('history')}
-            style={{
-              border: 'none',
-              borderBottom: activeTab === 'history' ? '3px solid #2563eb' : '3px solid transparent',
-              background: 'transparent',
-              color: activeTab === 'history' ? '#2563eb' : 'var(--text-secondary)',
-              fontWeight: 800,
-              fontSize: '0.82rem',
-              padding: '0.65rem 0.85rem',
-              cursor: 'pointer'
-            }}
-          >
-            Historial de cargas
-          </button>
-        </div>
-
         <div className="modal-body">
-          {activeTab === 'history' ? (
-            renderHistorial()
-          ) : (
+          {(
             <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, gap: '1.25rem' }}>
               {showMapper ? (
                 <PlantillaMapper
-                  onCancel={() => setShowMapper(false)}
+                  // Fase 8: si se entró directo por "Mi propio Excel", cancelar vuelve a "¿Qué tienes?".
+                  onCancel={() => (inicio === 'mapper' && !dataFile ? onVolver() : setShowMapper(false))}
                   onGenerated={handleMappedFileGenerated}
                   esquema={esquema}
                   mapeosGuardados={mapeosGuardados}
@@ -1530,16 +1237,15 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                 <div className="bulk-upload-split-layout">
                   {/* Left Panel: template download, dropzones, action buttons */}
                   <div className="bulk-upload-left-panel">
-                    <div className="bulk-mode-selector">
-                      <button type="button" className="bulk-mode-tab active-full" disabled>
-                        <Package size={15} />
-                        <span>Publicación Completa</span>
-                      </button>
-                      <button type="button" className="bulk-mode-tab" onClick={onSwitchToExpress} disabled={busy}>
-                        <Zap size={15} />
-                        <span>{NOMBRE_EXPRESS}</span>
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ alignSelf: 'flex-start', minHeight: '44px', fontSize: '0.95rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                      onClick={onVolver}
+                      disabled={busy}
+                    >
+                      <ArrowLeft size={16} /> Elegir otra forma de cargar
+                    </button>
 
                     {errorMsg && (
                       <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -1560,8 +1266,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                           </div>
                         </div>
                         <p className="mapper-generated-hint">
-                          Ahora pulsa <b>Analizar Carga</b> para revisar fila por fila y luego
-                          <b> Iniciar Carga</b> para publicar en la plataforma web y en la app.
+                          Ahora pulsa <b>Revisar mi archivo</b>. Si todo está bien, sólo te
+                          preguntamos si quieres publicar.
                         </p>
                         <div className="mapper-generated-actions">
                           <button type="button" className="btn btn-secondary" onClick={volverAMapear} disabled={busy}>
@@ -1575,13 +1281,11 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     ) : (
                     <>
                     <div className="tpl-choice">
-                      <h4 className="tpl-choice-title">¿Cómo quieres cargar tus datos?</h4>
-
                       <div className="tpl-choice-opt">
                         <div className="tpl-choice-opt-icon"><FileSpreadsheet size={15} /></div>
                         <div className="tpl-choice-opt-body">
-                          <b>Usa la plantilla oficial</b>
-                          <span>Excel del sistema con desplegables de categoría, subcategoría, marcas y vehículos.</span>
+                          <b>1. Descarga la plantilla</b>
+                          <span>Trae listas para elegir la categoría, las marcas y los vehículos.</span>
                           <button
                             type="button"
                             className="btn btn-secondary tpl-choice-btn"
@@ -1589,41 +1293,43 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                             disabled={busy}
                           >
                             <FileSpreadsheet size={13} style={{ color: '#107c41' }} />
-                            Descargar Excel
+                            Descargar la plantilla
                           </button>
                         </div>
                       </div>
-
-                      <div className="tpl-choice-sep"><span>o</span></div>
-
-                      <div className="tpl-choice-opt">
-                        <div className="tpl-choice-opt-icon violet"><Wand2 size={15} /></div>
-                        <div className="tpl-choice-opt-body">
-                          <b>Ya tengo mi propio Excel</b>
-                          <span>Relaciona tus columnas con las oficiales y generamos la plantilla por ti.</span>
-                          <button
-                            type="button"
-                            className="btn btn-secondary tpl-choice-btn"
-                            onClick={() => setShowMapper(true)}
-                            disabled={busy}
-                          >
-                            <Wand2 size={13} style={{ color: '#7c3aed' }} />
-                            Adaptar mi plantilla
-                          </button>
-                        </div>
-                      </div>
+                      <button
+                        type="button"
+                        className="tpl-choice-link"
+                        onClick={() => setShowMapper(true)}
+                        disabled={busy}
+                      >
+                        <Wand2 size={13} /> ¿Tu Excel tiene otras columnas? Úsalo tal cual
+                      </button>
                     </div>
 
                     <div className="dropzones-horizontal-container" style={{ gridTemplateColumns: '1fr' }}>
                       <div className="form-group">
                         <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ color: '#2563eb', fontWeight: 800 }}>1.</span> DATOS (.XLSX)
+                          <span style={{ color: '#2563eb', fontWeight: 800 }}>2.</span> Tu archivo
                         </label>
                         <div
-                          className={`dropzone compact ${dataFile ? 'active-full' : ''}`}
+                          className={`dropzone compact ${dataFile || arrastrando ? 'active-full' : ''}`}
                           style={{ position: 'relative', cursor: busy ? 'not-allowed' : 'pointer', height: '125px', padding: '1rem' }}
                           role="button"
                           tabIndex={0}
+                          aria-label="Elegir o arrastrar el archivo Excel"
+                          // Fase 8: el recuadro decía "Arrastra" y no recibía nada arrastrado.
+                          onDragOver={(e) => {
+                            if (busy) return;
+                            e.preventDefault();
+                            setArrastrando(true);
+                          }}
+                          onDragLeave={() => setArrastrando(false)}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setArrastrando(false);
+                            if (!busy) onFileSelected(e.dataTransfer.files?.[0] ?? null);
+                          }}
                           onClick={() => {
                             if (!busy) fileInputRef.current?.click();
                           }}
@@ -1657,8 +1363,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                             </button>
                           )}
                           <FileSpreadsheet size={24} className="dropzone-icon" style={{ color: dataFile ? '#2563eb' : 'var(--text-muted)' }} />
-                          <span className="dropzone-title">{dataFile ? dataFile.name : 'Plantilla de Inventario'}</span>
-                          <span className="dropzone-desc">{dataFile ? 'Archivo de datos listo' : 'Arrastra o selecciona tu archivo Excel / CSV'}</span>
+                          <span className="dropzone-title">{dataFile ? dataFile.name : 'Tu Excel'}</span>
+                          <span className="dropzone-desc">{dataFile ? 'Archivo listo' : 'Haz clic para elegir tu Excel (.xlsx) o arrástralo aquí'}</span>
                         </div>
                       </div>
                     </div>
@@ -1668,13 +1374,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     <div className="form-group">
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                         <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e293b', margin: 0, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <span style={{ color: '#2563eb', fontWeight: 800 }}>2.</span> FOTOS (OPCIONAL)
+                          <span style={{ color: '#2563eb', fontWeight: 800 }}>3.</span> Fotos (opcional)
                         </label>
-                        {(photoFolderCount > 0 || photoZipFile !== null) && (
-                          <span style={{ fontSize: '0.68rem', color: '#2563eb', fontWeight: 600, background: 'rgba(37, 99, 235, 0.08)', padding: '0.15rem 0.45rem', borderRadius: '6px' }}>
-                            1 formato activo
-                          </span>
-                        )}
                       </div>
                       {skusConFotoPorUrl.length > 0 ? (
                         <p className="fotos-desde-excel">
@@ -1699,7 +1400,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         </p>
                       ) : (
                         <p style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '0.4rem' }}>
-                          Se emparejan solas por SKU. Selecciona una carpeta O un ZIP (el otro se bloqueará).
+                          Se emparejan solas por el código de cada repuesto. Elige una carpeta o un ZIP (uno de los dos).
                         </p>
                       )}
                       <div className="dropzones-horizontal-container">
@@ -1707,7 +1408,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         <div
                           className={`dropzone compact ${photoFolderCount > 0 ? 'active-full' : ''} ${photoZipFile !== null ? 'blocked' : ''}`}
                           style={{ position: 'relative', cursor: (busy || photoZipFile !== null) ? 'not-allowed' : 'pointer', height: '125px', padding: '1rem' }}
-                          title={photoZipFile !== null ? 'Bloqueado: Hay un archivo ZIP seleccionado' : undefined}
+                          title={photoZipFile !== null ? 'Ya elegiste un ZIP: quítalo para usar una carpeta' : undefined}
                           role="button"
                           tabIndex={0}
                           onClick={() => {
@@ -1753,7 +1454,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                           <span className="dropzone-title">Carpeta Local</span>
                           <span className="dropzone-desc" style={photoZipFile !== null ? { color: '#94a3b8', fontWeight: 600 } : undefined}>
                             {photoZipFile !== null
-                              ? 'Bloqueado (ZIP activo)'
+                              ? 'Ya elegiste un ZIP'
                               : photoFolderCount > 0
                               ? `${photoFolderCount} imágenes`
                               : 'Sube carpeta con fotos'}
@@ -1764,7 +1465,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         <div
                           className={`dropzone compact ${photoZipFile ? 'active-full' : ''} ${photoFolderCount > 0 ? 'blocked' : ''}`}
                           style={{ position: 'relative', cursor: (busy || photoFolderCount > 0) ? 'not-allowed' : 'pointer', height: '125px', padding: '1rem' }}
-                          title={photoFolderCount > 0 ? 'Bloqueado: Hay una carpeta local seleccionada' : undefined}
+                          title={photoFolderCount > 0 ? 'Ya elegiste una carpeta: quítala para usar un ZIP' : undefined}
                           role="button"
                           tabIndex={0}
                           onClick={() => {
@@ -1809,7 +1510,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                           <span className="dropzone-title">{photoZipFile ? photoZipFile.name : 'Archivo ZIP'}</span>
                           <span className="dropzone-desc" style={photoFolderCount > 0 ? { color: '#94a3b8', fontWeight: 600 } : undefined}>
                             {photoFolderCount > 0
-                              ? 'Bloqueado (Carpeta activa)'
+                              ? 'Ya elegiste una carpeta'
                               : photoZipFile
                               ? `${Object.keys(availableImages).length} imágenes`
                               : 'Sube un ZIP con fotos'}
@@ -1831,14 +1532,14 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         style={{ width: '100%', justifyContent: 'center', gap: '0.5rem', padding: '0.65rem' }}
                       >
                         <Play size={15} />
-                        {validating ? 'Analizando…' : 'Analizar Carga'}
+                        {validating ? 'Revisando…' : 'Revisar mi archivo'}
                       </button>
 
                       {/* Barra de progreso igual al flujo exprés */}
                       {(validating || uploading) && (
                         <div style={{ marginTop: '0.25rem' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            <span>{validating ? 'Analizando registros…' : (pollingStatus ?? 'Cargando inventario…')}</span>
+                            <span>{validating ? 'Revisando tu archivo…' : (pollingStatus ?? 'Publicando…')}</span>
                             <span style={{ color: '#2563eb', fontWeight: 700 }}>{actionProgress}%</span>
                           </div>
                           <div className="import-progress-bar" style={{ margin: '0.35rem 0 0 0', height: '6px', borderRadius: '99px', overflow: 'hidden', backgroundColor: 'rgba(37, 99, 235, 0.1)' }}>
@@ -1854,7 +1555,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     {validating ? (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', flex: 1, minHeight: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed rgba(37, 99, 235, 0.3)', borderRadius: '16px', background: 'rgba(37, 99, 235, 0.02)' }}>
                         <RefreshCw className="spin" size={36} style={{ color: '#2563eb', marginBottom: '0.85rem' }} />
-                        <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>Analizando plantilla...</h4>
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1e293b', marginBottom: '0.35rem' }}>Revisando tu archivo…</h4>
                         <p style={{ fontSize: '0.74rem', maxWidth: '300px', lineHeight: 1.45, color: 'var(--text-secondary)' }}>
                           Validando registros, estructura de datos, vehículos y SKUs duplicados. Todavía no se crea nada.
                         </p>
@@ -1862,19 +1563,19 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     ) : !preview ? (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', flex: 1, minHeight: '100%', color: 'var(--text-muted)', textAlign: 'center', padding: '2rem', border: '1px dashed var(--border-color)', borderRadius: '16px', background: 'rgba(255, 255, 255, 0.01)' }}>
                         <UploadCloud size={40} style={{ strokeWidth: 1.2, color: 'var(--text-muted)', opacity: 0.5, marginBottom: '0.75rem' }} />
-                        <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Análisis de la plantilla</h4>
+                        <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Revisión de tu archivo</h4>
                         <p style={{ fontSize: '0.72rem', maxWidth: '280px', lineHeight: 1.4, color: 'var(--text-muted)' }}>
                           {errorMsg
                             ? ' '
                             : dataFile
-                              ? 'Haz clic en "Analizar Carga" abajo para revisar los registros antes de guardarlos. Todavía no se crea nada.'
-                              : 'Sube tu plantilla a la izquierda para empezar.'}
+                              ? 'Pulsa "Revisar mi archivo" para ver cada fila antes de publicar. Todavía no se crea nada.'
+                              : 'Elige tu archivo a la izquierda para empezar.'}
                         </p>
                       </div>
                     ) : null}
                     {preview && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                        {renderResumen(preview, 'Análisis de la plantilla (nada se guardó todavía)')}
+                        {renderResumen(preview, 'Revisión de tu archivo (todavía no se publica nada)')}
                         {preview.productosConError > 0 && (
                           preview.productosCargados === 0 ? (
                             <div style={{ background: 'var(--danger-bg)', color: 'hsl(var(--danger))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.78rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
@@ -1887,7 +1588,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                             <div style={{ background: 'var(--warning-bg)', color: 'hsl(var(--warning))', padding: '0.65rem 0.85rem', borderRadius: '10px', fontSize: '0.78rem', display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
                               <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
                               <span>
-                                {preview.productosConError === 1 ? 'Hay 1 registro con error que no se va a cargar.' : `Hay ${preview.productosConError} registros con error que no se van a cargar.`} Puedes iniciar la carga con los {preview.productosCargados} registros válidos (las filas con error se excluirán y se generará un Excel con el detalle), o corregir la plantilla y volver a analizarla.
+                                {preview.productosConError === 1 ? 'Hay 1 fila con error que no se va a publicar.' : `Hay ${preview.productosConError} filas con error que no se van a publicar.`} Puedes publicar ahora los {preview.productosCargados} que están bien y corregir el resto después, o corregir el archivo y revisarlo de nuevo.
                               </span>
                             </div>
                           )
@@ -1915,7 +1616,9 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                   padding: '1rem 1.25rem'
                 }}>
                   <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0 }}>
-                    {result.productosConError > 0 ? 'Carga finalizada con errores' : 'Carga finalizada'}
+                    {archivoRepetidoEl !== null
+                      ? 'Este archivo ya se había cargado'
+                      : result.productosConError > 0 ? 'Carga terminada: hay filas por corregir' : 'Carga terminada'}
                   </h4>
                   {dataFile && (
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0.15rem 0 0' }}>{dataFile.name}</p>
@@ -1935,7 +1638,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                         onClick={() => exportarErrores(result, dataFile)}
                       >
                         <Download size={13} />
-                        Exportar errores a Excel
+                        Descargar las filas con problemas
                       </button>
                     )}
                   </div>
@@ -2308,16 +2011,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
         </div>
 
         <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', padding: '1.25rem 2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {activeTab === 'history' ? (
-            <button
-              type="button"
-              className="btn btn-primary btn-primary-blue"
-              style={{ marginLeft: 'auto', padding: '0.65rem 1.6rem', fontSize: '0.85rem', borderRadius: '12px', fontWeight: 700 }}
-              onClick={() => setActiveTab('upload')}
-            >
-              Nueva carga
-            </button>
-          ) : showMapper ? null : !result ? (
+          {showMapper ? null : !result ? (
               <>
                 {(dataFile || photoFolderCount > 0 || photoZipFile) && (
                   <button
@@ -2327,18 +2021,18 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     onClick={resetFileState}
                     disabled={busy}
                   >
-                    Limpiar Vista
+                    Empezar de nuevo
                   </button>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem', marginLeft: 'auto' }}>
                   {!preview && (
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                      Primero analiza la carga.
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      Primero revisa tu archivo.
                     </span>
                   )}
                   {preview && preview.productosCargados === 0 && (
-                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                      Corrige los errores del análisis para poder iniciar la carga.
+                    <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                      Corrige las filas con error para poder publicar.
                     </span>
                   )}
                   <button
@@ -2357,7 +2051,13 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                     }}
                   >
                     <UploadCloud size={16} />
-                    {uploading ? (pollingStatus ?? 'Cargando…') : 'Iniciar Carga'}
+                    {uploading
+                      ? (pollingStatus ?? 'Publicando…')
+                      : !preview
+                        ? 'Publicar'
+                        : preview.productosConError > 0
+                          ? (preview.productosCargados === 1 ? 'Publicar el que está bien' : `Publicar los ${preview.productosCargados} que están bien`)
+                          : `Publicar ${preview.productosCargados} ${preview.productosCargados === 1 ? 'repuesto' : 'repuestos'}`}
                   </button>
                 </div>
               </>
@@ -2396,6 +2096,31 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       </div>
 
 
+      {confirmarPublicar && preview && (
+        <div className="carga-resumen-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmar-publicar-titulo">
+          <div className="carga-resumen">
+            <div className="carga-resumen-icono ok"><CheckCircle2 size={26} /></div>
+            <h4 id="confirmar-publicar-titulo">
+              {`Se van a publicar ${preview.productosCargados} ${preview.productosCargados === 1 ? 'repuesto' : 'repuestos'}`}
+            </h4>
+            <p className="carga-resumen-detalle">
+              Revisamos tu archivo y no hay nada que corregir.
+              {preview.productosConAdvertencia > 0 && (
+                ` ${preview.productosConAdvertencia} ${preview.productosConAdvertencia === 1 ? 'tiene un aviso' : 'tienen avisos'} que puedes ver en la tabla.`
+              )}{' '}
+              ¿Publicar?
+            </p>
+            <div className="carga-resumen-acciones" style={{ width: '100%', justifyContent: 'space-between' }}>
+              <button type="button" className="btn btn-primary btn-primary-blue" onClick={handleIniciarCarga} disabled={busy}>
+                Sí, publicar
+              </button>
+              <button type="button" className="btn btn-secondary" onClick={() => setConfirmarPublicar(false)}>
+                Todavía no
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {avisoSinFotos && (
         <div className="carga-resumen-overlay" role="dialog" aria-modal="true" aria-labelledby="aviso-sin-fotos-titulo">
           <div className="carga-resumen">
@@ -2412,7 +2137,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             <div className="carga-resumen-fotos">
               <span className="carga-resumen-paso">Cómo mandarlas</span>
               <p>
-                Cierra este aviso y, en <b>2. FOTOS (OPCIONAL)</b> —arriba, en esta misma pantalla—,
+                Cierra este aviso y, en <b>3. Fotos (opcional)</b> —arriba, en esta misma pantalla—,
                 elige tu <b>carpeta</b> o tu <b>ZIP</b>. Las emparejamos solas con cada repuesto por
                 su código, usando el nombre del archivo.
               </p>
@@ -2429,6 +2154,23 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                 columna de tu Excel: las traemos solas al publicar.
               </p>
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.95rem', alignSelf: 'flex-start' }}>
+              <input
+                type="checkbox"
+                checked={noPreguntarFotos}
+                onChange={(e) => {
+                  setNoPreguntarFotos(e.target.checked);
+                  try {
+                    if (e.target.checked) localStorage.setItem(NO_PREGUNTAR_FOTOS_KEY, '1');
+                    else localStorage.removeItem(NO_PREGUNTAR_FOTOS_KEY);
+                  } catch {
+                    // Sin almacenamiento en el navegador: sólo vale para esta vez.
+                  }
+                }}
+              />
+              No volver a preguntar
+            </label>
 
             <div className="carga-resumen-acciones" style={{ width: '100%', justifyContent: 'space-between' }}>
               <button type="button" className="btn btn-primary btn-primary-blue" onClick={() => setAvisoSinFotos(false)}>
@@ -2449,12 +2191,17 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             </div>
 
             <h4 id="carga-resumen-titulo">
-              {result.productosCargados === 0
+              {archivoRepetidoEl !== null
+                ? `Este archivo ya se había cargado${archivoRepetidoEl ? ` el ${new Date(archivoRepetidoEl).toLocaleString('es-CL')}` : ''}`
+                : result.productosCargados === 0
                 ? 'No se pudo publicar ningún repuesto'
                 : `¡Listo! Publicamos ${result.productosCargados} ${result.productosCargados === 1 ? 'repuesto' : 'repuestos'}`}
             </h4>
 
             <p className="carga-resumen-detalle">
+              {archivoRepetidoEl !== null
+                ? 'No lo volvimos a publicar, para no duplicar tus repuestos. Esto es lo que resultó esa vez. '
+                : ''}
               Ya están visibles en la plataforma web y en la app.
               {result.productosConAdvertencia > 0 && (
                 ` ${result.productosConAdvertencia} ${result.productosConAdvertencia === 1 ? 'tiene un aviso' : 'tienen avisos'} que puedes revisar en la tabla.`
@@ -2466,10 +2213,15 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                 <FileSpreadsheet size={15} />
                 <span>
                   <b>{result.productosConError} {result.productosConError === 1 ? 'fila no se publicó' : 'filas no se publicaron'}.</b>{' '}
-                  Te descargamos un Excel con esas filas y el motivo de cada una: corrígelas ahí y vuelve
+                  Descarga un Excel con esas filas y el motivo de cada una: corrígelas ahí y vuelve
                   a subir sólo ese archivo.
                 </span>
               </p>
+            )}
+            {result.productosConError > 0 && (
+              <button type="button" className="btn btn-secondary" onClick={() => exportarErrores(result, dataFile)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Download size={15} /> Descargar las filas con problemas
+              </button>
             )}
 
             {/*
