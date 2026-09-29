@@ -342,13 +342,25 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
         <Download size={17} /> Descargar mis productos
       </button>
 
+      {/* `.dropzone` es el recuadro punteado de la carga masiva; se puede abrir con Enter o
+          Espacio, y lleva un botón visible porque un recuadro solo no parece clicable. */}
       <label
-        className="dropzone-box"
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '1.6rem', cursor: leyendo ? 'wait' : 'pointer', textAlign: 'center' }}
+        className={`dropzone ${archivoNombre && !error ? 'active' : ''}`}
+        style={{ padding: '2rem 1.5rem', gap: '0.6rem', cursor: leyendo ? 'wait' : 'pointer' }}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
       >
-        <UploadCloud size={30} style={{ color: 'hsl(var(--primary))' }} />
-        <span style={{ ...TEXTO, fontWeight: 700 }}>{leyendo ? 'Leyendo el archivo…' : 'Elegir el archivo con los precios y el stock'}</span>
+        <UploadCloud size={32} className="dropzone-icon" />
+        <span style={{ fontSize: '1.05rem', fontWeight: 800 }}>{leyendo ? 'Leyendo el archivo…' : 'Sube el archivo con los precios y el stock'}</span>
         <span style={TEXTO_SUAVE}>Excel (.xlsx, .xls) o CSV. Necesita una columna con el código y otra con el precio o el stock.</span>
+        <span className="btn btn-primary" style={{ ...TEXTO, minHeight: '44px', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', pointerEvents: 'none' }}>
+          <FileSpreadsheet size={17} /> Elegir archivo
+        </span>
         {archivoNombre && <span style={{ ...TEXTO, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}><FileSpreadsheet size={15} /> {archivoNombre}</span>}
         <input
           ref={inputRef}
