@@ -14,13 +14,15 @@ import { ordenarFilasPorEstado } from '../utils/cargaResultado';
 import { PlantillaMapper } from './PlantillaMapper';
 import { useEsquemaPlantilla } from '../utils/plantillaEsquema';
 import { descargarFotos, dominiosDeFotos, esUrlDeImagen } from '../utils/plantillaFotos';
+import { conReintento429 } from '../utils/reintento429';
 import { useMapeosGuardados } from '../utils/plantillaMapeos';
 import { sanitizeAoaForExport, sanitizeRowsForExport } from '../utils/xlsxSafety';
 import { comprimirImagen } from '../utils/imageCompression';
 
 const MAX_IMAGES_PER_PRODUCT = 4;
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-const PHOTO_UPLOAD_BATCH_SIZE = 12;
+// H32: 6 en paralelo (antes 12) -- cada producto son 2 peticiones y el backend limita a 120/min.
+const PHOTO_UPLOAD_BATCH_SIZE = 6;
 
 interface FullCreationUploadProps {
   isOpen: boolean;
@@ -215,6 +217,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   // colgó, y el conteo real es lo único que lo confirma de un vistazo.
   const [photoUploadTotal, setPhotoUploadTotal] = useState(0);
   const [photoUploadDone, setPhotoUploadDone] = useState(0);
+  /** H32: hasta cuándo dura la pausa por el límite de peticiones (ms epoch), o null. */
+  const [photoPausaHasta, setPhotoPausaHasta] = useState<number | null>(null);
   const [photoUploadResults, setPhotoUploadResults] = useState<FotoUploadResultado[] | null>(null);
   const [photoErrorMsg, setPhotoErrorMsg] = useState<string | null>(null);
   const photoFolderInputRef = useRef<HTMLInputElement>(null);
@@ -906,6 +910,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
 
     const resultados: FotoUploadResultado[] = [];
     let completadas = 0;
+    // H32: al chocar con el límite de peticiones se avisa la pausa en vez de dar la foto por perdida.
+    let finPausa = 0;
+    const avisarPausa = (segundos: number) => {
+      finPausa = Math.max(finPausa, Date.now() + segundos * 1000);
+      setPhotoPausaHasta(finPausa);
+    };
 
     for (let i = 0; i < skusConFotos.length; i += PHOTO_UPLOAD_BATCH_SIZE) {
       const chunk = skusConFotos.slice(i, i + PHOTO_UPLOAD_BATCH_SIZE);
@@ -916,10 +926,10 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
           // no existe un endpoint acotado para eso (a diferencia de precios-stock en la
           // Fase 14). Se trae el producto actual y se reenvia tal cual mas las fotos, en
           // vez de agregar un endpoint nuevo solo para esto.
-          const getResponse = await apiFetch(
+          const getResponse = await conReintento429(() => apiFetch(
             `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(fila.productoId as number)}`,
             { headers: { 'Authorization': `Bearer ${session.token}` } }
-          );
+          ), { onEspera: avisarPausa });
           if (!getResponse.ok) {
             // 404 puntual aca casi siempre significa que el producto que esta carga creo
             // ya no existe (se borro despues) -- el mensaje generico del backend no deja
@@ -963,10 +973,10 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
             formData.append('imagenes', comprimido, nombreFinal);
           }));
 
-          const response = await apiFetch(
+          const response = await conReintento429(() => apiFetch(
             `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(fila.productoId as number)}/editar`,
             { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
-          );
+          ), { onEspera: avisarPausa });
           if (!response.ok) {
             resultados.push({ sku: fila.sku, ok: false, mensaje: await readErrorMessage(response, 'No se pudo subir la foto.') });
           } else {
@@ -983,6 +993,7 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     }
 
     setPhotoUploadResults(resultados);
+    setPhotoPausaHasta(null);
     setPhotoUploading(false);
     setPhotoUploadProgress(null);
     if (resultados.some((r) => r.ok)) {
@@ -1965,6 +1976,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
                       <span style={{ fontSize: '0.72rem', opacity: 0.85 }}>
                         No cierres esta ventana ni salgas a Inventario General hasta que termine.
                       </span>
+                      {photoPausaHasta !== null && photoPausaHasta > Date.now() && (
+                        <span style={{ fontSize: '0.72rem', opacity: 0.85 }}>
+                          Pausa breve: el sistema acepta un número limitado de envíos por minuto.
+                          Seguimos solos en unos segundos, sin perder ninguna foto.
+                        </span>
+                      )}
                     </div>
                   )}
 
