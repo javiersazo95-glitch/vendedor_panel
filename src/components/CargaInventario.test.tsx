@@ -67,6 +67,26 @@ describe('Cargar inventario: ¿Qué tienes?', () => {
     expect(screen.getByRole('button', { name: /Descargar mis productos/ })).toBeInTheDocument();
   });
 
+  it('bajo la pregunta muestra las últimas cargas y lleva al historial', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        content: [{ id: 5, modo: 'EXPRESS', estado: 'CON_ERRORES', productosCargados: 1, productosConError: 1, createdAt: '2026-09-23T13:52:00Z' }],
+        totalPages: 1,
+        currentPage: 0,
+      }),
+    } as Response);
+    const onVerHistorial = vi.fn();
+    abrir({ onVerHistorial });
+
+    expect(await screen.findByText('Tus últimas cargas')).toBeInTheDocument();
+    expect(screen.getByText('Cambiar precios y stock')).toBeInTheDocument();
+    expect(screen.getByText(/1 por corregir/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Ver todo el historial/ }));
+    expect(onVerHistorial).toHaveBeenCalled();
+  });
+
   it('el historial muestra todas las cargas en un solo lugar', async () => {
     abrir({ vista: 'historial' });
     expect(screen.getByText('Historial de cargas')).toBeInTheDocument();

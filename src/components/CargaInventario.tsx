@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
-import { FileSpreadsheet, PackagePlus, Tag, Wand2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { FileSpreadsheet, History, PackagePlus, Tag, Wand2 } from 'lucide-react';
 import { FullCreationUpload } from './FullCreationUpload';
 import { ExpressUpload } from './ExpressUpload';
 import { HistorialCargas } from './HistorialCargas';
+import { apiFetch } from '../utils/apiFetch';
+import { API_BASE_URL } from '../utils/imageHelper';
+import { getStoredSession } from '../utils/session';
+import { encId } from '../utils/url';
+import { NOMBRE_EXPRESS } from '../utils/expressPreciosStock';
 
 /**
  * "Cargar inventario": una sola entrada con una pregunta, "¿Qué tienes?" (Fase 8 del plan de
@@ -23,8 +28,76 @@ interface CargaInventarioProps {
   onAbrirUnoAUno: () => void;
   /** "historial" muestra el historial de cargas en vez de la pregunta. */
   vista?: 'elegir' | 'historial';
+  /** "Ver todo el historial" de "Tus últimas cargas". */
+  onVerHistorial?: () => void;
   embedded?: boolean;
   onBusyChange?: (busy: boolean) => void;
+}
+
+interface CargaReciente {
+  id: number;
+  modo: string | null;
+  estado: string;
+  productosCargados: number;
+  productosConError: number;
+  createdAt: string;
+}
+
+/**
+ * Las tres cargas más recientes, bajo la pregunta: lo primero que un vendedor quiere saber al
+ * volver es cómo terminó lo último que subió. Si falla o no hay nada, no se muestra.
+ */
+function UltimasCargas({ onVerHistorial }: { onVerHistorial?: () => void }) {
+  const [cargas, setCargas] = useState<CargaReciente[] | null>(null);
+
+  useEffect(() => {
+    const session = getStoredSession();
+    if (!session?.sellerId || !session?.token) return;
+    let cancelado = false;
+    apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/excel/cargas?page=0&size=3`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelado) setCargas(Array.isArray(data?.content) ? data.content : []);
+      })
+      .catch(() => {
+        // Es un resumen de cortesía: sin conexión simplemente no aparece.
+      });
+    return () => { cancelado = true; };
+  }, []);
+
+  if (!cargas || cargas.length === 0) return null;
+
+  return (
+    <section className="carga-recientes" aria-labelledby="carga-recientes-titulo">
+      <div className="carga-recientes-head">
+        <h4 id="carga-recientes-titulo">Tus últimas cargas</h4>
+        {onVerHistorial && (
+          <button type="button" className="carga-recientes-link" onClick={onVerHistorial}>
+            <History size={16} /> Ver todo el historial
+          </button>
+        )}
+      </div>
+      <ul>
+        {cargas.map((carga) => (
+          <li key={carga.id}>
+            <span className="carga-recientes-fecha">{new Date(carga.createdAt).toLocaleDateString('es-CL')}</span>
+            <span className="carga-recientes-tipo">{carga.modo === 'EXPRESS' ? NOMBRE_EXPRESS : 'Publicar repuestos'}</span>
+            <span className="carga-recientes-resultado">
+              {carga.estado === 'PROCESANDO' || carga.estado === 'PENDIENTE'
+                ? 'Procesando…'
+                : `${carga.productosCargados} ${carga.productosCargados === 1 ? 'listo' : 'listos'}`}
+              {carga.productosConError > 0 && (
+                <strong>{` · ${carga.productosConError} por corregir`}</strong>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 const OPCIONES: { camino: Camino; titulo: string; detalle: string; icono: React.ReactNode }[] = [
@@ -61,6 +134,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   onExpressSuccess,
   onAbrirUnoAUno,
   vista = 'elegir',
+  onVerHistorial,
   embedded = false,
   onBusyChange,
 }) => {
@@ -129,6 +203,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
             </button>
           ))}
         </div>
+        <UltimasCargas onVerHistorial={onVerHistorial} />
       </div>
     </div>
   );

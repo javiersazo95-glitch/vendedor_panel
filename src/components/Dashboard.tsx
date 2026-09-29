@@ -447,6 +447,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             onExpressSuccess={(cargados) => { setActiveView('inventory'); setExpressCargados(cargados); }}
             onAbrirUnoAUno={() => { setEditingProduct(null); setIsManualOpen(true); }}
             vista={cargaVista}
+            onVerHistorial={() => { setCargaVista('historial'); setCargaKey((k) => k + 1); }}
             embedded
             onBusyChange={setCargaOcupada}
           />
