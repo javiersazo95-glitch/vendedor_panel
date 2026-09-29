@@ -12,6 +12,7 @@
  * agrupadas por `sku_proveedor`); acá se arma.
  */
 import { buscarEnCatalogo, normalizarParaComparar } from './plantillaCatalogos';
+import { ALIAS_MARCAS_VEHICULO, claveCatalogo } from './nombresCatalogoVehiculo';
 
 /** Columnas de la hoja `compatibilidades`, en el orden que lee el backend. */
 export const COLUMNAS_COMPATIBILIDADES = [
@@ -107,10 +108,16 @@ export function parsearAplicacion(texto: string, marcasVehiculo: string[]): Apli
   // La marca más larga que calce al principio: "Land Rover" antes que "Land". Se compara
   // letra a letra, admitiendo puntos, guiones o espacios entre medio: "MERCEDES-BENZ",
   // "G.M.C." y "Land-Rover" son la misma marca escrita como la escribe cada vendedor.
+  //
+  // Fase 5: también se reconocen las marcas como las escribe el padrón ("KIA MOTORS RIO"), y se
+  // devuelven con el nombre del catálogo ("Kia"). Sin esto "MOTORS RIO" quedaba como modelo.
   const sinAcentos = sinAcentosConCase(original);
-  const candidatas = marcasVehiculo
-    .map((m) => {
-      const letras = normalizarParaComparar(m).replace(/\s+/g, '');
+  const alias = Object.entries(ALIAS_MARCAS_VEHICULO)
+    .map(([texto, canonica]) => ({ texto, marca: marcasVehiculo.find((m) => claveCatalogo(m) === claveCatalogo(canonica)) }))
+    .filter((a): a is { texto: string; marca: string } => !!a.marca);
+  const candidatas = [...marcasVehiculo.map((m) => ({ texto: m, marca: m })), ...alias]
+    .map(({ texto, marca: m }) => {
+      const letras = normalizarParaComparar(texto).replace(/\s+/g, '');
       if (!letras) return null;
       const patron = new RegExp(`^[^a-z0-9]*${[...letras].map(escapeRe).join('[^a-z0-9]*')}(?![a-z0-9])`, 'i');
       const recorte = sinAcentos.match(patron);

@@ -5,6 +5,7 @@ import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
 import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount, FLOW_RATE_BASE } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
+import { mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
 
 function sanitizeCodeInput(value: string): string {
   return value
@@ -734,12 +735,14 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           return { id: card.id, modelOptions: [], versionOptions: [] };
         }
 
-        const selectedBrand = vehicleBrandCatalog.find(
-          (brand) => brand.nombre.toLowerCase() === card.vehicleBrand.toLowerCase(),
+        // Fase 5: la marca guardada puede venir escrita como antes ("KIA MOTORS", "MERCEDES BENZ").
+        const selectedBrand = vehicleBrandCatalog.find((brand) => mismoNombreCatalogo(brand.nombre, card.vehicleBrand));
+        const marcaCatalogo = selectedBrand?.nombre ?? card.vehicleBrand;
+        const models = nombresUnicosOrdenados(
+          selectedBrand
+            ? namesFromCatalog(await loadCatalog(`marcas-vehiculo/${selectedBrand.id}/modelos`), MODELS_FALLBACK[card.vehicleBrand] || [])
+            : MODELS_FALLBACK[card.vehicleBrand] || [],
         );
-        const models = selectedBrand
-          ? namesFromCatalog(await loadCatalog(`marcas-vehiculo/${selectedBrand.id}/modelos`), MODELS_FALLBACK[card.vehicleBrand] || [])
-          : MODELS_FALLBACK[card.vehicleBrand] || [];
 
         const selectedModels = splitValues(card.vehicleModel);
         if (selectedModels.length === 0) {
@@ -748,7 +751,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
         const versionGroups = await Promise.all(
           selectedModels.map((model) =>
-            loadCatalog(`versiones?marca=${encodeURIComponent(card.vehicleBrand)}&modelo=${encodeURIComponent(model)}&anioDesde=${card.vehicleYear}&anioHasta=${card.vehicleYearTo}`),
+            loadCatalog(`versiones?marca=${encodeURIComponent(marcaCatalogo)}&modelo=${encodeURIComponent(model)}&anioDesde=${card.vehicleYear}&anioHasta=${card.vehicleYearTo}`),
           ),
         );
         const versionOptions = Array.from(
@@ -1417,7 +1420,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                           placeholder="Selecciona una marca"
                           value={card.vehicleBrand}
                           onChange={(value) => updateCompatibility(card.id, { vehicleBrand: value })}
-                          options={namesFromCatalog(vehicleBrandCatalog, VEHICLE_BRANDS_FALLBACK)}
+                          options={nombresUnicosOrdenados(namesFromCatalog(vehicleBrandCatalog, VEHICLE_BRANDS_FALLBACK))}
                         />
                       </div>
 
