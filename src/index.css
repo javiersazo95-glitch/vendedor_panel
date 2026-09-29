@@ -4576,3 +4576,208 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
 }
 .mapper-quitar:hover { background: rgba(220, 38, 38, 0.08); }
+
+/* ------------------------------------------------------------------------------------------
+   Fase 7 del plan de auditoría de carga: el 1 a 1 para personas mayores. Textos de 15 px o más,
+   controles de 44 px, qué falta en cada sección y confirmación visible al publicar. Todo va
+   dentro de .manual-upload-drawer para no tocar otras pantallas.
+   ------------------------------------------------------------------------------------------ */
+.manual-upload-drawer .form-label,
+.manual-upload-drawer .manual-form-section .form-label {
+  font-size: 0.95rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.manual-upload-drawer .manual-form-section .form-section-header {
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.manual-upload-drawer .form-control,
+.manual-upload-drawer .manual-multi-trigger,
+.manual-upload-drawer .manual-helper-text,
+.manual-upload-drawer .manual-chip,
+.manual-upload-drawer .btn {
+  min-height: 44px;
+  font-size: 0.95rem;
+}
+
+.manual-upload-drawer .manual-radio-card span,
+.manual-upload-drawer .manual-universal-desc,
+.manual-upload-drawer .manual-option-row {
+  font-size: 0.95rem;
+}
+
+.manual-section-header-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.manual-section-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.manual-section-status.ok {
+  color: hsl(var(--success));
+  background: var(--success-bg);
+}
+
+.manual-section-status.pending {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.manual-section-status.missing {
+  color: hsl(var(--danger));
+  background: var(--danger-bg);
+}
+
+.manual-section-missing {
+  margin: -6px 0 14px;
+  color: hsl(var(--danger));
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.manual-field-help {
+  display: block;
+  margin-top: 6px;
+  color: #475569;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.manual-inline-help {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1e3a5f;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.manual-inline-help p {
+  margin: 0;
+}
+
+.manual-inline-help .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.manual-inline-help .form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.manual-upload-drawer .manual-remove-compat {
+  width: auto;
+  height: 44px;
+  padding: 0 14px;
+  gap: 6px;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.manual-add-vehicle {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  border-style: dashed;
+}
+
+.manual-counter.short {
+  color: #b45309;
+}
+
+.manual-upload-drawer .manual-counter {
+  font-size: 0.95rem;
+}
+
+.manual-photo-published {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.7);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.manual-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 3rem 1.5rem;
+}
+
+.manual-success h4 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.manual-success p {
+  margin: 0;
+  max-width: 420px;
+  color: #334155;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.manual-success-icon {
+  color: hsl(var(--success));
+}
+
+.manual-success-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* Un vehículo debajo del otro, a todo el ancho: con dos columnas el texto largo de las
+   versiones estiraba la segunda tarjeta fuera del formulario. */
+.manual-upload-drawer .manual-compat-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.manual-upload-drawer .manual-compat-card {
+  min-width: 0;
+}
+
+.manual-upload-drawer .manual-multi-trigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -25,6 +25,8 @@ export interface Product {
   stock: number;
   description: string;
   image: string; // URL string
+  /** Todas las fotos publicadas; `image` es la primera. Fase 7: el 1 a 1 las muestra al editar. */
+  images?: string[];
   pricingMode?: 'show_price' | 'quote_only';
   condition?: 'ORIGINAL' | 'ALTERNATIVO';
   requiresChassis?: boolean;
@@ -196,6 +198,7 @@ function mapDtoToProduct(dto: ProductDto): Product {
     stock: Number(dto.stock || 0),
     description: dto.descripcion || '',
     image: dto.imageUrls && dto.imageUrls.length > 0 ? dto.imageUrls[0] : DEFAULT_PRODUCT_IMAGE_URL,
+    images: dto.imageUrls ?? [],
     pricingMode: dto.pricingMode === 'QUOTE_ONLY' ? 'quote_only' : 'show_price',
     condition: dto.condicion === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL',
     requiresChassis: dto.requiereChasis === true,

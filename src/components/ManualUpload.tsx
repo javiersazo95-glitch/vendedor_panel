@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, ChevronUp, Globe, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Globe, PlusCircle, Trash2, X, Image as ImageIcon, Upload } from 'lucide-react';
 import type { Product } from '../db';
 import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
 import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount, FLOW_RATE_BASE } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
-import { mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
+import { claveCatalogo, mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
 
 function sanitizeCodeInput(value: string): string {
   return value
@@ -39,6 +39,13 @@ type CompatibilityCard = {
   oem: string;
   modelOptions: string[];
   versionOptions: CatalogOption[];
+  /** "Año hasta" se corrigió solo: se dice al lado del campo, no en silencio. */
+  yearNote?: string;
+  /**
+   * Fase 7: al editar, el detalle de estos vehículos no se pudo cargar del catálogo. Los ids se
+   * conservan tal cual (antes la tarjeta se borraba en silencio y al guardar se perdían).
+   */
+  savedWithoutDetail?: boolean;
 };
 
 type VehicleCatalogDetail = {
@@ -53,12 +60,16 @@ type VehicleCatalogDetail = {
 };
 
 const OTHER_VALUE = '__other__';
+const BRAND_NOT_FOUND = '__no_encuentro__';
 const REQUIRED = <span style={{ color: 'hsl(var(--danger))', fontWeight: 700, marginLeft: '3px' }}>*</span>;
 const OPTIONAL = (
-  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '6px' }}>
-    (Opcional)
+  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500, marginLeft: '6px' }}>
+    (opcional)
   </span>
 );
+/** Fotos hasta 5 MB: al guardar se comprimen solas (db.ts -> comprimirImagenes). */
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+const MIN_DESCRIPTION = 15;
 const YEARS = Array.from(
   { length: new Date().getFullYear() + 3 - 1990 },
   (_, index) => new Date().getFullYear() + 2 - index,
@@ -224,6 +235,35 @@ function parseCompatibilityGroups(product: Product): number[][] {
     : [];
 }
 
+/** Etiqueta de un vehículo guardado cuyo detalle no llegó del catálogo. */
+const savedVehicleLabel = (id: number) => `Vehículo guardado (n.º ${id})`;
+
+/**
+ * Fase 7: el grupo de un producto que se edita, aunque `/vehiculo-catalogos` no responda o no
+ * traiga todos los ids. Los que faltan se conservan con una etiqueta genérica: guardar sólo el
+ * precio no puede cambiar con qué autos es compatible el repuesto.
+ */
+function cardForSavedGroup(ids: number[], details: VehicleCatalogDetail[], product: Product): CompatibilityCard {
+  if (details.length === 0) {
+    return {
+      ...createCompatibilityCard(product),
+      oem: '',
+      vehicleVersionIds: ids.map(String),
+      versionOptions: ids.map((id) => ({ id, nombre: savedVehicleLabel(id) })),
+      savedWithoutDetail: true,
+    };
+  }
+  const card = { ...createCompatibilityCardFromDetails(details, product), oem: '' };
+  const found = new Set(details.map((detail) => detail.id));
+  const missing = ids.filter((id) => !found.has(id));
+  if (missing.length === 0) return card;
+  return {
+    ...card,
+    vehicleVersionIds: [...card.vehicleVersionIds, ...missing.map(String)],
+    versionOptions: [...card.versionOptions, ...missing.map((id) => ({ id, nombre: savedVehicleLabel(id) }))],
+  };
+}
+
 function createCompatibilityCardFromDetails(details: VehicleCatalogDetail[], product: Product): CompatibilityCard {
   const fallback = createCompatibilityCard(product);
   if (details.length === 0) return fallback;
@@ -246,12 +286,90 @@ function createCompatibilityCardFromDetails(details: VehicleCatalogDetail[], pro
   };
 }
 
+type SnapshotFields = {
+  sku: string;
+  oem: string;
+  name: string;
+  category: string;
+  subcategory: string;
+  partBrand: string;
+  pricingMode: string;
+  price: number;
+  stock: number;
+  requiresChassis: string;
+  condition: string;
+  description: string;
+  isUniversal: boolean;
+  compatibilities: CompatibilityCard[];
+  filesCount: number;
+};
+
+/**
+ * Foto del formulario para saber si hay cambios sin guardar. Fase 7: una sola función para el
+ * estado inicial y el actual; antes el de edición no llevaba la subcategoría y el formulario
+ * pedía "¿Descartar cambios?" aunque no se hubiera tocado nada.
+ */
+function snapshotOf(fields: SnapshotFields): string {
+  return JSON.stringify({
+    ...fields,
+    sku: fields.sku.trim(),
+    oem: fields.oem.trim(),
+    name: fields.name.trim(),
+    partBrand: fields.partBrand.trim(),
+    description: fields.description.trim(),
+    compatibilities: fields.compatibilities.map((card) => ({
+      b: card.vehicleBrand,
+      m: card.vehicleModel,
+      y: card.vehicleYear,
+      yt: card.vehicleYearTo,
+      v: card.vehicleVersionIds,
+      o: card.oem,
+    })),
+  });
+}
+
+const SECTION_TITLES: Record<number, string> = {
+  1: 'Información básica',
+  2: 'Precio y disponibilidad',
+  3: 'Compatibilidad',
+  5: 'Descripción y calidad',
+};
+
+/** Lo que le falta a una tarjeta de vehículo. Con versiones elegidas (o guardadas) no falta nada. */
+function missingInCard(card: CompatibilityCard): string[] {
+  if (card.vehicleVersionIds.length > 0) return [];
+  if (!card.vehicleBrand.trim()) return ['marca del vehículo'];
+  if (!card.vehicleModel.trim()) return ['modelo'];
+  if (!(card.vehicleYear > 0 && card.vehicleYearTo > 0)) return ['años'];
+  return ['versión'];
+}
+
+const cardHasData = (card: CompatibilityCard) =>
+  Boolean(card.vehicleBrand.trim() || card.vehicleModel.trim() || card.vehicleYear > 0 || card.vehicleVersionIds.length > 0);
+
+function SectionStatus({ missing, visited }: { missing: string[]; visited: boolean }) {
+  if (missing.length === 0) {
+    return <span className="manual-section-status ok"><Check size={15} /> Listo</span>;
+  }
+  return (
+    <span className={`manual-section-status ${visited ? 'missing' : 'pending'}`}>
+      {missing.length === 1 ? 'Falta 1 dato' : `Faltan ${missing.length} datos`}
+    </span>
+  );
+}
+
 function formatCLP(value: number) {
   return new Intl.NumberFormat('es-CL').format(value);
 }
 
 const FLOW_RATE_LABEL = `${(FLOW_RATE_BASE * 100).toFixed(2).replace('.', ',')}%`;
 
+/**
+ * Lista con "Otro" para escribir. Fase 7: lo escrito se compara con la lista sin mayúsculas,
+ * tildes ni separadores, y si ya existe se usa el nombre de la lista ("bosch" -> "Bosch"): así
+ * no se crean "Bosch" y "BOSCH" como dos marcas. `allowOther={false}` deja sólo la lista, para
+ * catálogos cerrados como la categoría, donde un valor escrito a mano no se puede publicar.
+ */
 function SelectOrInput({
   value,
   onChange,
@@ -260,6 +378,8 @@ function SelectOrInput({
   className,
   required,
   disabled,
+  allowOther = true,
+  ariaLabel,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -268,24 +388,32 @@ function SelectOrInput({
   className: string;
   required?: boolean;
   disabled?: boolean;
+  allowOther?: boolean;
+  ariaLabel?: string;
 }) {
   const [isOther, setIsOther] = useState(false);
-  const uniqueOptions = Array.from(new Set(options.filter(Boolean)));
-  const hasValue = uniqueOptions.some((option) => option.toLowerCase() === value.toLowerCase());
+  const uniqueOptions = nombresUnicosOrdenados(options.filter(Boolean));
+  const match = value ? uniqueOptions.find((option) => claveCatalogo(option) === claveCatalogo(value)) : undefined;
+  const hasValue = match === value && Boolean(value);
   const selectValue = isOther || (value && !hasValue) ? OTHER_VALUE : value;
 
   useEffect(() => {
-    // Resets the "other" free-text mode once the typed value matches a real
-    // catalog option again. Reviewed, deliberate exception (QA-SRC-002).
+    // Lo escrito que ya existe en la lista toma el nombre de la lista ("bosch" -> "Bosch") y
+    // vuelve al desplegable. Reviewed, deliberate exception (QA-SRC-002).
+    if (match && match !== value) {
+      onChange(match);
+      return;
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (hasValue) setIsOther(false);
-  }, [hasValue]);
+  }, [match, value, hasValue, onChange]);
 
   return (
     <>
       <select
         className={className}
-        value={selectValue}
+        value={allowOther ? selectValue : value}
+        aria-label={ariaLabel}
         onChange={(e) => {
           if (e.target.value === OTHER_VALUE) {
             setIsOther(true);
@@ -304,19 +432,103 @@ function SelectOrInput({
             {option}
           </option>
         ))}
-        <option value={OTHER_VALUE}>Otro</option>
+        {!allowOther && value && !hasValue && <option value={value}>{value}</option>}
+        {allowOther && <option value={OTHER_VALUE}>Otra (escribirla)</option>}
       </select>
 
-      {(isOther || (value && !hasValue)) && (
+      {allowOther && (isOther || (value && !hasValue)) && (
         <input
           type="text"
           className={className}
-          placeholder="Escribe otra opcion"
+          placeholder="Escribe el nombre"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           required={required}
           disabled={disabled}
+          style={{ marginTop: '0.5rem' }}
         />
+      )}
+    </>
+  );
+}
+
+/**
+ * Marca del vehículo: sólo las del catálogo. Fase 7: antes tenía "Otro", y una marca escrita a
+ * mano no tiene modelos, así que el formulario quedaba sin salida. Ahora "No encuentro la marca"
+ * ofrece las dos salidas reales: publicarlo como universal o avisar a RepuesTop.
+ */
+function VehicleBrandSelect({
+  value,
+  brands,
+  onChange,
+  onMakeUniversal,
+}: {
+  value: string;
+  brands: string[];
+  onChange: (value: string) => void;
+  onMakeUniversal: () => void;
+}) {
+  const [notFound, setNotFound] = useState(false);
+  const [missingBrand, setMissingBrand] = useState('');
+  const [copied, setCopied] = useState(false);
+  // Un producto guardado con un nombre de antes ("KIA MOTORS") se muestra con el del catálogo.
+  const shown = brands.find((brand) => mismoNombreCatalogo(brand, value)) ?? value;
+  const options = shown && !brands.includes(shown) ? [shown, ...brands] : brands;
+  const message = `Hola, quiero publicar un repuesto para la marca de vehículo "${missingBrand.trim() || '(escribe la marca)'}" y no aparece en la lista del panel. ¿La pueden agregar?`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <>
+      <select
+        className="form-control focus-accent"
+        aria-label="Marca del vehículo"
+        value={notFound ? BRAND_NOT_FOUND : shown}
+        onChange={(e) => {
+          if (e.target.value === BRAND_NOT_FOUND) {
+            setNotFound(true);
+            onChange('');
+            return;
+          }
+          setNotFound(false);
+          onChange(e.target.value);
+        }}
+      >
+        <option value="">Selecciona una marca</option>
+        {options.map((brand) => (
+          <option key={brand} value={brand}>{brand}</option>
+        ))}
+        <option value={BRAND_NOT_FOUND}>No encuentro la marca</option>
+      </select>
+      {notFound && (
+        <div className="manual-inline-help" role="status">
+          <strong>¿No está la marca?</strong>
+          <p>Si este repuesto le sirve a cualquier vehículo, publícalo como universal. Si es para una marca que falta, avísanos y la agregamos.</p>
+          <button type="button" className="btn btn-primary" onClick={onMakeUniversal}>
+            <Globe size={16} /> Sirve para todos los vehículos
+          </button>
+          <label className="form-label" style={{ marginTop: '0.75rem' }}>
+            ¿Qué marca buscabas?
+            <input
+              type="text"
+              className="form-control focus-accent"
+              value={missingBrand}
+              onChange={(e) => { setMissingBrand(e.target.value); setCopied(false); }}
+              placeholder="Ej. Jetour"
+            />
+          </label>
+          <button type="button" className="btn btn-secondary" onClick={copy}>
+            <Copy size={16} /> {copied ? 'Mensaje copiado' : 'Copiar mensaje para RepuesTop'}
+          </button>
+          {copied && <p>Pégalo en un correo o WhatsApp a RepuesTop.</p>}
+        </div>
       )}
     </>
   );
@@ -476,34 +688,46 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [vehicleBrandCatalog, setVehicleBrandCatalog] = useState<CatalogOption[]>([]);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const [showPricingDetails, setShowPricingDetails] = useState(false);
+  // Fase 7: secciones que el vendedor ya recorrió (ahí se dice qué falta) y el producto recién
+  // guardado, para confirmarlo en pantalla en vez de cerrar el formulario sin decir nada.
+  const [visitedSections, setVisitedSections] = useState<Set<number>>(() => new Set());
+  const [savedResult, setSavedResult] = useState<{ name: string; edited: boolean } | null>(null);
+  const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const initialSnapshotRef = useRef<string | null>(null);
 
-  const computeSnapshot = useCallback(() => {
-    return JSON.stringify({
-      sku: sku.trim(),
-      oem: oem.trim(),
-      name: name.trim(),
-      category,
-      subcategory,
-      partBrand: partBrand.trim(),
-      pricingMode,
-      price,
-      stock,
-      requiresChassis,
-      condition,
-      description: description.trim(),
-      isUniversal,
-      compatibilities: compatibilities.map((card) => ({
-        b: card.vehicleBrand,
-        m: card.vehicleModel,
-        y: card.vehicleYear,
-        yt: card.vehicleYearTo,
-        v: card.vehicleVersionIds,
-        o: card.oem,
-      })),
-      filesCount: imageFiles.length,
+  const computeSnapshot = useCallback(() => snapshotOf({
+    sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis,
+    condition, description, isUniversal, compatibilities, filesCount: imageFiles.length,
+  }), [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, isUniversal, compatibilities, imageFiles.length]);
+
+  const resetToEmpty = useCallback(() => {
+    const defaultCard = [createCompatibilityCard()];
+    setSku('');
+    setOem('');
+    setName('');
+    setCategory('');
+    setSubcategory('');
+    setPartBrand('');
+    setCompatibilities(defaultCard);
+    setPricingMode('show_price');
+    setPrice(0);
+    setStock(1);
+    setRequiresChassis('false');
+    setIsUniversal(false);
+    setCondition('ORIGINAL');
+    setDescription('');
+    setImage('');
+    setImagePreviews([]);
+    setImageFiles([]);
+    setVisitedSections(new Set());
+    setSavedResult(null);
+    setError(null);
+    initialSnapshotRef.current = snapshotOf({
+      sku: '', oem: '', name: '', category: '', subcategory: '', partBrand: '', pricingMode: 'show_price',
+      price: 0, stock: 1, requiresChassis: 'false', condition: 'ORIGINAL', description: '', isUniversal: false,
+      compatibilities: defaultCard, filesCount: 0,
     });
-  }, [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, isUniversal, compatibilities, imageFiles.length]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -524,135 +748,68 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       // synchronous setState calls here are the standard "seed form state
       // from a prop" pattern, not an accidental render loop — reviewed,
       // deliberate exception (QA-SRC-002).
-      setSku(editProduct.sku);
-      setOem(editProduct.oem || '');
-      setName(editProduct.name);
-      setCategory(editProduct.category || 'Motor');
-      setSubcategory(editProduct.subcategory || '');
-      setPartBrand(editProduct.partBrand);
-      const initialCards = [createCompatibilityCard(editProduct)];
-      setCompatibilities(initialCards);
-      const groups = parseCompatibilityGroups(editProduct);
-      if (groups.length > 0) {
-        Promise.all(groups.map((ids) => loadVehicleCatalogDetails(ids))).then((detailGroups) => {
-          if (!active) return;
-          const restoredCards = detailGroups
-            .map((details) => createCompatibilityCardFromDetails(details, editProduct))
-            .filter((card) => card.vehicleVersionIds.length > 0);
-          if (restoredCards.length > 0) {
-            setCompatibilities(restoredCards);
-            initialSnapshotRef.current = JSON.stringify({
-              sku: editProduct.sku.trim(),
-              oem: (editProduct.oem || '').trim(),
-              name: editProduct.name.trim(),
-              category: editProduct.category || 'Motor',
-              subcategory: editProduct.subcategory || '',
-              partBrand: editProduct.partBrand.trim(),
-              pricingMode: editProduct.pricingMode || 'show_price',
-              price: editProduct.price,
-              stock: editProduct.stock || 0,
-              requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
-              condition: editProduct.condition || 'ORIGINAL',
-              description: (editProduct.description || '').trim(),
-              isUniversal: editProduct.esUniversal === true,
-              compatibilities: restoredCards.map((card) => ({
-                b: card.vehicleBrand,
-                m: card.vehicleModel,
-                y: card.vehicleYear,
-                yt: card.vehicleYearTo,
-                v: card.vehicleVersionIds,
-                o: card.oem,
-              })),
-              filesCount: 0,
-            });
-          }
-        });
-      }
-      setPricingMode(editProduct.pricingMode || 'show_price');
-      setPrice(editProduct.price);
-      setStock(editProduct.stock || 0);
-      setRequiresChassis(editProduct.requiresChassis ? 'true' : 'false');
-      setIsUniversal(editProduct.esUniversal === true);
-      setCondition(editProduct.condition || 'ORIGINAL');
-      setDescription(editProduct.description || '');
-      setImage(editProduct.image || '');
-      setImagePreviews(editProduct.image ? [editProduct.image] : []);
-      setImageFiles([]);
-
-      initialSnapshotRef.current = JSON.stringify({
-        sku: editProduct.sku.trim(),
-        oem: (editProduct.oem || '').trim(),
-        name: editProduct.name.trim(),
+      const base = {
+        sku: editProduct.sku,
+        oem: editProduct.oem || '',
+        name: editProduct.name,
         category: editProduct.category || 'Motor',
-        partBrand: editProduct.partBrand.trim(),
+        subcategory: editProduct.subcategory || '',
+        partBrand: editProduct.partBrand,
         pricingMode: editProduct.pricingMode || 'show_price',
         price: editProduct.price,
         stock: editProduct.stock || 0,
         requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
         condition: editProduct.condition || 'ORIGINAL',
-        description: (editProduct.description || '').trim(),
+        description: editProduct.description || '',
         isUniversal: editProduct.esUniversal === true,
-        compatibilities: initialCards.map((card) => ({
-          b: card.vehicleBrand,
-          m: card.vehicleModel,
-          y: card.vehicleYear,
-          yt: card.vehicleYearTo,
-          v: card.vehicleVersionIds,
-          o: card.oem,
-        })),
         filesCount: 0,
-      });
-    } else {
-      setSku('');
-      setOem('');
-      setName('');
-      setCategory('');
-      setSubcategory('');
-      setPartBrand('');
-      const defaultCard = [createCompatibilityCard()];
-      setCompatibilities(defaultCard);
-      setPricingMode('show_price');
-      setPrice(0);
-      setStock(1);
-      setRequiresChassis('false');
-      setIsUniversal(false);
-      setCondition('ORIGINAL');
-      setDescription('');
-      setImage('');
-      setImagePreviews([]);
+      };
+      setSku(base.sku);
+      setOem(base.oem);
+      setName(base.name);
+      setCategory(base.category);
+      setSubcategory(base.subcategory);
+      setPartBrand(base.partBrand);
+      // El OEM vive en el producto; la tarjeta queda para una referencia propia de ese vehículo.
+      const initialCards = [{ ...createCompatibilityCard(editProduct), oem: '' }];
+      setCompatibilities(initialCards);
+      const groups = parseCompatibilityGroups(editProduct);
+      if (groups.length > 0) {
+        Promise.all(groups.map((ids) => loadVehicleCatalogDetails(ids))).then((detailGroups) => {
+          if (!active) return;
+          const restoredCards = detailGroups.map((details, index) => cardForSavedGroup(groups[index], details, editProduct));
+          setCompatibilities(restoredCards);
+          initialSnapshotRef.current = snapshotOf({ ...base, compatibilities: restoredCards });
+        });
+      }
+      setPricingMode(base.pricingMode);
+      setPrice(base.price);
+      setStock(base.stock);
+      setRequiresChassis(base.requiresChassis as 'false' | 'true');
+      setIsUniversal(base.isUniversal);
+      setCondition(base.condition);
+      setDescription(base.description);
+      setImage(editProduct.image || '');
+      // Fase 7: todas las fotos publicadas, no sólo la primera.
+      setImagePreviews(
+        (editProduct.images && editProduct.images.length > 0
+          ? editProduct.images
+          : editProduct.image ? [editProduct.image] : []
+        ).slice(0, MAX_PHOTOS),
+      );
       setImageFiles([]);
-
-      initialSnapshotRef.current = JSON.stringify({
-        sku: '',
-        oem: '',
-        name: '',
-        category: '',
-        subcategory: '',
-        partBrand: '',
-        pricingMode: 'show_price',
-        price: 0,
-        stock: 1,
-        requiresChassis: 'false',
-        condition: 'ORIGINAL',
-        description: '',
-        isUniversal: false,
-        compatibilities: defaultCard.map((card) => ({
-          b: card.vehicleBrand,
-          m: card.vehicleModel,
-          y: card.vehicleYear,
-          yt: card.vehicleYearTo,
-          v: card.vehicleVersionIds,
-          o: card.oem,
-        })),
-        filesCount: 0,
-      });
+      setVisitedSections(new Set());
+      setSavedResult(null);
+      initialSnapshotRef.current = snapshotOf({ ...base, compatibilities: initialCards });
+    } else {
+      resetToEmpty();
     }
     setError(null);
 
     return () => {
       active = false;
     };
-  }, [editProduct, isOpen]);
+  }, [editProduct, isOpen, resetToEmpty]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -731,6 +888,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
     Promise.all(
       compatibilities.map(async (card) => {
+        if (card.savedWithoutDetail) {
+          return { id: card.id, modelOptions: card.modelOptions, versionOptions: card.versionOptions };
+        }
         if (!card.vehicleBrand) {
           return { id: card.id, modelOptions: [], versionOptions: [] };
         }
@@ -766,12 +926,20 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         current.map((card) => {
           const result = results.find((item) => item.id === card.id);
           if (!result) return card;
+          // Fase 7: las versiones ya elegidas no se descartan si /versiones no las devuelve (el
+          // catálogo cambió o la llamada falló). Cambiar modelo o años ya las limpia a propósito
+          // en updateCompatibility; aquí sólo se completan las opciones.
           const validVersionIds = new Set(result.versionOptions.map((version) => String(version.id)));
+          const kept = card.versionOptions.filter(
+            (version) => card.vehicleVersionIds.includes(String(version.id)) && !validVersionIds.has(String(version.id)),
+          );
+          const missing = card.vehicleVersionIds
+            .filter((id) => !validVersionIds.has(id) && !kept.some((version) => String(version.id) === id))
+            .map((id) => ({ id: Number(id), nombre: savedVehicleLabel(Number(id)) }));
           return {
             ...card,
             modelOptions: result.modelOptions,
-            versionOptions: result.versionOptions,
-            vehicleVersionIds: card.vehicleVersionIds.filter((id) => validVersionIds.has(id)),
+            versionOptions: [...result.versionOptions, ...kept, ...missing],
           };
         }),
       );
@@ -850,6 +1018,34 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
   if (!isOpen) return null;
 
+  const missingBySection: Record<number, string[]> = {
+    1: [
+      !name.trim() && 'nombre',
+      !category.trim() && 'categoría',
+      !partBrand.trim() && 'marca del repuesto',
+      !sku.trim() && 'código (SKU)',
+    ].filter((item): item is string => Boolean(item)),
+    2: pricingMode === 'show_price' && price <= 0 ? ['precio'] : [],
+    3: isUniversal
+      ? []
+      : compatibilities.flatMap((card, index) =>
+        index === 0 || cardHasData(card)
+          ? missingInCard(card).map((item) => (compatibilities.length > 1 ? `${item} (vehículo ${index + 1})` : item))
+          : [],
+      ),
+    5: description.trim().length < MIN_DESCRIPTION ? [`descripción (mínimo ${MIN_DESCRIPTION} letras)`] : [],
+  };
+
+  const markVisited = (section: number) => (e: React.FocusEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setVisitedSections((current) => (current.has(section) ? current : new Set(current).add(section)));
+  };
+
+  const missingNote = (section: number) =>
+    visitedSections.has(section) && missingBySection[section].length > 0 ? (
+      <p className="manual-section-missing" role="status">Falta: {missingBySection[section].join(', ')}.</p>
+    ) : null;
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFiles = Array.from(e.target.files || []);
     e.target.value = '';
@@ -868,9 +1064,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     }
 
     const filesToAdd = newFiles.slice(0, availableSlots);
-    const oversized = filesToAdd.find((file) => file.size > 2 * 1024 * 1024);
+    const oversized = filesToAdd.find((file) => file.size > MAX_PHOTO_BYTES);
     if (oversized) {
-      triggerError('Cada imagen debe pesar máximo 2MB. Selecciona archivos más livianos.');
+      triggerError(`La foto "${oversized.name}" pesa más de 5 MB. Elige una más liviana.`);
       return;
     }
 
@@ -906,8 +1102,16 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         if (fields.vehicleModel !== undefined || fields.vehicleYear !== undefined || fields.vehicleYearTo !== undefined) {
           next.vehicleVersionIds = [];
           next.versionOptions = [];
+          next.savedWithoutDetail = false;
+        }
+        if (fields.vehicleYearTo !== undefined || fields.vehicleBrand !== undefined) {
+          next.yearNote = undefined;
         }
         if (fields.vehicleYear !== undefined && fields.vehicleYear > 0) {
+          next.yearNote = undefined;
+          if (next.vehicleYearTo && next.vehicleYearTo < fields.vehicleYear) {
+            next.yearNote = `Cambiamos "Año hasta" a ${fields.vehicleYear} para que no quede antes de "Año desde".`;
+          }
           if (!next.vehicleYearTo || next.vehicleYearTo < fields.vehicleYear) {
             next.vehicleYearTo = fields.vehicleYear;
           }
@@ -921,10 +1125,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   };
 
   const addCompatibility = () => {
-    setCompatibilities((current) => [
-      ...current,
-      { ...createCompatibilityCard(), oem: current[0]?.oem || oem },
-    ]);
+    setCompatibilities((current) => [...current, createCompatibilityCard()]);
   };
 
   const removeCompatibility = (id: string) => {
@@ -936,85 +1137,12 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setError(null);
     setSaving(true);
 
-    if (!name.trim() || !category.trim() || !partBrand.trim() || !sku.trim()) {
-      triggerError('Completa nombre, categoría, marca y SKU para registrar el producto.');
-      return;
-    }
-
-    if (pricingMode === 'show_price' && price <= 0) {
-      triggerError('Completa el precio de venta para registrar el producto o cambia a modo cotización.');
-      return;
-    }
-
-    if (stock < 0) {
-      triggerError('El stock disponible no puede ser menor a 0.');
-      return;
-    }
-
-    // Validation 1: Compatibility is mandatory for the product, unless it is universal
-    // (compatible con cualquier vehiculo -> no se pide detalle de compatibilidad).
-    if (!isUniversal) {
-    const firstCompat = compatibilities[0];
-    const hasFirstBrand = Boolean(firstCompat?.vehicleBrand?.trim());
-    const hasFirstModel = Boolean(firstCompat?.vehicleModel?.trim());
-    const hasFirstYears = Boolean(firstCompat?.vehicleYear > 0 && firstCompat?.vehicleYearTo > 0);
-    const hasFirstVersion = Boolean(firstCompat?.vehicleVersionIds && firstCompat.vehicleVersionIds.length > 0);
-
-    if (!hasFirstBrand || !hasFirstModel || !hasFirstYears || !hasFirstVersion) {
-      if (!hasFirstBrand) {
-        triggerError('Selecciona la marca del vehículo compatible.');
-        return;
-      }
-      if (!hasFirstModel) {
-        triggerError('Selecciona al menos un modelo de vehículo compatible.');
-        return;
-      }
-      if (!hasFirstYears) {
-        triggerError('Selecciona el año desde y el año hasta del vehículo compatible.');
-        return;
-      }
-      if (!hasFirstVersion) {
-        triggerError('Selecciona al menos una versión disponible del vehículo compatible.');
-        return;
-      }
-    }
-
-    for (let i = 1; i < compatibilities.length; i++) {
-      const card = compatibilities[i];
-      const hasBrand = Boolean(card.vehicleBrand.trim());
-      const hasModel = Boolean(card.vehicleModel.trim());
-      const hasYears = Boolean(card.vehicleYear > 0 && card.vehicleYearTo > 0);
-      const hasVersion = Boolean(card.vehicleVersionIds && card.vehicleVersionIds.length > 0);
-
-      if (hasBrand || hasModel || hasYears || hasVersion) {
-        if (!hasBrand) {
-          triggerError(`En la compatibilidad #${i + 1}, selecciona la marca del vehículo.`);
-          return;
-        }
-        if (!hasModel) {
-          triggerError(`En la compatibilidad #${i + 1}, selecciona al menos un modelo.`);
-          return;
-        }
-        if (!hasYears) {
-          triggerError(`En la compatibilidad #${i + 1}, selecciona el año desde y el año hasta.`);
-          return;
-        }
-        if (!hasVersion) {
-          triggerError(`En la compatibilidad #${i + 1}, selecciona al menos una versión disponible.`);
-          return;
-        }
-      }
-    }
-
-    if (compatibilities.some((card) => card.vehicleYearTo > 0 && card.vehicleYear > 0 && card.vehicleYearTo < card.vehicleYear)) {
-      triggerError('El año hasta no puede ser menor que el año desde.');
-      return;
-    }
-    }
-
-    // Validation 3: Minimum description length (15 characters)
-    if (!description.trim() || description.trim().length < 15) {
-      triggerError('La descripción es obligatoria y debe tener al menos 15 caracteres.');
+    // Fase 7: una sola regla para las insignias de cada sección y para el botón de guardar.
+    const firstIncomplete = [1, 2, 3, 5].find((section) => missingBySection[section].length > 0);
+    if (firstIncomplete !== undefined) {
+      setVisitedSections(new Set([1, 2, 3, 5]));
+      triggerError(`Faltan datos en "${SECTION_TITLES[firstIncomplete]}": ${missingBySection[firstIncomplete].join(', ')}.`);
+      sectionRefs.current[firstIncomplete]?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
       return;
     }
 
@@ -1059,7 +1187,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
       const productPayload: Omit<Product, 'id' | 'lastUpdated'> & { id?: string } = {
         sku: sanitizeCodeInput(sku),
-        oem: sanitizeCodeInput(isUniversal ? oem : primaryCompatibility.oem),
+        // Fase 7: el OEM del producto se escribe siempre arriba; la referencia de la primera
+        // tarjeta queda como respaldo (antes un universal nuevo no podía tener OEM).
+        oem: sanitizeCodeInput(oem || (isUniversal ? '' : primaryCompatibility.oem)),
         name: name.trim(),
         category,
         subcategory: subcategory.trim() || undefined,
@@ -1086,7 +1216,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       }
 
       await onSave(productPayload, imageFiles.length > 0 ? imageFiles : null);
-      onClose();
+      setSavedResult({ name: productPayload.name, edited: Boolean(editProduct) });
+      initialSnapshotRef.current = computeSnapshot();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al guardar el producto.');
     } finally {
@@ -1116,7 +1247,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               {editProduct ? 'Editar producto' : 'Crear producto'}
             </h3>
             <span className="drawer-subtitle">
-              {editProduct ? `SKU: ${editProduct.sku}` : 'Carga individual 1:1'}
+              {editProduct ? `SKU: ${editProduct.sku}` : 'Un repuesto a la vez'}
             </span>
           </div>
           <button type="button" className="btn-icon" onClick={attemptClose} aria-label="Cerrar formulario de producto">
@@ -1124,7 +1255,34 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} onInvalid={handleFormInvalid} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {savedResult ? (
+          <div className="modal-body manual-upload-body manual-success" role="status">
+            <CheckCircle2 size={48} className="manual-success-icon" />
+            <h4>{savedResult.edited ? 'Listo: guardaste los cambios' : 'Listo: publicaste tu repuesto'}</h4>
+            <p>
+              <strong>{savedResult.name}</strong>{' '}
+              {savedResult.edited ? 'ya tiene los datos nuevos.' : 'ya está en tu inventario y a la vista de los compradores.'}
+            </p>
+            <div className="manual-success-actions">
+              <button type="button" className="btn btn-primary" onClick={onClose}>Ver en inventario</button>
+              {!savedResult.edited && (
+                <button type="button" className="btn btn-secondary" onClick={resetToEmpty}>Publicar otro repuesto</button>
+              )}
+            </div>
+          </div>
+        ) : (
+        <form
+          onSubmit={handleSubmit}
+          onInvalid={handleFormInvalid}
+          // Fase 7: la validación la hace el formulario por secciones (qué falta y dónde), no el
+          // globo del navegador que muestra un solo campo a la vez.
+          noValidate
+          // Fase 7: Enter en un campo de texto no publica el repuesto a medio llenar.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault();
+          }}
+          style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+        >
           <div className="modal-body manual-upload-body" ref={bodyRef}>
             {error && (
               <div
@@ -1147,11 +1305,17 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               </div>
             )}
 
-            <div className="form-section-card manual-form-section" style={{ borderLeft: '4px solid hsl(var(--primary))' }}>
-              <div className="form-section-header primary">
-                <span>1.</span>
-                Informacion basica
+            <div
+              className="form-section-card manual-form-section"
+              style={{ borderLeft: '4px solid hsl(var(--primary))' }}
+              ref={(el) => { sectionRefs.current[1] = el; }}
+              onBlur={markVisited(1)}
+            >
+              <div className="form-section-header primary manual-section-header-status">
+                <div><span>1.</span> Información básica</div>
+                <SectionStatus missing={missingBySection[1]} visited={visitedSections.has(1)} />
               </div>
+              {missingNote(1)}
               <div className="form-section-grid">
                 <div className="form-group form-section-grid-full">
                   <label className="form-label">Nombre del producto {REQUIRED}</label>
@@ -1167,13 +1331,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Categoria {REQUIRED}</label>
+                  <label className="form-label">Categoría {REQUIRED}</label>
                   <SelectOrInput
                     className="form-control focus-primary"
-                    placeholder="Selecciona una categoria"
+                    placeholder="Selecciona una categoría"
                     value={category}
                     onChange={setCategory}
                     options={catalogCategories}
+                    allowOther={false}
+                    ariaLabel="Categoría"
                     required
                   />
                   {catalogError && (
@@ -1184,7 +1350,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Subcategoria {OPTIONAL}</label>
+                  <label className="form-label">Subcategoría {OPTIONAL}</label>
                   <select
                     className="form-control focus-primary"
                     value={subcategory}
@@ -1193,10 +1359,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                   >
                     <option value="">
                       {!category
-                        ? 'Selecciona primero una categoria'
+                        ? 'Selecciona primero una categoría'
                         : catalogSubcategories.length === 0
-                        ? 'Sin subcategorias disponibles'
-                        : 'Selecciona una subcategoria'}
+                        ? 'Sin subcategorías disponibles'
+                        : 'Selecciona una subcategoría'}
                     </option>
                     {catalogSubcategories.map((option) => (
                       <option key={option} value={option}>
@@ -1214,12 +1380,25 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     value={partBrand}
                     onChange={setPartBrand}
                     options={catalogPartBrands}
+                    ariaLabel="Marca del repuesto"
                     required
                   />
                 </div>
 
+                <div className="form-group">
+                  <label className="form-label">Número OEM o de fábrica {OPTIONAL}</label>
+                  <input
+                    type="text"
+                    className="form-control focus-primary"
+                    placeholder="Ej. 04465-0K090"
+                    value={oem}
+                    onChange={(e) => setOem(sanitizeCodeInput(e.target.value))}
+                  />
+                  <span className="manual-field-help">El código original del repuesto. Ayuda a que te encuentren por ese número.</span>
+                </div>
+
                 <div className="form-group form-section-grid-full">
-                  <label className="form-label">SKU (codigo interno) {REQUIRED}</label>
+                  <label className="form-label">SKU (tu código interno) {REQUIRED}</label>
                   <input
                     type="text"
                     className="form-control focus-primary"
@@ -1234,11 +1413,25 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               </div>
             </div>
 
-            <div className="form-section-card manual-form-section" style={{ borderLeft: '4px solid hsl(var(--success))' }}>
-              <div className="form-section-header success">
-                <span>2.</span>
-                Precio y disponibilidad
+            <div
+              className="form-section-card manual-form-section"
+              style={{ borderLeft: '4px solid hsl(var(--success))' }}
+              ref={(el) => { sectionRefs.current[2] = el; }}
+              onBlur={markVisited(2)}
+            >
+              <div className="form-section-header success manual-section-header-status">
+                <div><span>2.</span> Precio y disponibilidad</div>
+                <SectionStatus missing={missingBySection[2]} visited={visitedSections.has(2)} />
               </div>
+              {missingNote(2)}
+              {requiresChassis === 'true' && (
+                <div className="manual-inline-help">
+                  <p>Como pides el número de chasis, este repuesto va <strong>a cotización</strong>: el comprador te escribe con su chasis y tú le das el precio.</p>
+                  <button type="button" className="btn btn-secondary" onClick={() => setRequiresChassis('false')}>
+                    No necesito el chasis
+                  </button>
+                </div>
+              )}
               <div className="manual-radio-row">
                 <button
                   type="button"
@@ -1247,15 +1440,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                   disabled={requiresChassis === 'true'}
                 >
                   <strong>Mostrar precio</strong>
-                  <span>El precio sera visible para los compradores</span>
+                  <span>El precio será visible para los compradores</span>
                 </button>
                 <button
                   type="button"
                   className={`manual-radio-card ${pricingMode === 'quote_only' ? 'active' : ''}`}
                   onClick={() => setPricingMode('quote_only')}
                 >
-                  <strong>Solo cotizar</strong>
-                  <span>Los compradores enviaran una cotizacion</span>
+                  <strong>Sólo cotizar</strong>
+                  <span>Los compradores te pedirán una cotización</span>
                 </button>
               </div>
 
@@ -1267,7 +1460,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                   <input
                     type="number"
                     className="form-control focus-success"
-                    placeholder={pricingMode === 'quote_only' ? 'Se ocultara en el resumen' : '0'}
+                    placeholder={pricingMode === 'quote_only' ? 'No se muestra' : '0'}
                     min={0}
                     max={99999999}
                     value={pricingMode === 'quote_only' ? '' : price || ''}
@@ -1357,18 +1550,17 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               )}
             </div>
 
-            <div className="form-section-card manual-form-section" style={{ borderLeft: '4px solid hsl(var(--accent))' }}>
-              <div className="form-section-header accent manual-section-header-actions">
-                <div>
-                  <span>3.</span>
-                  Compatibilidad {REQUIRED}
-                </div>
-                {!isUniversal && (
-                  <button type="button" className="manual-add-compat" onClick={addCompatibility} aria-label="Agregar compatibilidad">
-                    <PlusCircle size={26} />
-                  </button>
-                )}
+            <div
+              className="form-section-card manual-form-section"
+              style={{ borderLeft: '4px solid hsl(var(--accent))' }}
+              ref={(el) => { sectionRefs.current[3] = el; }}
+              onBlur={markVisited(3)}
+            >
+              <div className="form-section-header accent manual-section-header-status">
+                <div><span>3.</span> Compatibilidad {REQUIRED}</div>
+                <SectionStatus missing={missingBySection[3]} visited={visitedSections.has(3)} />
               </div>
+              {missingNote(3)}
               <div className="manual-compat-list">
                 <div className={`manual-universal-card${isUniversal ? ' is-active' : ''}`}>
                   <div className="manual-universal-title">
@@ -1398,6 +1590,11 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       <span>Repuesto universal: se mostrará para cualquier modelo o patente buscada.</span>
                     </div>
                   )}
+                  {isUniversal && compatibilities.some(cardHasData) && (
+                    <p className="manual-field-help" role="status">
+                      Los vehículos que ya elegiste siguen aquí por si lo desactivas, pero mientras sea universal no se publican.
+                    </p>
+                  )}
                 </div>
 
                 {!isUniversal && (
@@ -1405,22 +1602,26 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 {compatibilities.map((card, index) => (
                   <div className="manual-compat-card" key={card.id}>
                     <div className="manual-compat-card-header">
-                      <strong>Compatibilidad #{index + 1}</strong>
+                      <strong>Vehículo {index + 1}</strong>
                       {index > 0 && (
-                        <button type="button" className="manual-remove-compat" onClick={() => removeCompatibility(card.id)} aria-label="Eliminar compatibilidad">
-                          <Trash2 size={18} />
+                        <button type="button" className="manual-remove-compat" onClick={() => removeCompatibility(card.id)} aria-label={`Quitar vehículo ${index + 1}`}>
+                          <Trash2 size={18} /> Quitar
                         </button>
                       )}
                     </div>
+                    {card.savedWithoutDetail && (
+                      <p className="manual-field-help" role="status">
+                        No pudimos cargar el detalle de estos vehículos. Se mantienen como estaban; si cambias la marca, el modelo o los años, los eliges de nuevo.
+                      </p>
+                    )}
                     <div className="form-section-grid">
                       <div className="form-group">
-                        <label className="form-label">Marca vehiculo {REQUIRED}</label>
-                        <SelectOrInput
-                          className="form-control focus-accent"
-                          placeholder="Selecciona una marca"
+                        <label className="form-label">Marca del vehículo {REQUIRED}</label>
+                        <VehicleBrandSelect
                           value={card.vehicleBrand}
+                          brands={nombresUnicosOrdenados(namesFromCatalog(vehicleBrandCatalog, VEHICLE_BRANDS_FALLBACK))}
                           onChange={(value) => updateCompatibility(card.id, { vehicleBrand: value })}
-                          options={nombresUnicosOrdenados(namesFromCatalog(vehicleBrandCatalog, VEHICLE_BRANDS_FALLBACK))}
+                          onMakeUniversal={() => setIsUniversal(true)}
                         />
                       </div>
 
@@ -1430,7 +1631,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                           values={splitValues(card.vehicleModel)}
                           onChange={(values) => updateCompatibility(card.id, { vehicleModel: joinValues(values) })}
                           options={card.modelOptions}
-                          placeholder="Selecciona uno o mas modelos"
+                          placeholder="Selecciona uno o más modelos"
                           emptyText={card.vehicleBrand ? 'No hay modelos disponibles para esta marca.' : 'Selecciona primero una marca.'}
                           disabled={!card.vehicleBrand}
                         />
@@ -1466,6 +1667,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                             </option>
                           ))}
                         </select>
+                        {card.yearNote && <span className="manual-field-help" role="status">{card.yearNote}</span>}
                       </div>
 
                       <div className="form-group">
@@ -1477,15 +1679,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                           placeholder="Selecciona versiones"
                           emptyText={
                             card.vehicleModel
-                              ? 'No hay versiones disponibles para esos modelos y anos.'
-                              : 'Selecciona uno o mas modelos para ver versiones.'
+                              ? 'No hay versiones disponibles para esos modelos y años.'
+                              : 'Selecciona uno o más modelos para ver versiones.'
                           }
                           showSelectAll
                         />
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">Referencia / Parte OEM {OPTIONAL}</label>
+                        <label className="form-label">Referencia para este vehículo {OPTIONAL}</label>
                         <input
                           type="text"
                           className="form-control focus-accent"
@@ -1497,24 +1699,37 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     </div>
                   </div>
                 ))}
+                    <button type="button" className="btn btn-secondary manual-add-vehicle" onClick={addCompatibility}>
+                      <PlusCircle size={18} /> Agregar otro vehículo
+                    </button>
                   </div>
                 )}
 
                 <div className="form-group form-section-grid-full manual-chassis-field">
-                  <label className="form-label">Requiere Chasis? {REQUIRED}</label>
-                  <select
-                    className="form-control focus-accent"
-                    value={requiresChassis}
-                    onChange={(e) => {
-                      const value = e.target.value as 'false' | 'true';
-                      setRequiresChassis(value);
-                      if (value === 'true') setPricingMode('quote_only');
-                    }}
-                    required
-                  >
-                    <option value="false">No</option>
-                    <option value="true">Si</option>
-                  </select>
+                  <span className="form-label">¿Necesitas el número de chasis para confirmar que le sirve?</span>
+                  <span className="manual-field-help">
+                    Si eliges "Sí", el precio no se muestra: el comprador te pide cotización con su número de chasis.
+                  </span>
+                  <div className="manual-chip-row" role="radiogroup" aria-label="¿Necesitas el número de chasis?">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={requiresChassis === 'false'}
+                      className={`manual-chip ${requiresChassis === 'false' ? 'active' : ''}`}
+                      onClick={() => setRequiresChassis('false')}
+                    >
+                      No
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={requiresChassis === 'true'}
+                      className={`manual-chip ${requiresChassis === 'true' ? 'active' : ''}`}
+                      onClick={() => { setRequiresChassis('true'); setPricingMode('quote_only'); }}
+                    >
+                      Sí
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1525,7 +1740,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 Fotos {OPTIONAL}
               </div>
               <div className="form-group form-section-grid-full">
-                <label className="form-label">Agrega hasta 4 fotos claras desde diferentes angulos. {OPTIONAL}</label>
+                <label className="form-label">Agrega hasta 4 fotos claras desde distintos ángulos. Cada una hasta 5 MB. {OPTIONAL}</label>
                 <div className="manual-photo-area">
                   <div className="manual-photo-grid">
                     {Array.from({ length: MAX_PHOTOS }).map((_, index) => {
@@ -1533,9 +1748,14 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       return preview ? (
                         <div className="manual-photo-preview" key={preview}>
                           <img src={resolveImageUri(preview)} alt={`Foto ${index + 1}`} />
-                          <button type="button" onClick={() => removeImageAt(index)} aria-label="Quitar foto">
-                            <X size={12} />
-                          </button>
+                          {/* Las fotos ya publicadas se quedan: quitarlas aquí no las borraría. */}
+                          {preview.startsWith('blob:') ? (
+                            <button type="button" onClick={() => removeImageAt(index)} aria-label={`Quitar foto ${index + 1}`}>
+                              <X size={12} />
+                            </button>
+                          ) : (
+                            <span className="manual-photo-published">Publicada</span>
+                          )}
                         </div>
                       ) : (
                         <div className="manual-photo-empty" key={`empty-${index}`}>
@@ -1596,17 +1816,23 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               </div>
             </div>
 
-            <div className="form-section-card manual-form-section" style={{ borderLeft: '4px solid hsl(var(--success))' }}>
-              <div className="form-section-header success">
-                <span>5.</span>
-                Descripcion y calidad
+            <div
+              className="form-section-card manual-form-section"
+              style={{ borderLeft: '4px solid hsl(var(--success))' }}
+              ref={(el) => { sectionRefs.current[5] = el; }}
+              onBlur={markVisited(5)}
+            >
+              <div className="form-section-header success manual-section-header-status">
+                <div><span>5.</span> Descripción y calidad</div>
+                <SectionStatus missing={missingBySection[5]} visited={visitedSections.has(5)} />
               </div>
+              {missingNote(5)}
               <div className="form-section-grid">
                 <div className="form-group form-section-grid-full">
-                  <label className="form-label">Descripcion {REQUIRED}</label>
+                  <label className="form-label">Descripción {REQUIRED}</label>
                   <textarea
                     className="form-control focus-success"
-                    placeholder="Describe el producto, caracteristicas, beneficios y cualquier detalle importante..."
+                    placeholder="Describe el repuesto: para qué sirve, medidas, qué incluye..."
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     rows={4}
@@ -1614,7 +1840,11 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     style={{ resize: 'vertical' }}
                     required
                   />
-                  <span className="manual-counter">{description.length}/1000</span>
+                  <span className={`manual-counter ${description.trim().length < MIN_DESCRIPTION ? 'short' : ''}`} aria-live="polite">
+                    {description.trim().length < MIN_DESCRIPTION
+                      ? `Escribe al menos ${MIN_DESCRIPTION - description.trim().length} letras más.`
+                      : `${description.length}/1000`}
+                  </span>
                 </div>
 
                 <div className="form-group form-section-grid-full">
@@ -1666,11 +1896,12 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 Cancelar
               </button>
               <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? 'Guardando...' : editProduct ? 'Guardar cambios' : 'Registrar producto'}
+                {saving ? 'Guardando…' : editProduct ? 'Guardar cambios' : 'Publicar repuesto'}
               </button>
             </div>
           </div>
         </form>
+        )}
 
         {showUnsavedConfirm && (
           <div className="manual-unsaved-modal-overlay" onClick={() => setShowUnsavedConfirm(false)}>
