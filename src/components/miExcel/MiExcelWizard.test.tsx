@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import * as XLSX from 'xlsx';
 
 vi.mock('../../utils/session', async (original) => ({
   ...(await original<typeof import('../../utils/session')>()),
@@ -290,6 +291,32 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     expect(within(banner).getByText('Falta la marca del repuesto.')).toBeInTheDocument();
     expect(screen.getByLabelText('Marca del repuesto de la fila 3')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ver las columnas de la derecha' })).toBeInTheDocument();
+  });
+
+  it('lo que el panel retiene no se publica aunque el servidor lo dé por bueno (precio con decimales)', async () => {
+    // Prueba en local del 30-sep: "15990,5" salía en la vista previa como "No se publicará" pero se
+    // publicaba a $15.991, porque al publicar sólo se sacaban las filas que objetaba el servidor.
+    const conDecimales = CSV.replace('39990', '"39990,5"');
+    rutas.unshift({ incluye: 'borrador-carga/archivo', metodo: 'GET', respuesta: () => ({ ok: true, status: 200, blob: async () => new Blob([conDecimales], { type: 'text/csv' }) }) });
+    rutas.unshift({ incluye: 'excel/cargar', respuesta: () => respuestaJson(resumen([{ ...filasOk[0], productoId: 100 }])) });
+    montar({ retomarDirecto: true });
+    fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
+    await screen.findByText(/Revisamos tu inventario:/);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Publicar 1 repuesto/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sí, publicar/ }));
+    expect(await screen.findByText('¡Listo! Tu inventario está publicado')).toBeInTheDocument();
+
+    const carga = llamadas.find((l) => l.url.includes('excel/cargar'));
+    const enviado = (carga?.body as FormData).get('file') as File;
+    const bytes = await new Promise<ArrayBuffer>((ok) => {
+      const lector = new FileReader();
+      lector.onload = () => ok(lector.result as ArrayBuffer);
+      lector.readAsArrayBuffer(enviado);
+    });
+    const libro = XLSX.read(bytes, { type: 'array' });
+    const filas = XLSX.utils.sheet_to_json<Record<string, unknown>>(libro.Sheets.inventario);
+    expect(filas.map((f) => f.sku_proveedor)).toEqual(['PF-1']);
   });
 
   it('revisa con el servidor, muestra lista y cuadrícula, publica, sube las fotos y borra lo guardado', async () => {

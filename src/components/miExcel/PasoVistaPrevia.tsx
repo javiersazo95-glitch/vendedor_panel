@@ -51,7 +51,11 @@ interface Props {
   onAsignarFotos: (clave: string, nombres: string[]) => void;
   onCorregir: (clave: string) => void;
   onAtras: () => void;
-  onPublicar: () => void;
+  /**
+   * Publica. Recibe los repuestos que no se publicarán (clave -> motivos): los que retiene el
+   * panel también, no sólo los que objetó el servidor.
+   */
+  onPublicar: (retenidos: Record<string, string[]>) => void;
   nombreTienda?: string;
   /** La última revisión del servidor, para decir qué dato exacto impide publicar. */
   servidor?: RevisionServidorFilas | null;
@@ -538,7 +542,12 @@ export function PasoVistaPrevia(p: Props) {
           acciones={(
             <>
               <button type="button" className="btn btn-secondary mx-btn" onClick={() => setConfirmar(false)}>Todavía no</button>
-              <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={() => { setConfirmar(false); p.onPublicar(); }}>Sí, publicar</button>
+              <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={() => {
+                setConfirmar(false);
+                p.onPublicar(Object.fromEntries(conEstado
+                  .filter((x) => x.estado === 'error')
+                  .map((x) => [x.fila.clave, x.problemas.filter((pr) => pr.severidad === 'error').map((pr) => pr.mensaje)])));
+              }}>Sí, publicar</button>
             </>
           )}
         >

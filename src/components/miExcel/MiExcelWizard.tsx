@@ -593,7 +593,7 @@ export function MiExcelWizard({
     setFase('publicado');
   };
 
-  const publicar = async () => {
+  const publicar = async (retenidos: Record<string, string[]> = {}) => {
     const revisado = revisadoRef.current;
     const session = getStoredSession();
     if (!revisado || revisado.firma !== firmaActual || !session || !tabla) return;
@@ -601,8 +601,14 @@ export function MiExcelWizard({
     setFase('publicando');
     setProgreso({ texto: 'Publicando tus repuestos…', hechas: 0, total: 0 });
     try {
-      const excluidas = revisado.filas.filter((f) => f.estado === 'ERROR');
-      const aSubir = revisado.filas.filter((f) => f.estado !== 'ERROR');
+      // Fuera lo que objetó el servidor y también lo que retiene el panel: el archivo que se revisó
+      // ya trae, por ejemplo, el precio "15990,5" como el entero sugerido, así que el servidor lo
+      // daba por bueno y se publicaba a $15.991 aunque la pantalla decía "No se publicará".
+      const retenidoEnPanel = (f: FilaResultado) => retenidos[revisado.claves[f.fila - 2]] !== undefined;
+      const excluidas = revisado.filas
+        .filter((f) => f.estado === 'ERROR' || retenidoEnPanel(f))
+        .map((f) => (f.estado === 'ERROR' ? f : { ...f, estado: 'ERROR' as const, mensajes: retenidos[revisado.claves[f.fila - 2]] ?? [] }));
+      const aSubir = revisado.filas.filter((f) => f.estado !== 'ERROR' && !retenidoEnPanel(f));
       const archivoASubir = excluidas.length === 0 ? revisado.file : await construirExcelSoloValidos(revisado.file, aSubir.map((f) => f.fila));
       const data = await cargarExcel(session.sellerId, session.token, archivoASubir, (hechas, total, mensaje) => {
         setProgreso({ texto: mensaje ?? `Publicando tus repuestos… ${hechas.toLocaleString('es-CL')} de ${total.toLocaleString('es-CL')}`, hechas, total });
@@ -1075,7 +1081,7 @@ export function MiExcelWizard({
           })}
           onCorregir={(clave) => { setClaveACorregir(clave); irAPaso(3); }}
           onAtras={() => irAPaso(3)}
-          onPublicar={() => void publicar()}
+          onPublicar={(retenidos) => void publicar(retenidos)}
         />
       )}
 
