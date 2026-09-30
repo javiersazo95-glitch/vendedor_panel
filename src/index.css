@@ -1374,6 +1374,17 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.5;
 }
 .carga-resumen-errores svg { flex-shrink: 0; margin-top: 0.15rem; }
+.carga-resumen-motivos {
+  width: 100%;
+  margin: 0;
+  padding: 0.6rem 0.9rem 0.6rem 2rem;
+  border-radius: 12px;
+  background: var(--warning-bg);
+  color: #92400e;
+  font-size: 0.94rem;
+  line-height: 1.5;
+  text-align: left;
+}
 .carga-resumen-fotos {
   width: 100%;
   display: flex;

@@ -2213,8 +2213,8 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
       {resumenAbierto && result && (
         <div className="carga-resumen-overlay" role="dialog" aria-modal="true" aria-labelledby="carga-resumen-titulo">
           <div className="carga-resumen">
-            <div className={`carga-resumen-icono ${result.productosConError > 0 ? 'con-errores' : 'ok'}`}>
-              {result.productosConError > 0 ? <AlertTriangle size={26} /> : <CheckCircle2 size={26} />}
+            <div className={`carga-resumen-icono ${result.productosConError > 0 || result.productosCargados === 0 ? 'con-errores' : 'ok'}`}>
+              {result.productosConError > 0 || result.productosCargados === 0 ? <AlertTriangle size={26} /> : <CheckCircle2 size={26} />}
             </div>
 
             <h4 id="carga-resumen-titulo">
@@ -2229,12 +2229,20 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
               {archivoRepetidoEl !== null
                 ? 'No lo volvimos a publicar, para no duplicar tus repuestos. Esto es lo que resultó esa vez. '
                 : ''}
-              Ya están visibles en la plataforma web y en la app.
+              {result.productosCargados === 0
+                ? `No se publicó ningún repuesto${result.errores?.[0] ? `: ${result.errores[0]}` : '.'}`
+                : 'Ya están visibles en la plataforma web y en la app.'}
               {result.productosConAdvertencia > 0 && (
                 ` ${result.productosConAdvertencia} ${result.productosConAdvertencia === 1 ? 'tiene un aviso' : 'tienen avisos'} que puedes revisar en la tabla.`
               )}
             </p>
 
+            {/* Un error de todo el archivo no trae filas: el motivo sólo viene en `errores`. */}
+            {result.filas.length === 0 && (result.errores?.length ?? 0) > 1 && (
+              <ul className="carga-resumen-motivos">
+                {result.errores.slice(1).map((motivo) => <li key={motivo}>{motivo}</li>)}
+              </ul>
+            )}
             {result.productosConError > 0 && (
               <p className="carga-resumen-errores">
                 <FileSpreadsheet size={15} />

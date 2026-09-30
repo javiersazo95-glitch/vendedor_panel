@@ -44,6 +44,8 @@ interface CargaDetalle {
   productosCargados: number;
   productosConError: number;
   productosConAdvertencia: number;
+  /** Motivos de un error de todo el archivo (vienen con `filas` vacío). */
+  errores?: string[];
   filas: FilaDetalle[];
 }
 
@@ -229,6 +231,14 @@ export const HistorialCargas: React.FC = () => {
                     {detalle.productosConError > 0 && (detalle.productosConError === 1 ? '; 1 no se cargó' : `; ${detalle.productosConError} no se cargaron`)}
                     {detalle.productosConAdvertencia > 0 && `; ${detalle.productosConAdvertencia} con aviso`}.
                   </p>
+                  {detalle.filas.length === 0 && (detalle.errores?.length ?? 0) > 0 && (
+                    <div role="alert" style={{ ...TEXTO, color: 'hsl(var(--danger))' }}>
+                      <strong>Por qué no se cargó:</strong>
+                      <ul style={{ paddingLeft: '1.2rem', margin: '0.3rem 0 0' }}>
+                        {detalle.errores!.map((motivo) => <li key={motivo}>{motivo}</li>)}
+                      </ul>
+                    </div>
+                  )}
                   {conProblema.length > 0 && (
                     <>
                       <button type="button" className="btn btn-secondary" style={{ ...TEXTO, alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }} onClick={() => descargarFilasConProblema(detalleId, detalle)}>

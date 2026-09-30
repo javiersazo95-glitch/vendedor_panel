@@ -187,3 +187,32 @@ describe('Esperar una carga grande', () => {
     expect(llamadas('/excel/cargas/9')).toHaveLength(2);
   }, 12000);
 });
+
+/**
+ * Validación previa al push: el resumen decía "Ya están visibles" aunque no se hubiera publicado
+ * nada, y el motivo de un error de todo el archivo (viene en `errores`, sin filas) no se veía.
+ */
+describe('El resumen cuando no se publicó nada', () => {
+  it('dice que no se publicó ningún repuesto y muestra los motivos que mandó el servidor', async () => {
+    respuestaCarga = respuesta({
+      estado: 'ERROR', jobId: 9, productosCargados: 0, productosConAdvertencia: 0, filas: [],
+      errores: ['No pudimos leer la hoja "inventario".', 'Vuelve a descargar la plantilla.'],
+    });
+    await subirYRevisar();
+    await screen.findByText('Se van a publicar 2 repuestos');
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, publicar' }));
+
+    expect(await screen.findByText(/No se publicó ningún repuesto: No pudimos leer la hoja "inventario"\./)).toBeInTheDocument();
+    expect(screen.getByText('Vuelve a descargar la plantilla.')).toBeInTheDocument();
+    expect(screen.queryByText(/Ya están visibles/)).not.toBeInTheDocument();
+  });
+
+  it('con repuestos publicados sigue diciendo que ya están visibles', async () => {
+    await subirYRevisar();
+    await screen.findByText('Se van a publicar 2 repuestos');
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, publicar' }));
+
+    expect(await screen.findByText(/Ya están visibles en la plataforma web y en la app/)).toBeInTheDocument();
+    expect(screen.queryByText(/No se publicó ningún repuesto/)).not.toBeInTheDocument();
+  });
+});
