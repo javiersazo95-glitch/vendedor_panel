@@ -27,6 +27,12 @@ export interface Product {
   image: string; // URL string
   /** Todas las fotos publicadas; `image` es la primera. Fase 7: el 1 a 1 las muestra al editar. */
   images?: string[];
+  /**
+   * Sólo al editar desde el 1 a 1: las URL publicadas que se quedan (las mismas de `images`).
+   * Si viene, la edición va con la lista y el backend borra sólo las que faltan; sin ella, el
+   * backend reemplaza todas las fotos anteriores cuando llegan nuevas.
+   */
+  existingPhotos?: string[];
   pricingMode?: 'show_price' | 'quote_only';
   condition?: 'ORIGINAL' | 'ALTERNATIVO';
   requiresChassis?: boolean;
@@ -393,8 +399,10 @@ export async function updateProduct(
   let response: Response;
 
   const imageFiles = imageInputList(imageFile).slice(0, 4);
+  const existingPhotos = product.existingPhotos;
 
-  if (imageFiles.length > 0) {
+  // Quitar una foto publicada sin agregar otra también va por aquí: el PUT JSON no toca fotos.
+  if (imageFiles.length > 0 || existingPhotos !== undefined) {
     // Use multipart editing endpoint
     const formData = new FormData();
     formData.append('skuProveedor', product.sku);
@@ -413,6 +421,12 @@ export async function updateProduct(
     formData.append('condicion', product.condition || 'ORIGINAL');
     formData.append('requiereChasis', String(product.requiresChassis === true));
     formData.append('activo', String(product.activo !== false));
+    if (existingPhotos !== undefined) {
+      // Un campo vacío es la lista vacía ("borrar todas"); sin el campo, el backend borraría
+      // todas las anteriores igual, pero sólo si llegan nuevas.
+      if (existingPhotos.length === 0) formData.append('existingPhotos', '');
+      existingPhotos.forEach((url) => formData.append('existingPhotos', url));
+    }
     const imagenesComprimidas = await comprimirImagenes(
       imageFiles.map((file) => ({ blob: file, filename: nombreDeImagen(file) })),
     );

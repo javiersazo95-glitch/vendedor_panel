@@ -302,6 +302,8 @@ type SnapshotFields = {
   isUniversal: boolean;
   compatibilities: CompatibilityCard[];
   filesCount: number;
+  /** Fotos ya publicadas que siguen en el formulario: quitar una también es un cambio. */
+  publishedCount: number;
 };
 
 /**
@@ -694,11 +696,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [savedResult, setSavedResult] = useState<{ name: string; edited: boolean } | null>(null);
   const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const initialSnapshotRef = useRef<string | null>(null);
+  // Fotos publicadas al abrir la edición: las que no caben en pantalla y cuántas eran en total.
+  const hiddenPublishedRef = useRef<string[]>([]);
+  const initialPublishedCountRef = useRef(0);
 
   const computeSnapshot = useCallback(() => snapshotOf({
     sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis,
     condition, description, isUniversal, compatibilities, filesCount: imageFiles.length,
-  }), [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, isUniversal, compatibilities, imageFiles.length]);
+    publishedCount: imagePreviews.filter((preview) => !preview.startsWith('blob:')).length,
+  }), [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, isUniversal, compatibilities, imageFiles.length, imagePreviews]);
 
   const resetToEmpty = useCallback(() => {
     const defaultCard = [createCompatibilityCard()];
@@ -719,13 +725,15 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setImage('');
     setImagePreviews([]);
     setImageFiles([]);
+    hiddenPublishedRef.current = [];
+    initialPublishedCountRef.current = 0;
     setVisitedSections(new Set());
     setSavedResult(null);
     setError(null);
     initialSnapshotRef.current = snapshotOf({
       sku: '', oem: '', name: '', category: '', subcategory: '', partBrand: '', pricingMode: 'show_price',
       price: 0, stock: 1, requiresChassis: 'false', condition: 'ORIGINAL', description: '', isUniversal: false,
-      compatibilities: defaultCard, filesCount: 0,
+      compatibilities: defaultCard, filesCount: 0, publishedCount: 0,
     });
   }, []);
 
@@ -763,7 +771,19 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         description: editProduct.description || '',
         isUniversal: editProduct.esUniversal === true,
         filesCount: 0,
+        publishedCount: 0,
       };
+      // Sólo las fotos reales: a un producto sin fotos el listado le rellena la imagen genérica,
+      // y esa no es una foto "Publicada" del vendedor.
+      const published = (
+        editProduct.images && editProduct.images.length > 0
+          ? editProduct.images
+          : editProduct.image ? [editProduct.image] : []
+      ).filter((url) => url && url !== DEFAULT_PRODUCT_IMAGE_URL);
+      base.publishedCount = Math.min(published.length, MAX_PHOTOS);
+      // Las que no caben en los 4 recuadros (una carga masiva admite más) se conservan siempre.
+      hiddenPublishedRef.current = published.slice(MAX_PHOTOS);
+      initialPublishedCountRef.current = published.length;
       setSku(base.sku);
       setOem(base.oem);
       setName(base.name);
@@ -789,14 +809,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setIsUniversal(base.isUniversal);
       setCondition(base.condition);
       setDescription(base.description);
-      setImage(editProduct.image || '');
+      setImage(published[0] || '');
       // Fase 7: todas las fotos publicadas, no sólo la primera.
-      setImagePreviews(
-        (editProduct.images && editProduct.images.length > 0
-          ? editProduct.images
-          : editProduct.image ? [editProduct.image] : []
-        ).slice(0, MAX_PHOTOS),
-      );
+      setImagePreviews(published.slice(0, MAX_PHOTOS));
       setImageFiles([]);
       setVisitedSections(new Set());
       setSavedResult(null);
@@ -1213,6 +1228,16 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
       if (editProduct) {
         productPayload.id = editProduct.id;
+        // El backend borra todas las fotos anteriores si recibe fotos nuevas sin la lista de las
+        // que se quedan. Se manda la lista completa cuando se agregan fotos o se quita alguna
+        // publicada (una lista vacía significa "borrar todas").
+        const keptPublished = [
+          ...imagePreviews.filter((preview) => !preview.startsWith('blob:')),
+          ...hiddenPublishedRef.current,
+        ];
+        if (imageFiles.length > 0 || keptPublished.length < initialPublishedCountRef.current) {
+          productPayload.existingPhotos = keptPublished;
+        }
       }
 
       await onSave(productPayload, imageFiles.length > 0 ? imageFiles : null);
@@ -1748,12 +1773,11 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       return preview ? (
                         <div className="manual-photo-preview" key={preview}>
                           <img src={resolveImageUri(preview)} alt={`Foto ${index + 1}`} />
-                          {/* Las fotos ya publicadas se quedan: quitarlas aquí no las borraría. */}
-                          {preview.startsWith('blob:') ? (
-                            <button type="button" onClick={() => removeImageAt(index)} aria-label={`Quitar foto ${index + 1}`}>
-                              <X size={12} />
-                            </button>
-                          ) : (
+                          {/* Una foto publicada que se quita se borra al guardar, no antes. */}
+                          <button type="button" onClick={() => removeImageAt(index)} aria-label={`Quitar foto ${index + 1}`}>
+                            <X size={12} />
+                          </button>
+                          {!preview.startsWith('blob:') && (
                             <span className="manual-photo-published">Publicada</span>
                           )}
                         </div>

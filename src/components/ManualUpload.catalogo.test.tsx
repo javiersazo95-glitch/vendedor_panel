@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import '@testing-library/jest-dom';
 import type { Product } from '../db';
 import { ManualUpload } from './ManualUpload';
+import { DEFAULT_PRODUCT_IMAGE_URL } from '../utils/imageHelper';
 
 /**
  * SEC-MARKET-A30/A31: las llamadas al catálogo se hacían con `fetch()` crudo, fuera de
@@ -157,5 +158,73 @@ describe('ManualUpload: sin callejones y sin perder vehículos (Fase 7)', () => 
     fireEvent.change(escrita, { target: { value: 'bosch' } });
 
     expect((screen.getByLabelText('Marca del repuesto') as HTMLSelectElement).value).toBe('Bosch');
+  });
+});
+
+/**
+ * Validación previa al push: editar y agregar una foto borraba las publicadas, porque el panel no
+ * decía cuáles se quedaban y el backend, sin esa lista, reemplaza todas.
+ */
+describe('ManualUpload: las fotos publicadas se conservan al editar', () => {
+  const FOTOS = ['/api/v1/img/8035/1', '/api/v1/img/8035/2', '/api/v1/img/8035/3'];
+  const conFotos = () => guardado({ image: FOTOS[0], images: FOTOS });
+  const guardar = async (onSave: ReturnType<typeof vi.fn>) => {
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    return onSave.mock.calls[0] as unknown as [Product, File[] | null];
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', responder(CATALOGO, ['vehiculo-catalogos', 'versiones']));
+    let n = 0;
+    URL.createObjectURL = vi.fn(() => `blob:foto-${++n}`);
+    URL.revokeObjectURL = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it('con 3 publicadas y 1 nueva, manda las 3 como existingPhotos y la nueva como archivo', async () => {
+    const onSave = vi.fn(async () => {});
+    const { container } = render(<ManualUpload isOpen onClose={() => {}} onSave={onSave} editProduct={conFotos()} />);
+    await screen.findByText(/No pudimos cargar el detalle de estos vehículos/);
+
+    const nueva = new File(['x'], 'nueva.jpg', { type: 'image/jpeg' });
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [nueva] } });
+    const [payload, archivos] = await guardar(onSave);
+
+    expect(payload.existingPhotos).toEqual(FOTOS);
+    expect(archivos).toEqual([nueva]);
+  });
+
+  it('quitar una publicada la saca de la lista, aunque no se agregue ninguna', async () => {
+    const onSave = vi.fn(async () => {});
+    render(<ManualUpload isOpen onClose={() => {}} onSave={onSave} editProduct={conFotos()} />);
+    await screen.findByText(/No pudimos cargar el detalle de estos vehículos/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar foto 2' }));
+    const [payload, archivos] = await guardar(onSave);
+
+    expect(payload.existingPhotos).toEqual([FOTOS[0], FOTOS[2]]);
+    expect(archivos).toBeNull();
+  });
+
+  it('sin tocar las fotos no manda la lista: la edición sigue siendo la de siempre', async () => {
+    const onSave = vi.fn(async () => {});
+    render(<ManualUpload isOpen onClose={() => {}} onSave={onSave} editProduct={conFotos()} />);
+    await screen.findByText(/No pudimos cargar el detalle de estos vehículos/);
+
+    const [payload] = await guardar(onSave);
+    expect(payload.existingPhotos).toBeUndefined();
+  });
+
+  it('un producto sin fotos no muestra la imagen genérica como "Publicada"', async () => {
+    render(<ManualUpload isOpen onClose={() => {}} onSave={async () => {}} editProduct={guardado({ image: DEFAULT_PRODUCT_IMAGE_URL, images: [] })} />);
+    await screen.findByText(/No pudimos cargar el detalle de estos vehículos/);
+
+    expect(screen.queryByText('Publicada')).not.toBeInTheDocument();
+    expect(screen.getByText('Agregar fotos (0/4)')).toBeInTheDocument();
   });
 });

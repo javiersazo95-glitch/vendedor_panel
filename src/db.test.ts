@@ -195,6 +195,55 @@ describe('updateProduct: los años vacíos no viajan como 0 (Fase 4)', () => {
   });
 });
 
+describe('updateProduct: las fotos publicadas que se quedan (existingPhotos)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); clearSession(); });
+
+  const editar = async (extra: Record<string, unknown>, fotos?: File[]) => {
+    saveSession({ email: 'v@x.cl', role: 'vendedor', token: 'tok', sellerId: '1' });
+    const requests: { url: string; method?: string; body: unknown }[] = [];
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      requests.push({ url: String(url), method: init?.method, body: init?.body });
+      return Promise.resolve(new Response(JSON.stringify({ id: 42 }), { status: 200 }));
+    }));
+    await updateProduct({
+      ...baseRow, id: '42', esUniversal: true, pricingMode: 'show_price', condition: 'ORIGINAL',
+      requiresChassis: false, vehiculoCatalogoIds: [], compatibilityGroupsJson: '', activo: true, ...extra,
+    } as never, fotos);
+    return requests;
+  };
+
+  it('con una foto nueva, el multipart manda las publicadas que se conservan', async () => {
+    const requests = await editar(
+      { existingPhotos: ['/api/v1/img/1', '/api/v1/img/2', '/api/v1/img/3'] },
+      [new File(['x'], 'nueva.jpg', { type: 'image/jpeg' })],
+    );
+    const post = requests.find((r) => r.url.endsWith('/inventario/42/editar'));
+    expect(post?.method).toBe('POST');
+    const form = post!.body as FormData;
+    expect(form.getAll('existingPhotos')).toEqual(['/api/v1/img/1', '/api/v1/img/2', '/api/v1/img/3']);
+    expect(form.getAll('imagenes')).toHaveLength(1);
+  });
+
+  it('quitar una publicada sin agregar otra también va por el multipart, con la lista', async () => {
+    const requests = await editar({ existingPhotos: ['/api/v1/img/1'] });
+    const post = requests.find((r) => r.url.endsWith('/inventario/42/editar'));
+    expect((post!.body as FormData).getAll('existingPhotos')).toEqual(['/api/v1/img/1']);
+    expect((post!.body as FormData).getAll('imagenes')).toHaveLength(0);
+  });
+
+  it('quitar todas manda la lista vacía, no la omite', async () => {
+    const requests = await editar({ existingPhotos: [] });
+    const post = requests.find((r) => r.url.endsWith('/inventario/42/editar'));
+    expect((post!.body as FormData).getAll('existingPhotos')).toEqual(['']);
+  });
+
+  it('sin cambios de fotos sigue siendo el PUT JSON de siempre', async () => {
+    const requests = await editar({});
+    expect(requests.some((r) => r.url.endsWith('/editar'))).toBe(false);
+    expect(requests.find((r) => r.url.match(/\/inventario\/42$/))?.method).toBe('PUT');
+  });
+});
+
 describe('mapDtoToProduct (vía getAllProducts)', () => {
   beforeEach(() => {
     saveSession({ email: 'a@a.com', role: 'vendedor', token: 'tok', sellerId: 'seller-1' });
