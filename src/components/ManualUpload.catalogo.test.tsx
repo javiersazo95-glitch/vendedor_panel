@@ -110,6 +110,32 @@ describe('ManualUpload: sin callejones y sin perder vehículos (Fase 7)', () => 
     expect(await screen.findByText('Listo: guardaste los cambios')).toBeInTheDocument();
   });
 
+  it('con el catálogo caído, guardar sólo el precio no guarda "Vehículo guardado" ni inventa marca por grupo', async () => {
+    vi.stubGlobal('fetch', responder(CATALOGO, ['vehiculo-catalogos', 'versiones']));
+    const onSave = vi.fn(async () => {});
+    const grupos = [
+      { vehiculoCatalogoIds: [10, 11], compatBrand: 'Toyota', model: 'Corolla', yearFrom: '2018', yearTo: '2018', oemReference: '', versionLabels: ['1.8 GLI', '1.8 XEI'] },
+      { vehiculoCatalogoIds: [20], compatBrand: 'Toyota', model: 'Yaris', yearFrom: '2016', yearTo: '2016', oemReference: '', versionLabels: ['1.5 GLI'] },
+      { vehiculoCatalogoIds: [30] },
+    ];
+    render(<ManualUpload isOpen onClose={() => {}} onSave={onSave} editProduct={guardado({
+      vehiculoCatalogoIds: [10, 11, 20, 30], vehicleVersion: '1.8 GLI, 1.8 XEI', compatibilityGroupsJson: JSON.stringify(grupos),
+    })} />);
+
+    await screen.findAllByText(/No pudimos cargar el detalle de estos vehículos/);
+    fireEvent.change(screen.getByDisplayValue('19990'), { target: { value: '24990' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const [payload] = onSave.mock.calls[0] as unknown as [Product];
+    expect(payload.vehiculoCatalogoIds).toEqual([10, 11, 20, 30]);
+    expect(payload.compatibilityGroupsJson).not.toContain('Vehículo guardado');
+    expect(payload.vehicleVersion).toBe('1.8 GLI, 1.8 XEI');
+    const enviados = JSON.parse(payload.compatibilityGroupsJson!);
+    expect(enviados.map((g: { model: string }) => g.model)).toEqual(['Corolla', 'Yaris', '']);
+    expect(enviados[2]).toMatchObject({ vehiculoCatalogoIds: [30], compatBrand: '', yearFrom: '', versionLabels: [] });
+  });
+
   it('si /versiones ya no devuelve una versión guardada, no se descarta', async () => {
     vi.stubGlobal('fetch', responder({
       ...CATALOGO,

@@ -46,6 +46,22 @@ type CompatibilityCard = {
    * conservan tal cual (antes la tarjeta se borraba en silencio y al guardar se perdían).
    */
   savedWithoutDetail?: boolean;
+  /**
+   * El grupo tal como estaba en `compatibilityGroupsJson`. Si el detalle no llegó, se vuelve a
+   * guardar esto y no lo que muestra la tarjeta (que es la marca y el modelo del producto).
+   */
+  savedGroup?: SavedGroup | null;
+};
+
+/** Un grupo de `compatibilityGroupsJson` como lo guardó el formulario. */
+type SavedGroup = {
+  vehiculoCatalogoIds: number[];
+  compatBrand?: unknown;
+  model?: unknown;
+  yearFrom?: unknown;
+  yearTo?: unknown;
+  oemReference?: unknown;
+  versionLabels?: unknown;
 };
 
 type VehicleCatalogDetail = {
@@ -212,7 +228,7 @@ function vehicleDetailLabel(detail: VehicleCatalogDetail) {
   return parts.length > 0 ? parts.join(' - ') : 'Motor Indefinido';
 }
 
-function parseCompatibilityGroups(product: Product): number[][] {
+function parseCompatibilityGroups(product: Product): SavedGroup[] {
   if (product.compatibilityGroupsJson) {
     try {
       const parsed = JSON.parse(product.compatibilityGroupsJson);
@@ -220,9 +236,12 @@ function parseCompatibilityGroups(product: Product): number[][] {
         const groups = parsed
           .map((group) => {
             const ids = Array.isArray(group?.vehiculoCatalogoIds) ? group.vehiculoCatalogoIds : [];
-            return ids.map((id: unknown) => Number(id)).filter((id: number) => !Number.isNaN(id));
+            return {
+              ...(group && typeof group === 'object' ? group : {}),
+              vehiculoCatalogoIds: ids.map((id: unknown) => Number(id)).filter((id: number) => !Number.isNaN(id)),
+            } as SavedGroup;
           })
-          .filter((ids) => ids.length > 0);
+          .filter((group) => group.vehiculoCatalogoIds.length > 0);
         if (groups.length > 0) return groups;
       }
     } catch {
@@ -231,19 +250,27 @@ function parseCompatibilityGroups(product: Product): number[][] {
   }
 
   return product.vehiculoCatalogoIds && product.vehiculoCatalogoIds.length > 0
-    ? [product.vehiculoCatalogoIds]
+    ? [{ vehiculoCatalogoIds: product.vehiculoCatalogoIds }]
     : [];
 }
 
 /** Etiqueta de un vehículo guardado cuyo detalle no llegó del catálogo. */
 const savedVehicleLabel = (id: number) => `Vehículo guardado (n.º ${id})`;
 
+/** Esa etiqueta sólo se muestra: no es una versión y no se guarda como motor ni como versión. */
+const isSavedVehicleLabel = (text: string) => /^Vehículo guardado \(n\.º \d+\)$/.test(text.trim());
+
+const withoutSavedLabels = (values: string[]) => values.filter((value) => !isSavedVehicleLabel(value));
+
+const textOf = (value: unknown) => (typeof value === 'string' || typeof value === 'number' ? String(value) : '');
+
 /**
  * Fase 7: el grupo de un producto que se edita, aunque `/vehiculo-catalogos` no responda o no
  * traiga todos los ids. Los que faltan se conservan con una etiqueta genérica: guardar sólo el
  * precio no puede cambiar con qué autos es compatible el repuesto.
  */
-function cardForSavedGroup(ids: number[], details: VehicleCatalogDetail[], product: Product): CompatibilityCard {
+function cardForSavedGroup(group: SavedGroup, details: VehicleCatalogDetail[], product: Product): CompatibilityCard {
+  const ids = group.vehiculoCatalogoIds;
   if (details.length === 0) {
     return {
       ...createCompatibilityCard(product),
@@ -251,6 +278,8 @@ function cardForSavedGroup(ids: number[], details: VehicleCatalogDetail[], produ
       vehicleVersionIds: ids.map(String),
       versionOptions: ids.map((id) => ({ id, nombre: savedVehicleLabel(id) })),
       savedWithoutDetail: true,
+      // Sin grupo guardado (sólo ids sueltos) no hay marca ni modelo por grupo que devolver.
+      savedGroup: 'compatBrand' in group || 'model' in group ? group : null,
     };
   }
   const card = { ...createCompatibilityCardFromDetails(details, product), oem: '' };
@@ -795,7 +824,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setCompatibilities(initialCards);
       const groups = parseCompatibilityGroups(editProduct);
       if (groups.length > 0) {
-        Promise.all(groups.map((ids) => loadVehicleCatalogDetails(ids))).then((detailGroups) => {
+        Promise.all(groups.map((group) => loadVehicleCatalogDetails(group.vehiculoCatalogoIds))).then((detailGroups) => {
           if (!active) return;
           const restoredCards = detailGroups.map((details, index) => cardForSavedGroup(groups[index], details, editProduct));
           setCompatibilities(restoredCards);
@@ -1165,12 +1194,28 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       const primaryCompatibility = compatibilities[0] || createCompatibilityCard();
       const compatibilityGroups = compatibilities
         .map((card) => {
+          if (card.savedWithoutDetail) {
+            // El detalle no llegó: se devuelve el grupo como estaba, sin inventar marca, modelo ni
+            // años a partir del producto, y sin la etiqueta "Vehículo guardado" como versión.
+            const saved = card.savedGroup;
+            return {
+              vehiculoCatalogoIds: Array.from(new Set(card.vehicleVersionIds)).map(Number).filter((id) => !Number.isNaN(id)),
+              compatBrand: textOf(saved?.compatBrand),
+              model: textOf(saved?.model),
+              yearFrom: textOf(saved?.yearFrom),
+              yearTo: textOf(saved?.yearTo),
+              oemReference: sanitizeCodeInput(card.oem) || textOf(saved?.oemReference),
+              versionLabels: Array.isArray(saved?.versionLabels)
+                ? withoutSavedLabels(saved.versionLabels.map(textOf))
+                : [],
+            };
+          }
           const selectedIds = card.vehicleVersionIds.length > 0
             ? card.vehicleVersionIds
             : card.versionOptions.map((version) => String(version.id));
-          const selectedVersionLabels = card.versionOptions
+          const selectedVersionLabels = withoutSavedLabels(card.versionOptions
             .filter((version) => selectedIds.includes(String(version.id)))
-            .map((version) => version.nombre);
+            .map((version) => version.nombre));
           return {
             vehiculoCatalogoIds: Array.from(new Set(selectedIds)).map(Number).filter((id) => !Number.isNaN(id)),
             compatBrand: card.vehicleBrand,
@@ -1185,14 +1230,21 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       const allCatalogIds = Array.from(
         new Set(compatibilityGroups.flatMap((group) => group.vehiculoCatalogoIds)),
       );
-      const primaryVersionLabels = primaryCompatibility.versionOptions
+      const primaryVersionLabels = withoutSavedLabels(primaryCompatibility.versionOptions
         .filter((version) =>
           (primaryCompatibility.vehicleVersionIds.length > 0
             ? primaryCompatibility.vehicleVersionIds
             : primaryCompatibility.versionOptions.map((item) => String(item.id))
           ).includes(String(version.id)),
         )
-        .map((version) => version.nombre);
+        .map((version) => version.nombre));
+      // Sin detalle del catálogo no hay versiones que leer: el motor queda el que ya tenía.
+      const savedMotor = editProduct?.vehicleVersion || '';
+      const primaryMotor = !primaryCompatibility.savedWithoutDetail
+        ? joinValues(primaryVersionLabels)
+        : splitValues(savedMotor).some(isSavedVehicleLabel)
+        ? joinValues(withoutSavedLabels(splitValues(savedMotor)))
+        : savedMotor;
 
       const finalImage = editProduct && imageFiles.length === 0 && image
         ? image
@@ -1214,7 +1266,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         vehicleModel: isUniversal ? '' : primaryCompatibility.vehicleModel.trim(),
         vehicleYear: isUniversal ? 0 : Number(primaryCompatibility.vehicleYear),
         vehicleYearTo: isUniversal ? 0 : Number(primaryCompatibility.vehicleYearTo),
-        vehicleVersion: isUniversal ? '' : joinValues(primaryVersionLabels),
+        vehicleVersion: isUniversal ? '' : primaryMotor,
         pricingMode,
         price: pricingMode === 'quote_only' ? 0 : Number(price),
         stock: Number(stock),
