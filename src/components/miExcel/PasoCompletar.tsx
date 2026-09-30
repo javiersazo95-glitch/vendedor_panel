@@ -11,7 +11,7 @@
  * Para inventarios grandes la tabla se pagina y sólo la celda que se está editando monta su lista:
  * con miles de filas, un desplegable con el catálogo completo en cada celda congelaría el navegador.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type WheelEvent } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Download, FolderOpen, ImagePlus, Info, Link2, Search, Sparkles,
   Undo2, Wand2, X,
@@ -26,8 +26,10 @@ import {
   opcionesDeCelda, sugerenciasDeCelda, type ContextoDeFila,
 } from '../../utils/miExcelDetecciones';
 import {
-  problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel,
+  problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel, type VersionesDe,
 } from '../../utils/miExcelTabla';
+import { COLUMNAS_DE_VERSION, type VersionCatalogo } from '../../utils/catalogoVersiones';
+import { SelectVehiculo } from './SelectVehiculo';
 import { MAX_IMAGES_PER_PRODUCT } from '../../utils/fotosCarga';
 import { Miniatura, Modal } from './comunes';
 import { plural } from './textos';
@@ -53,6 +55,13 @@ interface Props {
   opcionalesVacios: string[];
   catalogoModelosCaido: boolean;
   onParche: (clave: string, columna: string, valor: string) => void;
+  /** Varios datos de una fila a la vez ("todos los años del modelo" pone el desde y el hasta). */
+  onParches: (clave: string, valores: Record<string, string>) => void;
+  /** Versiones del catálogo por modelo: de ahí salen los años y motores que se pueden elegir. */
+  versionesDe: VersionesDe;
+  pedirVersiones: (marca: string, modelo: string) => void;
+  /** "Todos los años del modelo" (o "hasta el último año") en todas las filas vacías de la columna. */
+  onCompletarVehiculo: (columna: 'anio_desde' | 'anio_hasta') => void;
   onAplicarATodas: (columna: string, valor: string) => void;
   onDejarVacias: (columna: string) => void;
   onCompletarGrupo: (columna: string, grupo: string, valor: string) => void;
@@ -83,7 +92,13 @@ const etiquetaDe = (campos: CampoMeta[], key: string) => campos.find((c) => c.ke
 /** Una celda que sólo monta su editor cuando el vendedor la toca. */
 function Celda({
   valor, columna, amarilla, problema, mostrarMotivo, activa, onActivar, onCerrar, opciones, sugerencias, etiqueta, opcional, onCambio,
+  vehiculo, onCambioVarios, destello,
 }: {
+  /** Año o motor: se elige sólo entre lo que el catálogo tiene para el modelo de la fila. */
+  vehiculo?: { leer: (col: string) => string; versiones: VersionCatalogo[] | null | undefined; respaldo: string[] };
+  onCambioVarios: (valores: Record<string, string>) => void;
+  /** Recién se llegó a esta celda desde el aviso: parpadea para que se vea dónde está. */
+  destello: boolean;
   valor: string; columna: string; amarilla: boolean; problema?: ProblemaFila;
   /** Escribe el motivo del problema dentro de la celda, no sólo al pasar el mouse. */
   mostrarMotivo: boolean;
@@ -101,7 +116,7 @@ function Celda({
     return (
       <button
         type="button"
-        className={`${clase} ${problema && mostrarMotivo ? 'con-motivo' : ''}`}
+        className={`${clase} ${problema && mostrarMotivo ? 'con-motivo' : ''} ${destello ? 'mx-destello' : ''}`}
         onClick={onActivar}
         title={problema?.mensaje ?? `${etiqueta}. Haz clic para cambiarlo.`}
         aria-label={problema ? `${etiqueta}. Hay que corregirlo: ${problema.mensaje}` : etiqueta}
@@ -113,6 +128,28 @@ function Celda({
           <span className={`mx-celda-motivo ${problema.severidad}`}><AlertTriangle size={12} /> {problema.mensaje}</span>
         )}
       </button>
+    );
+  }
+  if (vehiculo) {
+    return (
+      <div
+        ref={ref}
+        className="mx-celda-editor"
+        onBlur={(e) => { if (!ref.current?.contains(e.relatedTarget as Node | null)) setTimeout(onCerrar, 0); }}
+        onKeyDown={(e) => { if (e.key === 'Escape') onCerrar(); }}
+      >
+        <SelectVehiculo
+          columna={columna}
+          valor={valor}
+          etiqueta={etiqueta}
+          leer={vehiculo.leer}
+          versiones={vehiculo.versiones}
+          respaldo={vehiculo.respaldo}
+          onElegir={(valores) => { onCambioVarios(valores); onCerrar(); }}
+        />
+        {problema && <span className={`mx-celda-motivo ${problema.severidad}`}><AlertTriangle size={12} /> {problema.mensaje}</span>}
+        <button type="button" className="mx-link" onMouseDown={(e) => e.preventDefault()} onClick={onCerrar}>Cerrar</button>
+      </div>
     );
   }
   const lista = opciones();
@@ -145,7 +182,9 @@ function Celda({
 /** Ventana para completar toda una columna de una vez. */
 function CompletarColumna({
   columna, campos, mapping, esquema, modelos, vacias, porCompletar, onAplicar, onDejarVacias, onCompletarGrupo, onCerrar,
+  onCompletarVehiculo,
 }: {
+  onCompletarVehiculo: (columna: 'anio_desde' | 'anio_hasta') => void;
   columna: string; campos: CampoMeta[]; mapping: Mapping; esquema: EsquemaPlantilla; modelos: Record<string, string[]>;
   vacias: number; porCompletar: CampoPorCompletar[];
   onAplicar: (valor: string) => void; onDejarVacias: () => void; onCompletarGrupo: (grupo: string, valor: string) => void;
@@ -163,7 +202,27 @@ function CompletarColumna({
 
   return (
     <Modal titulo={`Completar "${etiqueta}"`} onCerrar={onCerrar} ancho={560}>
-      {columna === 'compatibilidad_modelo' ? (
+      {COLUMNAS_DE_VERSION.has(columna) ? (
+        <>
+          <p className="mx-ayuda">
+            {columna === 'motor'
+              ? <>El motor depende del modelo de cada repuesto: en cada celda te mostramos sólo los motores que el catálogo de RepuesTop tiene para ese modelo. Si no lo sabes, déjalo sin asignar: el repuesto se publica para todas las versiones del modelo.</>
+              : <>Los años dependen del modelo de cada repuesto: en cada celda te mostramos sólo los años en que ese modelo existe en el catálogo de RepuesTop. Si no sabes los años exactos, podemos ponerle a cada repuesto <b>todos los años de su modelo</b>.</>}
+          </p>
+          <div className="mx-botonera">
+            {columna !== 'motor' && (
+              <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={() => { onCompletarVehiculo(columna as 'anio_desde' | 'anio_hasta'); onCerrar(); }}>
+                <Wand2 size={15} /> {columna === 'anio_desde' ? 'Todos los años del modelo' : 'Hasta el último año del modelo'} en las {plural(vacias, 'fila vacía', 'filas vacías')}
+              </button>
+            )}
+            {!obligatorio && (
+              <button type="button" className="btn btn-secondary mx-btn" onClick={() => { onDejarVacias(); onCerrar(); }}>
+                {columna === 'motor' ? 'No asignar motor en las filas vacías' : 'Dejarlas vacías'}
+              </button>
+            )}
+          </div>
+        </>
+      ) : columna === 'compatibilidad_modelo' ? (
         <p className="mx-ayuda">El modelo depende de la marca del auto de cada repuesto, así que se elige fila por fila: haz clic en cada celda amarilla.</p>
       ) : agrupado ? (
         <>
@@ -232,14 +291,26 @@ export function PasoCompletar(p: Props) {
   const [fotosDe, setFotosDe] = useState<FilaTabla | null>(null);
   const [avisoAuto, setAvisoAuto] = useState<string | null>(null);
   /** El repuesto que el vendedor está corrigiendo: se resalta y sus problemas se explican arriba. */
-  const [foco, setFoco] = useState<string | null>(p.claveInicial ?? null);
+  const [foco, setFoco] = useState<string | null>(null);
+  /** La celda a la que se acaba de llevar al vendedor: parpadea un momento. */
+  const [destello, setDestello] = useState<{ clave: string; columna: string } | null>(null);
 
   const indice = useMemo(() => new Map(tabla.columnas.map((c, i) => [c, i])), [tabla.columnas]);
 
   /** Los problemas de cada fila con el dato al que corresponden: los del panel y los del servidor. */
   const problemasPorClave = useMemo(() => new Map(tabla.filas.map((f) => [
-    f.clave, problemasDeFila(f, tabla.columnas, campos, p.servidor),
-  ])), [tabla, campos, p.servidor]);
+    f.clave, problemasDeFila(f, tabla.columnas, campos, p.servidor, p.versionesDe),
+  ])), [tabla, campos, p.servidor, p.versionesDe]);
+
+  // Se piden de entrada las versiones de todos los modelos del archivo: así los años y motores ya
+  // están al abrir una celda, y lo que el catálogo no tiene se marca antes de publicar.
+  const { pedirVersiones } = p;
+  useEffect(() => {
+    const iMarca = tabla.columnas.indexOf('compatibilidad_marca');
+    const iModelo = tabla.columnas.indexOf('compatibilidad_modelo');
+    if (iMarca < 0 || iModelo < 0) return;
+    for (const f of tabla.filas) pedirVersiones(String(f.valores[iMarca] ?? ''), String(f.valores[iModelo] ?? ''));
+  }, [tabla, pedirVersiones]);
   const tieneError = (f: FilaTabla) => (problemasPorClave.get(f.clave) ?? []).some((x) => x.severidad === 'error');
 
   /** Columnas donde algún repuesto tiene un dato que impide publicar. */
@@ -296,23 +367,6 @@ export function PasoCompletar(p: Props) {
       : 'No encontramos fotos cuyo nombre coincida con el código de los repuestos que no tienen foto.');
   };
 
-  // "Corregir" desde la vista previa: se abre en la página de esa fila, con la fila a la vista.
-  const claveInicialRef = useRef(p.claveInicial ?? null);
-  useEffect(() => {
-    const clave = claveInicialRef.current;
-    if (!clave) return;
-    claveInicialRef.current = null;
-    const pos = tabla.filas.findIndex((f) => f.clave === clave);
-    if (pos < 0) return;
-    const fila = tabla.filas[pos];
-    setPagina(Math.floor(pos / tamano) + 1);
-    // Se abre directo el dato que impide publicar; si no hay, el primero que falta.
-    const conError = (problemasPorClave.get(clave) ?? []).find((x) => x.severidad === 'error' && x.columna)?.columna;
-    setActiva({ clave, columna: conError ?? fila.faltantes.find((c) => columnas.includes(c)) ?? columnasMostradas[0] });
-    setTimeout(() => document.getElementById(`mx-fila-${clave}`)?.scrollIntoView?.({ block: 'center' }), 50);
-    // Sólo al entrar.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const vigiladasAmarillas = columnas.filter((c) => (tabla.faltantesPorColumna[c] ?? 0) > 0);
 
@@ -363,6 +417,13 @@ export function PasoCompletar(p: Props) {
       requestAnimationFrame(() => { sincronizando.current = false; });
     }
   };
+  /** La barra de abajo no existe (sólo la de arriba): la rueda o el trackpad hacia el lado mueven la tabla igual. */
+  const alGirarRueda = (e: WheelEvent<HTMLDivElement>) => {
+    const marco = marcoRef.current;
+    if (!marco) return;
+    const lateral = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0;
+    if (lateral) marco.scrollLeft += lateral;
+  };
   const desplazar = (sentido: 1 | -1) => {
     const marco = marcoRef.current;
     if (!marco) return;
@@ -399,8 +460,44 @@ export function PasoCompletar(p: Props) {
       setPagina(Math.floor(pos / tamano) + 1);
     }
     setActiva({ clave: fila.clave, columna });
-    setTimeout(() => document.getElementById(`mx-fila-${fila.clave}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 50);
+    setDestello({ clave: fila.clave, columna });
+    setTimeout(() => {
+      document.getElementById(`mx-fila-${fila.clave}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      irAColumna(columna);
+    }, 60);
+    setTimeout(() => setDestello((d) => (d?.clave === fila.clave && d.columna === columna ? null : d)), 1800);
   };
+
+  /** Lo que hace el ⚠ de la columna Fila: explica arriba qué impide publicar y lleva al primer dato. */
+  const abrirCorreccion = (fila: FilaTabla) => {
+    setFoco(fila.clave);
+    const lista = problemasPorClave.get(fila.clave) ?? [];
+    const primero = lista.find((x) => x.severidad === 'error' && x.columna) ?? lista.find((x) => x.columna);
+    if (primero?.columna) irACampo(fila, primero.columna);
+  };
+
+  // "Corregir" desde la vista previa hace lo mismo que tocar el ⚠ de esa fila.
+  const claveInicialRef = useRef(p.claveInicial ?? null);
+  useEffect(() => {
+    const clave = claveInicialRef.current;
+    claveInicialRef.current = null;
+    const fila = clave ? tabla.filas.find((f) => f.clave === clave) : undefined;
+    if (fila) abrirCorreccion(fila);
+    // Sólo al entrar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Al corregir un dato del repuesto en foco, se pasa solo al siguiente que falte corregir.
+  const erroresFoco = problemasFoco.filter((x) => x.severidad === 'error' && x.columna);
+  const erroresPrevios = useRef(erroresFoco.length);
+  useEffect(() => {
+    const antes = erroresPrevios.current;
+    erroresPrevios.current = erroresFoco.length;
+    if (!filaFoco || erroresFoco.length === 0 || erroresFoco.length >= antes) return;
+    irACampo(filaFoco, erroresFoco[0].columna as string);
+    // Sólo cuando baja la cantidad de errores del repuesto en foco.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [erroresFoco.length, foco]);
 
   return (
     <div className="mx-paso mx-paso-ancho">
@@ -500,18 +597,18 @@ export function PasoCompletar(p: Props) {
             <>
               <p>
                 {problemasFoco.some((x) => x.severidad === 'error')
-                  ? <><b>No se publicará</b> hasta que corrijas {problemasFoco.filter((x) => x.severidad === 'error').length === 1 ? 'este dato' : 'estos datos'}. Están marcados en rojo en la fila; haz clic en uno para ir a corregirlo:</>
-                  : <>Se publica, pero revisa estos datos (marcados en la fila):</>}
+                  ? <><b>No se publicará</b> hasta que corrijas {problemasFoco.filter((x) => x.severidad === 'error').length === 1 ? 'esta columna' : 'estas columnas'}. Te llevamos a la celda (queda en rojo); al corregirla pasamos a la siguiente:</>
+                  : <>Se publica, pero revisa {problemasFoco.length === 1 ? 'esta columna' : 'estas columnas'}:</>}
               </p>
               <ul className="mx-foco-lista">
                 {problemasFoco.map((x, i) => (
-                  <li key={i} className={x.severidad}>
+                  <li key={i} className={`${x.severidad} ${activa?.clave === filaFoco.clave && activa.columna === x.columna ? 'actual' : ''}`}>
                     {x.columna ? (
-                      <button type="button" className="mx-foco-campo" onClick={() => irACampo(filaFoco, x.columna as string)}>
-                        {etiquetaDe(campos, x.columna)}
+                      <button type="button" className="mx-foco-campo" onClick={() => irACampo(filaFoco, x.columna as string)} title="Ir a esta celda">
+                        Columna «{etiquetaDe(campos, x.columna)}»
                       </button>
-                    ) : <span className="mx-foco-campo sin">Repuesto</span>}
-                    <span>{x.mensaje}</span>
+                    ) : <span className="mx-foco-campo sin">Todo el repuesto</span>}
+                    <span><b>Por qué:</b> {x.mensaje}</span>
                   </li>
                 ))}
               </ul>
@@ -521,8 +618,8 @@ export function PasoCompletar(p: Props) {
       )}
 
       <div className="mx-desplazar" role="group" aria-label="Moverse entre las columnas de la tabla">
-        <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => desplazar(-1)} disabled={!vista.izquierda} aria-label="Ver las columnas de la izquierda">
-          <ChevronLeft size={16} /> Columnas anteriores
+        <button type="button" className="mx-icono-btn" onClick={() => desplazar(-1)} disabled={!vista.izquierda} aria-label="Ver las columnas de la izquierda" title="Columnas de la izquierda">
+          <ChevronLeft size={18} />
         </button>
         <div
           ref={barraRef}
@@ -533,8 +630,8 @@ export function PasoCompletar(p: Props) {
         >
           <div style={{ width: vista.anchoTotal || '100%', height: 1 }} />
         </div>
-        <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => desplazar(1)} disabled={!vista.derecha} aria-label="Ver más columnas a la derecha">
-          Más columnas <ChevronRight size={16} />
+        <button type="button" className="mx-icono-btn" onClick={() => desplazar(1)} disabled={!vista.derecha} aria-label="Ver las columnas de la derecha" title="Columnas de la derecha">
+          <ChevronRight size={18} />
         </button>
       </div>
       {vista.pendientesDerecha.length > 0 && (
@@ -554,12 +651,7 @@ export function PasoCompletar(p: Props) {
       )}
 
       <div className={`mx-tabla-marco ${vista.izquierda ? 'con-izquierda' : ''} ${vista.derecha ? 'con-derecha' : ''}`}>
-      {vista.derecha && (
-        <button type="button" className="mx-mas-derecha" onClick={() => desplazar(1)} aria-label="Ver más columnas a la derecha">
-          Más columnas <ChevronRight size={15} />
-        </button>
-      )}
-      <div ref={marcoRef} className="mx-tabla-wrap" role="region" aria-label="Tabla de tus repuestos" tabIndex={0} onScroll={alDesplazarTabla}>
+      <div ref={marcoRef} className="mx-tabla-wrap" role="region" aria-label="Tabla de tus repuestos" tabIndex={0} onScroll={alDesplazarTabla} onWheel={alGirarRueda}>
         <table className="mx-tabla">
           <thead>
             <tr>
@@ -598,6 +690,7 @@ export function PasoCompletar(p: Props) {
               }
               const conError = tieneError(fila);
               const enFoco = foco === fila.clave;
+              const esUniversal = ['SI', 'SÍ', 'TRUE', '1', 'X'].includes(leer('compatibilidad_general').toUpperCase());
               const fotos = p.asignaciones[fila.clave] ?? [];
               return (
                 <tr key={fila.clave} id={`mx-fila-${fila.clave}`} className={`${conError ? 'con-error' : ''} ${enFoco ? 'mx-fila-foco' : ''}`}>
@@ -606,8 +699,8 @@ export function PasoCompletar(p: Props) {
                       <button
                         type="button"
                         className="mx-fila-boton"
-                        onClick={() => setFoco(fila.clave)}
-                        title="Ver qué hay que corregir en este repuesto"
+                        onClick={() => abrirCorreccion(fila)}
+                        title="Ver qué impide publicar este repuesto e ir a corregirlo"
                         aria-label={`Fila ${fila.numeroFila}: ver qué hay que corregir`}
                       >
                         {fila.numeroFila}
@@ -647,7 +740,17 @@ export function PasoCompletar(p: Props) {
                           problema={problema}
                           mostrarMotivo={enFoco}
                           activa={esActiva}
-                          onActivar={() => setActiva({ clave: fila.clave, columna: c })}
+                          onActivar={() => {
+                            if (COLUMNAS_DE_VERSION.has(c)) p.pedirVersiones(leer('compatibilidad_marca'), leer('compatibilidad_modelo'));
+                            setActiva({ clave: fila.clave, columna: c });
+                          }}
+                          vehiculo={COLUMNAS_DE_VERSION.has(c) && !esUniversal ? {
+                            leer,
+                            versiones: p.versionesDe(leer('compatibilidad_marca'), leer('compatibilidad_modelo')),
+                            respaldo: opcionesDeCelda(c, contexto, p.esquema, campos, p.modelosDisponibles),
+                          } : undefined}
+                          onCambioVarios={(valores) => p.onParches(fila.clave, valores)}
+                          destello={destello?.clave === fila.clave && destello.columna === c}
                           onCerrar={() => setActiva((a) => (a?.clave === fila.clave && a.columna === c ? null : a))}
                           opciones={() => opcionesDeCelda(c, contexto, p.esquema, campos, p.modelosDisponibles)}
                           sugerencias={(lista) => sugerenciasDeCelda(valor, lista)}
@@ -715,6 +818,7 @@ export function PasoCompletar(p: Props) {
           onAplicar={(v) => p.onAplicarATodas(columnaMasiva, v)}
           onDejarVacias={() => p.onDejarVacias(columnaMasiva)}
           onCompletarGrupo={(g, v) => p.onCompletarGrupo(columnaMasiva, g, v)}
+          onCompletarVehiculo={p.onCompletarVehiculo}
           onCerrar={() => setColumnaMasiva(null)}
         />
       )}

@@ -14,8 +14,10 @@ import { etiquetaValor, type CampoMeta, type EsquemaPlantilla, type Mapping } fr
 import { fichaDesdeFila } from '../../utils/plantillaRevision';
 import { opcionesDeCelda, type ContextoDeFila } from '../../utils/miExcelDetecciones';
 import {
-  problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel,
+  problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel, type VersionesDe,
 } from '../../utils/miExcelTabla';
+import { COLUMNAS_DE_VERSION, type VersionCatalogo } from '../../utils/catalogoVersiones';
+import { SelectVehiculo } from './SelectVehiculo';
 import type { FilaResultado } from '../../utils/cargaExcelApi';
 import { validarValorFijo, limiteDeColumna } from '../../utils/plantillaNormalizacion';
 import { Miniatura, Modal } from './comunes';
@@ -53,6 +55,9 @@ interface Props {
   nombreTienda?: string;
   /** La última revisión del servidor, para decir qué dato exacto impide publicar. */
   servidor?: RevisionServidorFilas | null;
+  onParches: (clave: string, valores: Record<string, string>) => void;
+  versionesDe: VersionesDe;
+  pedirVersiones: (marca: string, modelo: string) => void;
 }
 
 type EstadoFila = 'ok' | 'aviso' | 'error';
@@ -65,8 +70,10 @@ interface EstadoConProblemas {
 }
 
 /** Cómo queda un repuesto y por qué, dato por dato: lo que ve el panel más lo que objetó el servidor. */
-function estadoDe(fila: FilaTabla, columnas: string[], campos: CampoMeta[], servidor?: RevisionServidorFilas | null): EstadoConProblemas {
-  const problemas = problemasDeFila(fila, columnas, campos, servidor);
+function estadoDe(
+  fila: FilaTabla, columnas: string[], campos: CampoMeta[], servidor?: RevisionServidorFilas | null, versionesDe?: VersionesDe,
+): EstadoConProblemas {
+  const problemas = problemasDeFila(fila, columnas, campos, servidor, versionesDe);
   const estado: EstadoFila = problemas.some((x) => x.severidad === 'error') ? 'error' : problemas.length ? 'aviso' : 'ok';
   // Los que impiden publicar, primero.
   problemas.sort((a, b) => (a.severidad === b.severidad ? 0 : a.severidad === 'error' ? -1 : 1));
@@ -99,8 +106,11 @@ function Estado({ estado }: { estado: EstadoFila }) {
 
 /** Un dato de la ficha que se corrige ahí mismo. */
 function DatoEditable({
-  columna, etiqueta, valor, opciones, onGuardar, children, problema, editando, onEditar, onDejarDeEditar,
+  columna, etiqueta, valor, opciones, onGuardar, children, problema, editando, onEditar, onDejarDeEditar, vehiculo, onGuardarVarios,
 }: {
+  /** Año o motor: se elige sólo entre lo que el catálogo tiene para el modelo. */
+  vehiculo?: { leer: (col: string) => string; versiones: VersionCatalogo[] | null | undefined; respaldo: string[] };
+  onGuardarVarios: (valores: Record<string, string>) => void;
   columna: string; etiqueta: string; valor: string; opciones: string[]; onGuardar: (v: string) => void; children: ReactNode;
   /** El problema de este dato, si lo tiene: se marca en rojo y se dice qué pasa, junto al dato. */
   problema?: ProblemaFila;
@@ -142,6 +152,27 @@ function DatoEditable({
     );
   }
   const guardar = () => { if (!error) { onGuardar(borrador); onDejarDeEditar(); } };
+  if (vehiculo) {
+    return (
+      <span ref={ref} className={`mx-dato-editando ${problema ? `con-${problema.severidad}` : ''}`} data-campo={columna}>
+        <span className="mx-dato-etiqueta">{etiqueta}</span>
+        {motivo}
+        <SelectVehiculo
+          columna={columna}
+          valor={valor}
+          etiqueta={etiqueta}
+          leer={vehiculo.leer}
+          versiones={vehiculo.versiones}
+          respaldo={vehiculo.respaldo}
+          autoFocus
+          onElegir={(valores) => { onGuardarVarios(valores); onDejarDeEditar(); }}
+        />
+        <span className="mx-botonera">
+          <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={onDejarDeEditar}>Cancelar</button>
+        </span>
+      </span>
+    );
+  }
   return (
     <span ref={ref} className={`mx-dato-editando ${problema ? `con-${problema.severidad}` : ''}`} data-campo={columna}>
       <span className="mx-dato-etiqueta">{etiqueta}</span>
@@ -169,7 +200,10 @@ function DatoEditable({
 /** "Así se verá en tu tienda": la ficha que ve el comprador, con cada dato corregible. */
 function VistaTienda({
   fila, tabla, campos, esquema, modelos, fotos, imagenes, guardadas, estado, onParche, onCambiarFotos, onCerrar, nombreTienda,
+  versiones, onParches,
 }: {
+  versiones: VersionCatalogo[] | null | undefined;
+  onParches: (valores: Record<string, string>) => void;
   fila: FilaTabla; tabla: TablaMiExcel; campos: CampoMeta[]; esquema: EsquemaPlantilla; modelos: Record<string, string[]>;
   fotos: string[]; imagenes: Record<string, Blob>; guardadas: Record<string, number>; estado: EstadoConProblemas;
   onParche: (col: string, v: string) => void; onCambiarFotos: () => void; onCerrar: () => void; nombreTienda?: string;
@@ -194,6 +228,10 @@ function VistaTienda({
       valor={leer(col)}
       opciones={opcionesDeCelda(col, contexto, esquema, campos, modelos)}
       onGuardar={(v) => onParche(col, v)}
+      onGuardarVarios={onParches}
+      vehiculo={COLUMNAS_DE_VERSION.has(col) && !['SI', 'SÍ', 'TRUE', '1', 'X'].includes(leer('compatibilidad_general').toUpperCase())
+        ? { leer, versiones, respaldo: opcionesDeCelda(col, contexto, esquema, campos, modelos) }
+        : undefined}
       problema={problemaDe(col)}
       editando={editando === col}
       onEditar={() => setEditando(col)}
@@ -308,9 +346,17 @@ export function PasoVistaPrevia(p: Props) {
   const [confirmar, setConfirmar] = useState(false);
 
   const conEstado = useMemo(
-    () => p.tabla.filas.map((fila) => ({ fila, ...estadoDe(fila, p.tabla.columnas, p.campos, p.servidor) })),
-    [p.tabla.filas, p.tabla.columnas, p.campos, p.servidor],
+    () => p.tabla.filas.map((fila) => ({ fila, ...estadoDe(fila, p.tabla.columnas, p.campos, p.servidor, p.versionesDe) })),
+    [p.tabla.filas, p.tabla.columnas, p.campos, p.servidor, p.versionesDe],
   );
+  // Las versiones de cada modelo: con ellas se sabe de antemano qué años y motores acepta el catálogo.
+  const { pedirVersiones } = p;
+  useEffect(() => {
+    const iMarca = p.tabla.columnas.indexOf('compatibilidad_marca');
+    const iModelo = p.tabla.columnas.indexOf('compatibilidad_modelo');
+    if (iMarca < 0 || iModelo < 0) return;
+    for (const f of p.tabla.filas) pedirVersiones(String(f.valores[iMarca] ?? ''), String(f.valores[iModelo] ?? ''));
+  }, [p.tabla, pedirVersiones]);
   const cuenta = { ok: 0, aviso: 0, error: 0 } as Record<EstadoFila, number>;
   conEstado.forEach((x) => { cuenta[x.estado] += 1; });
   const publicables = cuenta.ok + cuenta.aviso;
@@ -517,6 +563,11 @@ export function PasoVistaPrevia(p: Props) {
           key={filaTienda.fila.clave}
           estado={{ estado: filaTienda.estado, problemas: filaTienda.problemas }}
           onParche={(col, v) => p.onParche(filaTienda.fila.clave, col, v)}
+          onParches={(valores) => p.onParches(filaTienda.fila.clave, valores)}
+          versiones={p.versionesDe(
+            String(filaTienda.fila.valores[p.tabla.columnas.indexOf('compatibilidad_marca')] ?? ''),
+            String(filaTienda.fila.valores[p.tabla.columnas.indexOf('compatibilidad_modelo')] ?? ''),
+          )}
           onCambiarFotos={() => setFotosDe(filaTienda.fila.clave)}
           onCerrar={() => setEnTienda(null)}
           nombreTienda={p.nombreTienda}

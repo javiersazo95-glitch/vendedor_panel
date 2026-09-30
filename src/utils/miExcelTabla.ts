@@ -23,6 +23,9 @@ import type { CambioNormalizacion } from './plantillaNormalizacion';
 import { revisarAoA, type FilaRevisada } from './plantillaRevision';
 import type { FilaResultado } from './cargaExcelApi';
 import {
+  aniosPermitidos, motorDelCatalogo, motoresPermitidos, rangoCompleto, type VersionCatalogo,
+} from './catalogoVersiones';
+import {
   COLUMNAS_COMPATIBILIDADES,
   separarPorSku,
   type SeparacionPorSku,
@@ -322,8 +325,14 @@ export function problemasDeFila(
   columnas: string[],
   campos: CampoMeta[],
   servidor?: RevisionServidorFilas | null,
+  versionesDe?: VersionesDe,
 ): ProblemaFila[] {
   const propios: ProblemaFila[] = fila.problemas.map((x) => ({ columna: x.columna, severidad: x.severidad, mensaje: x.mensaje }));
+  if (versionesDe) {
+    for (const x of problemasDeCatalogo(fila, columnas, versionesDe)) {
+      if (!propios.some((y) => y.columna === x.columna && y.severidad === 'error')) propios.push(x);
+    }
+  }
   const delServidor = servidor?.porClave[fila.clave];
   if (!delServidor || delServidor.estado === 'OK') return propios;
   const antes = servidor?.valores[fila.clave];
@@ -348,4 +357,56 @@ export function problemasDeFila(
   // Un dato con un error y además un aviso se nombra una sola vez: lo que importa es el error.
   const conError = new Set(propios.filter((x) => x.severidad === 'error' && x.columna).map((x) => x.columna));
   return propios.filter((x) => x.severidad === 'error' || !x.columna || !conError.has(x.columna));
+}
+
+/**
+ * Las versiones del catálogo de un modelo: la lista (vacía si el modelo no tiene), null si el
+ * catálogo no respondió, o undefined si todavía no se pidió.
+ */
+export type VersionesDe = (marca: string, modelo: string) => VersionCatalogo[] | null | undefined;
+
+/**
+ * Lo que el backend va a rechazar del vehículo de una fila, sabido de antemano contra el
+ * catálogo: un modelo sin versiones o un año en que el modelo no existe impiden publicar; un motor
+ * que no está en el catálogo no acota nada (se registran todas las versiones), así que es un aviso.
+ */
+export function problemasDeCatalogo(fila: FilaRevisada, columnas: string[], versionesDe: VersionesDe): ProblemaFila[] {
+  const leer = (col: string) => String(fila.valores[columnas.indexOf(col)] ?? '').trim();
+  if (SI.has(leer('compatibilidad_general').toUpperCase())) return [];
+  const marca = leer('compatibilidad_marca');
+  const modelo = leer('compatibilidad_modelo');
+  if (!marca || !modelo) return [];
+  const versiones = versionesDe(marca, modelo);
+  if (!versiones) return [];
+  if (versiones.length === 0) {
+    return [{
+      columna: 'compatibilidad_modelo',
+      severidad: 'error',
+      mensaje: `El ${marca} ${modelo} no tiene versiones en el catálogo de RepuesTop: elige otro modelo o marca el repuesto como universal.`,
+    }];
+  }
+  const problemas: ProblemaFila[] = [];
+  const permitidos = new Set(aniosPermitidos(versiones));
+  const todos = rangoCompleto(versiones);
+  const entre = todos ? ` (hay de ${todos.desde} a ${todos.hasta})` : '';
+  for (const col of ['anio_desde', 'anio_hasta']) {
+    const anio = leer(col);
+    if (anio && !permitidos.has(anio)) {
+      problemas.push({
+        columna: col,
+        severidad: 'error',
+        mensaje: `El ${marca} ${modelo} no existe en ${anio} según el catálogo${entre}. Elige un año de la lista o "Todos los años del modelo".`,
+      });
+    }
+  }
+  const motor = leer('motor');
+  const motores = motoresPermitidos(versiones, leer('anio_desde'), leer('anio_hasta'));
+  if (motor && motores.length > 0 && !motorDelCatalogo(motor, motores)) {
+    problemas.push({
+      columna: 'motor',
+      severidad: 'aviso',
+      mensaje: `El motor "${motor}" no está en el catálogo para el ${marca} ${modelo}: elige uno de la lista o "No asignar motor".`,
+    });
+  }
+  return problemas;
 }

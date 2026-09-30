@@ -263,7 +263,7 @@
 .mx-celda-completar { display: inline-flex; align-items: center; gap: 0.25rem; color: var(--mx-amarillo-texto); font-weight: 700; font-size: 0.8rem; }
 .mx-celda-completar::before { content: '+'; font-weight: 900; }
 .mx-celda-vacia { color: var(--text-muted); }
-.mx-celda-editor { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.25rem; min-width: 200px; background: #fff; box-shadow: inset 0 0 0 2px hsl(var(--primary)); }
+.mx-celda-editor { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.25rem; min-width: 200px; max-width: 300px; white-space: normal; background: #fff; box-shadow: inset 0 0 0 2px hsl(var(--primary)); }
 .mx-celda-editor .form-control { min-height: 34px; font-size: 0.84rem; padding: 0.3rem 0.45rem; }
 .mx-fotos-celda {
   display: inline-flex; align-items: center; gap: 0.25rem; min-height: 38px; padding: 0.2rem 0.35rem; border: 1px dashed var(--border-color);
@@ -441,6 +441,10 @@
 
 .mx-tabla-marco { position: relative; min-width: 0; }
 .mx-tabla-marco .mx-tabla-wrap { max-height: calc(100vh - 150px); }
+/* Una sola barra horizontal: la de arriba. La tabla se mueve a lo ancho con ella, con las flechas,
+   con la rueda hacia el lado o Shift + rueda (ver alGirarRueda), pero no dibuja su propia barra abajo. */
+.mx-tabla-marco .mx-tabla-wrap { overflow-x: hidden; overflow-y: auto; }
+.mx-desplazar .mx-icono-btn:disabled { opacity: 0.35; cursor: default; }
 .mx-tabla-marco .mx-tabla-wrap:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Degradé en el borde: dice sin palabras que la tabla sigue hacia ese lado. */
 .mx-tabla-marco::before, .mx-tabla-marco::after {
@@ -450,11 +454,6 @@
 .mx-tabla-marco::after { right: 1px; border-radius: 0 12px 12px 0; background: linear-gradient(90deg, transparent, rgba(15, 23, 42, 0.16)); }
 .mx-tabla-marco::before { left: 171px; background: linear-gradient(270deg, transparent, rgba(15, 23, 42, 0.12)); }
 .mx-tabla-marco.con-derecha::after, .mx-tabla-marco.con-izquierda::before { opacity: 1; }
-.mx-mas-derecha {
-  position: absolute; right: 10px; top: 50%; transform: translateY(-50%); z-index: 7; display: inline-flex; align-items: center; gap: 0.2rem;
-  padding: 0.45rem 0.7rem; border: 0; border-radius: 999px; background: hsl(var(--primary)); color: #fff; font: inherit;
-  font-size: 0.8rem; font-weight: 800; box-shadow: 0 6px 16px rgba(27, 100, 218, 0.35); cursor: pointer;
-}
 .mx-tabla thead th.con-error { box-shadow: inset 0 -3px 0 var(--mx-mal); }
 
 /* ------------- Qué dato exacto impide publicar (etapas 3 y 4) ------------- */
@@ -517,3 +516,16 @@ li.aviso .mx-foco-campo { color: var(--mx-amarillo-texto); border-color: #fcd34d
 .mx-dato-motivo.aviso { color: var(--mx-amarillo-texto); }
 .mx-dato-etiqueta { font-size: 0.78rem; font-weight: 800; color: var(--text-secondary); }
 .mx-dato-editando { padding: 0.4rem; }
+
+/* La celda a la que se acaba de llevar al vendedor desde el aviso: parpadea para ubicarla. */
+@keyframes mx-destello {
+  0%, 100% { box-shadow: inset 0 0 0 2px var(--mx-mal); }
+  50% { box-shadow: inset 0 0 0 4px var(--mx-mal), 0 0 0 4px rgba(190, 18, 60, 0.25); }
+}
+.mx-celda.mx-destello { animation: mx-destello 0.6s ease-in-out 3; }
+.mx-foco-lista li.actual .mx-foco-campo { background: #be123c; color: #fff; border-color: #be123c; }
+.mx-foco-lista li.aviso.actual .mx-foco-campo { background: var(--mx-amarillo-borde); border-color: var(--mx-amarillo-borde); }
+
+/* Años y motor: sólo lo que el catálogo tiene para el modelo. */
+.mx-vehiculo-nota { display: block; max-width: 260px; padding: 0.35rem 0.45rem; font-size: 0.76rem; line-height: 1.35; color: var(--text-secondary); white-space: normal; }
+.mx-vehiculo-nota.error { color: #be123c; font-weight: 700; }

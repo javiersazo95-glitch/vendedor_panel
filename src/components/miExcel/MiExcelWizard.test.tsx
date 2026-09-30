@@ -92,6 +92,24 @@ describe('Mi propio Excel: etapas 1 y 2', () => {
     expect(within(grupo).getByRole('button', { name: /Dejar fuera/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('el aviso de qué corregir sólo aparece al tocar el ⚠ de la fila, y lleva a la celda con el error', async () => {
+    montar();
+    await subirCsv();
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente: relacionar columnas/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Sirven para todos los vehículos/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente: completar tus datos/ }));
+    await screen.findByText('Falta completar');
+    expect(screen.queryByText(/Corrigiendo la fila/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Fila 2: ver qué hay que corregir' }));
+    const banner = (await screen.findByText(/Corrigiendo la fila 2/)).closest('section') as HTMLElement;
+    expect(within(banner).getByText(/No se publicará/)).toBeInTheDocument();
+    expect(within(banner).getByRole('button', { name: 'Columna «Categoría»' })).toBeInTheDocument();
+    expect(within(banner).getAllByText(/Por qué:/).length).toBeGreaterThan(0);
+    // Quedó abierta la celda del primer dato con error.
+    expect(screen.getByLabelText(/^Categoría de la fila 2/)).toBeInTheDocument();
+  });
+
   it('en la etapa 3 lo que falta sale en amarillo, se puede completar para todas las filas y el menú se oculta', async () => {
     const props = montar();
     await subirCsv();
@@ -243,10 +261,10 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Corregir Disco freno' }));
     const banner = (await screen.findByText(/Corrigiendo la fila 3/)).closest('section') as HTMLElement;
     expect(within(banner).getByText(/No se publicará/)).toBeInTheDocument();
-    expect(within(banner).getByRole('button', { name: 'Marca del repuesto' })).toBeInTheDocument();
+    expect(within(banner).getByRole('button', { name: 'Columna «Marca del repuesto»' })).toBeInTheDocument();
     expect(within(banner).getByText('Falta la marca del repuesto.')).toBeInTheDocument();
     expect(screen.getByLabelText('Marca del repuesto de la fila 3')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Ver más columnas a la derecha' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver las columnas de la derecha' })).toBeInTheDocument();
   });
 
   it('revisa con el servidor, muestra lista y cuadrícula, publica, sube las fotos y borra lo guardado', async () => {

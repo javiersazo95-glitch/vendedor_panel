@@ -42,6 +42,8 @@ import {
   aplicarATodasVacias, aplicarParche, camposACompletar, type RevisionServidorFilas, columnasVigiladas, columnasVisibles, construirTabla, transformar,
 } from '../../utils/miExcelTabla';
 import { useModelosVehiculo } from '../../utils/useModelosVehiculo';
+import { useVersionesCatalogo } from '../../utils/useVersionesCatalogo';
+import { rangoCompleto } from '../../utils/catalogoVersiones';
 import {
   asignarPorCodigo, extractFolderImages, extractZipImages, subirFotosAProductos, MAX_IMAGES_PER_PRODUCT,
   type FotoUploadResultado,
@@ -176,6 +178,7 @@ export function MiExcelWizard({
     [mapping, paso, userCols, userRows, esquema],
   );
   const { modelosDisponibles, catalogoCaido } = useModelosVehiculo(esquema, marcas, paso >= 2);
+  const { versionesDe, pedirVersiones } = useVersionesCatalogo();
 
   const transformacion = useMemo(
     () => (mapping && paso >= 3
@@ -429,6 +432,56 @@ export function MiExcelWizard({
       columna,
       descripcion: `Pusimos "${etiquetaValor(valor)}" en ${plural(vacias, 'fila vacía', 'filas vacías')} de ${etiquetaCampo(columna)}.`,
       deshacer: () => actualizar((m) => aplicarATodasVacias(m, columna, anterior ?? '')),
+    });
+  };
+
+  /** Varios datos de una fila de una vez ("todos los años del modelo" pone el desde y el hasta). */
+  const aplicarParches = (clave: string, valores: Record<string, string>) => actualizar((m) => (
+    Object.entries(valores).reduce((acc, [col, v]) => aplicarParche(acc, clave, col, v), m)
+  ));
+
+  /**
+   * "Todos los años del modelo" en todas las filas sin año: a cada repuesto, el rango completo de su
+   * propio modelo en el catálogo. El backend exige un año para registrar el vehículo, así que "no
+   * sé los años" se publica como "sirve para todos los años de ese modelo".
+   */
+  const completarVehiculo = (columna: 'anio_desde' | 'anio_hasta') => {
+    if (!tabla) return;
+    const i = (c: string) => tabla.columnas.indexOf(c);
+    const leer = (f: { valores: string[] }, c: string) => String(f.valores[i(c)] ?? '').trim();
+    const cambios: { clave: string; valores: Record<string, string> }[] = [];
+    let sinCatalogo = 0;
+    for (const f of tabla.filas) {
+      if (leer(f, columna) || ['SI', 'SÍ', 'TRUE', '1', 'X'].includes(leer(f, 'compatibilidad_general').toUpperCase())) continue;
+      const rango = rangoCompleto(versionesDe(leer(f, 'compatibilidad_marca'), leer(f, 'compatibilidad_modelo')) ?? []);
+      if (!rango) { sinCatalogo += 1; continue; }
+      const valores: Record<string, string> = columna === 'anio_desde'
+        ? { anio_desde: rango.desde, ...(leer(f, 'anio_hasta') ? {} : { anio_hasta: rango.hasta }) }
+        : { anio_hasta: rango.hasta };
+      cambios.push({ clave: f.clave, valores });
+    }
+    if (cambios.length > 0) {
+      actualizar((m) => cambios.reduce(
+        (acc, c) => Object.entries(c.valores).reduce((a, [col, v]) => aplicarParche(a, c.clave, col, v), acc), m,
+      ));
+    }
+    const extra = sinCatalogo > 0
+      ? ` ${plural(sinCatalogo, 'repuesto quedó', 'repuestos quedaron')} sin años porque no tiene marca y modelo, o su modelo no está en el catálogo.`
+      : '';
+    setCambioMasivo({
+      columna,
+      descripcion: cambios.length > 0
+        ? `${columna === 'anio_desde' ? 'Pusimos todos los años de su modelo' : 'Pusimos hasta el último año de su modelo'} en ${plural(cambios.length, 'repuesto', 'repuestos')}.${extra}`
+        : `No pudimos completar ningún año.${extra}`,
+      deshacer: () => actualizar((m) => {
+        const parches = { ...(m.parches ?? {}) };
+        for (const c of cambios) {
+          const fila = { ...(parches[c.clave] ?? {}) };
+          for (const [col, v] of Object.entries(c.valores)) if (fila[col] === v) delete fila[col];
+          if (Object.keys(fila).length) parches[c.clave] = fila; else delete parches[c.clave];
+        }
+        return { ...m, parches };
+      }),
     });
   };
 
@@ -967,8 +1020,12 @@ export function MiExcelWizard({
           opcionalesVacios={opcionalesVacios}
           catalogoModelosCaido={catalogoCaido}
           onParche={(clave, col, v) => actualizar((m) => aplicarParche(m, clave, col, v))}
+          onParches={aplicarParches}
+          versionesDe={versionesDe}
+          pedirVersiones={pedirVersiones}
           onAplicarATodas={aplicarATodas}
           onDejarVacias={dejarVacias}
+          onCompletarVehiculo={completarVehiculo}
           onCompletarGrupo={completarGrupo}
           cambioMasivo={cambioMasivo}
           onOlvidarCambioMasivo={() => setCambioMasivo(null)}
@@ -1005,6 +1062,9 @@ export function MiExcelWizard({
           servidor={revisionMostrada.estado === 'lista' || revisionMostrada.estado === 'desactualizada' ? revisionFilas : null}
           onRevisar={() => void revisar()}
           onParche={(clave, col, v) => actualizar((m) => aplicarParche(m, clave, col, v))}
+          onParches={aplicarParches}
+          versionesDe={versionesDe}
+          pedirVersiones={pedirVersiones}
           imagenes={imagenes}
           guardadas={borrador.guardadas}
           asignaciones={asignaciones}
