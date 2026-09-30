@@ -133,6 +133,7 @@ describe('pantalla "Cambiar precios y stock"', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   const subir = (file: File) => {
@@ -178,6 +179,29 @@ describe('pantalla "Cambiar precios y stock"', () => {
     expect(await screen.findByText('Se guardó 1 cambio.')).toBeInTheDocument();
     expect(onExpressSuccess).not.toHaveBeenCalled();
     expect(savePreciosStockBatch).toHaveBeenCalledWith([{ skuProveedor: 'QC-1', precio: null, stock: 2 }]);
+  });
+
+  it('tras un error se puede volver a elegir el mismo archivo, ya corregido', async () => {
+    // Chrome sólo dispara `change` si la selección del input cambió: si el panel no lo limpia,
+    // elegir de nuevo "precios.csv" no hace nada. Aquí se imita eso.
+    let seleccion: string | null = null;
+    const valor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!;
+    vi.spyOn(HTMLInputElement.prototype, 'value', 'set').mockImplementation(function (this: HTMLInputElement, nuevo: string) {
+      if (this.type === 'file' && nuevo === '') seleccion = null;
+      valor.set!.call(this, nuevo);
+    });
+    const elegirComoChrome = (file: File) => {
+      if (seleccion === file.name) return;
+      seleccion = file.name;
+      subir(file);
+    };
+    render(<ExpressUpload isOpen embedded onClose={() => {}} onUploadSuccess={() => {}} onVolver={() => {}} />);
+
+    elegirComoChrome(new File(['Nombre,Precio\nPastilla,1000\n'], 'precios.csv', { type: 'text/csv' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('«Nombre», «Precio»');
+
+    elegirComoChrome(new File(['Código,Precio\nPF-100,12900\n'], 'precios.csv', { type: 'text/csv' }));
+    expect(await screen.findByText('Revisa los cambios antes de guardarlos')).toBeInTheDocument();
   });
 
   it('sin columna de código lo dice con las columnas que sí trae el archivo', async () => {

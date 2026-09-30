@@ -279,6 +279,9 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
           disabled={leyendo}
           onChange={(e) => {
             const file = e.target.files?.[0];
+            // Siempre se limpia: tras un error, Chrome no avisa si se vuelve a elegir el mismo
+            // archivo (ya corregido) y parecía que el botón no hacía nada.
+            e.target.value = '';
             if (file) void leerArchivo(file);
           }}
         />
