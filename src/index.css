@@ -5011,3 +5011,36 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 0.9rem;
   line-height: 1.4;
 }
+
+/* ------------- Historial de cargas: tabla resumen del detalle de una carga ------------- */
+.historial-detalle .modal-body { overflow: auto; }
+.historial-resumen { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.historial-resumen span { padding: 0.45rem 0.8rem; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-card); font-size: 0.88rem; color: var(--text-secondary); }
+.historial-resumen b { color: var(--text-primary); }
+.historial-resumen .ok { background: var(--success-bg); color: hsl(var(--success)); }
+.historial-resumen .aviso { background: #fef3c7; color: #92400e; }
+.historial-resumen .mal { background: var(--danger-bg); color: #9f1239; }
+.historial-herramientas { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.historial-filtros { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.25rem; border: 1px solid var(--border-color); border-radius: 11px; background: var(--bg-card); }
+.historial-filtros button { border: 0; background: transparent; padding: 0.45rem 0.7rem; border-radius: 8px; font: inherit; font-size: 0.84rem; font-weight: 600; color: var(--text-secondary); cursor: pointer; }
+.historial-filtros button.activo { background: hsl(var(--primary)); color: #fff; }
+.historial-buscador { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 0.7rem; min-height: 40px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); color: var(--text-muted); }
+.historial-buscador input { border: 0; outline: none; background: transparent; font: inherit; font-size: 0.88rem; color: var(--text-primary); min-width: 200px; }
+.historial-boton { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
+.historial-tabla-wrap { overflow: auto; max-height: 52vh; border: 1px solid var(--border-color); border-radius: 12px; }
+.historial-tabla { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.88rem; }
+.historial-tabla th { position: sticky; top: 0; z-index: 1; background: #f8fafc; color: var(--text-secondary); font-size: 0.78rem; font-weight: 800; text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+.historial-tabla td { padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.historial-tabla td.codigo { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
+.historial-tabla td.nombre { font-weight: 600; min-width: 180px; }
+.historial-tabla td.detalle { min-width: 220px; max-width: 380px; color: var(--text-secondary); font-size: 0.82rem; }
+.historial-tabla tr.mal td { background: #fff7f8; }
+.historial-tabla tr.aviso td { background: #fffdf5; }
+.historial-tabla .vacio { color: var(--text-muted); font-style: italic; }
+.historial-tabla .historial-sin-filas { text-align: center; padding: 1.5rem; }
+.historial-estado { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.76rem; font-weight: 700; white-space: nowrap; }
+.historial-estado.OK { background: var(--success-bg); color: hsl(var(--success)); }
+.historial-estado.ADVERTENCIA { background: #fef3c7; color: #92400e; }
+.historial-estado.ERROR { background: var(--danger-bg); color: #9f1239; }
+.historial-nota { margin: 0; font-size: 0.8rem; color: var(--text-muted); }
+.historial-paginado { display: flex; justify-content: center; align-items: center; gap: 0.75rem; font-size: 0.88rem; color: var(--text-secondary); }
