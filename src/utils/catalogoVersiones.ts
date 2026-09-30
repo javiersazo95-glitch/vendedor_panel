@@ -60,9 +60,14 @@ export async function cargarVersiones(marca: string, modelo: string): Promise<Ve
     }
   }
   // `/versiones` compara el modelo por prefijo ("Yaris" trae también "Yaris Sport"); el backend,
-  // al publicar, usa el modelo exacto. Se quedan las del modelo exacto si las hay.
-  const exacto = detalles.filter((d) => normalizarParaComparar(d.modelo) === normalizarParaComparar(modelo));
-  return exacto.length > 0 ? exacto : detalles;
+  // al publicar, usa el modelo exacto. Sólo cuentan las del modelo exacto: antes, sin ninguna
+  // exacta se usaban las del prefijo y un modelo "3" de Mazda decía "hay de 1977 a 2004" (el 323).
+  return versionesDelModelo(detalles, modelo);
+}
+
+/** Las versiones cuyo modelo es exactamente el pedido (sin mayúsculas ni espacios). */
+export function versionesDelModelo(detalles: VersionCatalogo[], modelo: string): VersionCatalogo[] {
+  return detalles.filter((d) => normalizarParaComparar(d.modelo) === normalizarParaComparar(modelo));
 }
 
 const rango = (v: VersionCatalogo) => ({

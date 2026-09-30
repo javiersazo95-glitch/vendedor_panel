@@ -1251,7 +1251,13 @@ export function buildOfficialAoADetallado(
     // marca ya quedó canónica en el paso anterior, así que sirve de llave.
     if (cells.compatibilidad_modelo) {
       const modelos = modelosPorMarca[normalizarParaComparar(cells.compatibilidad_marca)] ?? [];
-      const canonico = buscarEnCatalogo(cells.compatibilidad_modelo, modelos);
+      // "Mazda 3 2014-2018" se lee como Mazda / "3", pero el catálogo nombra el modelo "Mazda3"
+      // (igual "Mazda2", "Mazda6"). Si el modelo solo no está, se prueba con la marca delante:
+      // no es adivinar, es el nombre con que el catálogo guarda ese auto.
+      const canonico = buscarEnCatalogo(cells.compatibilidad_modelo, modelos)
+        ?? (cells.compatibilidad_marca
+          ? buscarEnCatalogo(`${cells.compatibilidad_marca} ${cells.compatibilidad_modelo}`, modelos)
+          : null);
       if (canonico && canonico !== cells.compatibilidad_modelo) {
         cambios.push({
           columna: 'compatibilidad_modelo',

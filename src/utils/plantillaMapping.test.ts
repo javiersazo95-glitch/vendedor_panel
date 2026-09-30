@@ -603,3 +603,31 @@ describe('contrato de columnas de la plantilla oficial', () => {
     expect(ESQUEMA_FALLBACK.hojaCompatibilidadesColumnas).toContain('referencia_oem');
   });
 });
+
+/**
+ * Prueba en local del 30-sep con un Excel de tienda: "Mazda 3 2014-2018" se leía como Mazda /
+ * modelo "3", que no existe (el catálogo lo llama "Mazda3"), y la fila quedaba retenida.
+ */
+describe('el modelo que el catálogo nombra con la marca delante', () => {
+  const columnas = cols(['Codigo', 'Descripcion', 'Aplicacion', 'Precio', 'Cant']);
+  const catalogos = { ...ESQUEMA_FALLBACK.catalogos, marcasVehiculo: ['Mazda', 'Toyota'] };
+  const modelos = { mazda: ['323', 'Mazda2', 'Mazda3'], toyota: ['Corolla', 'Yaris'] };
+  const convertir = (aplicacion: string) => {
+    const mapping = { ...withOficial(autoDetectMapping(columnas), { compatibilidad_modelo: '2' }), parsearAplicacion: true };
+    const { aoa } = buildOfficialAoADetallado([['T-1', 'Disco de freno', aplicacion, '32500', '8']], columnas, mapping,
+      undefined, catalogos, modelos);
+    const fila = aoa[1] as string[];
+    const col = (k: string) => fila[(aoa[0] as string[]).indexOf(k)];
+    return { marca: col('compatibilidad_marca'), modelo: col('compatibilidad_modelo') };
+  };
+
+  it('"Mazda 3" y "Mazda 2" quedan con el nombre del catálogo', () => {
+    expect(convertir('Mazda 3 2014-2018')).toEqual({ marca: 'Mazda', modelo: 'Mazda3' });
+    expect(convertir('Mazda 2 2016')).toEqual({ marca: 'Mazda', modelo: 'Mazda2' });
+  });
+
+  it('un modelo que ya está en el catálogo no se toca', () => {
+    expect(convertir('Mazda 323 1995')).toEqual({ marca: 'Mazda', modelo: '323' });
+    expect(convertir('Toyota Yaris 2015')).toEqual({ marca: 'Toyota', modelo: 'Yaris' });
+  });
+});

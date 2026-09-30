@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aniosPermitidos, motorDelCatalogo, motoresPermitidos, rangoCompleto, type VersionCatalogo } from './catalogoVersiones';
+import { aniosPermitidos, motorDelCatalogo, motoresPermitidos, rangoCompleto, versionesDelModelo, type VersionCatalogo } from './catalogoVersiones';
 import { problemasDeCatalogo } from './miExcelTabla';
 
 /** Un Yaris con dos generaciones en el catálogo, con un hueco entre 2014 y 2015. */
@@ -44,6 +44,15 @@ describe('Lo que el catálogo no acepta, marcado antes de publicar', () => {
   it('un motor que no está en el catálogo es un aviso: se publica para todas las versiones', () => {
     expect(problemasDeCatalogo(fila(['NO', 'Toyota', 'Yaris', '2016', '2018', '2.0 TURBO']), columnas, versionesDe))
       .toEqual([expect.objectContaining({ columna: 'motor', severidad: 'aviso' })]);
+  });
+
+  it('sólo cuentan las versiones del modelo exacto: "3" no toma las del "323"', () => {
+    const mazda: VersionCatalogo[] = [
+      { id: 7, modelo: '323', anioDesde: 1977, anioHasta: 2004, motor: '1.6' },
+      { id: 8, modelo: 'Mazda3', anioDesde: 2014, anioHasta: 2018, motor: '2.0' },
+    ];
+    expect(versionesDelModelo(mazda, '3')).toEqual([]);
+    expect(versionesDelModelo(mazda, 'MAZDA3').map((v) => v.id)).toEqual([8]);
   });
 
   it('un modelo sin versiones impide publicar; uno universal o sin datos no se revisa', () => {
