@@ -77,6 +77,19 @@ describe('revisarAoA', () => {
     expect(r.filas[1].problemas[0].mensaje).toMatch(/no puede ser negativo/);
   });
 
+  it('stock 0 no se publica y stock bajo (1 a 9) avisa pero se publica (H51)', () => {
+    const r = revisar([filaBase({ stock: '0' }), filaBase({ stock: '1' }), filaBase({ stock: '9' }), filaBase({ stock: '10' })]);
+    expect(r.filas[0].problemas).toEqual([expect.objectContaining({ columna: 'stock', severidad: 'error' })]);
+    expect(r.filas[0].problemas[0].mensaje).toMatch(/^Sin stock/);
+    expect(r.filas[1].problemas).toEqual([
+      expect.objectContaining({ columna: 'stock', severidad: 'aviso', mensaje: 'Stock bajo: queda 1 unidad. Se publica igual.' }),
+    ]);
+    expect(r.filas[2].problemas[0].mensaje).toBe('Stock bajo: quedan 9 unidades. Se publica igual.');
+    expect(r.filas[3].problemas).toEqual([]);
+    expect(r.conError).toBe(1);
+    expect(r.publicables).toBe(3);
+  });
+
   it('acepta el precio con separador de miles, pero avisa cómo se va a publicar', () => {
     const r = revisar([filaBase({ precio: '$ 4.990' })]);
     expect(r.conError).toBe(0);

@@ -11,7 +11,7 @@
  * Para inventarios grandes la tabla se pagina y sólo la celda que se está editando monta su lista:
  * con miles de filas, un desplegable con el catálogo completo en cada celda congelaría el navegador.
  */
-import { useEffect, useMemo, useRef, useState, type WheelEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type WheelEvent } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Download, FolderOpen, ImagePlus, Info, Link2, Search, Sparkles,
   Undo2, Wand2, X,
@@ -25,7 +25,7 @@ import { validarValorFijo } from '../../utils/plantillaNormalizacion';
 import {
   opcionesDeCelda, sugerenciasDeCelda, type ContextoDeFila,
 } from '../../utils/miExcelDetecciones';
-import {
+import { cierresAlCatalogo, modeloQueSigue,
   problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel, type VersionesDe,
 } from '../../utils/miExcelTabla';
 import { COLUMNAS_DE_VERSION, type VersionCatalogo } from '../../utils/catalogoVersiones';
@@ -311,6 +311,20 @@ export function PasoCompletar(p: Props) {
     if (iMarca < 0 || iModelo < 0) return;
     for (const f of tabla.filas) pedirVersiones(String(f.valores[iMarca] ?? ''), String(f.valores[iModelo] ?? ''));
   }, [tabla, pedirVersiones]);
+
+  // H53: un "en adelante" que pasa del último año del catálogo se cierra en ese año apenas llegan
+  // las versiones, y se avisa arriba de la tabla (no es un dato que cambie en silencio).
+  const [cierres, setCierres] = useState<{ marca: string; modelo: string; hasta: string }[]>([]);
+  const { onParches } = p;
+  const cerradas = useRef(new Set<string>());
+  useEffect(() => {
+    const nuevos = cierresAlCatalogo(tabla.filas, tabla.columnas, p.versionesDe)
+      .filter((c) => !cerradas.current.has(c.clave));
+    if (nuevos.length === 0) return;
+    for (const c of nuevos) cerradas.current.add(c.clave);
+    for (const c of nuevos) onParches(c.clave, { anio_hasta: c.hasta });
+    setCierres((previos) => [...previos, ...nuevos.map(({ marca, modelo, hasta }) => ({ marca, modelo, hasta }))]);
+  }, [tabla, p.versionesDe, onParches]);
   const tieneError = (f: FilaTabla) => (problemasPorClave.get(f.clave) ?? []).some((x) => x.severidad === 'error');
 
   /** Columnas donde algún repuesto tiene un dato que impide publicar. */
@@ -378,6 +392,28 @@ export function PasoCompletar(p: Props) {
   const barraRef = useRef<HTMLDivElement>(null);
   const sincronizando = useRef(false);
   const [vista, setVista] = useState({ izquierda: false, derecha: false, anchoTotal: 0, pendientesDerecha: [] as string[] });
+  /* H50 (prueba del 30-sep): los títulos son sticky DENTRO de la tabla, pero lo que baja es la página;
+   * al bajar se iban y la barra seguía arriba sola. Cuando salen de la vista se muestra una copia de
+   * los nombres pegada bajo la barra, con los mismos anchos y movida a lo ancho con la tabla. */
+  const desplazarRef = useRef<HTMLDivElement>(null);
+  const pistaRef = useRef<HTMLDivElement | null>(null);
+  const [anchos, setAnchos] = useState<number[]>([]);
+  const [cabeceraFija, setCabeceraFija] = useState(false);
+  /* H49: mientras se arrastra la barra no se le devuelve la posición de la tabla, que salta de
+   * columna en columna (scroll-snap): sin esto barra y tabla se pelearían. */
+  const arrastrandoBarra = useRef(false);
+  const moverPista = () => {
+    if (pistaRef.current) pistaRef.current.style.transform = `translateX(${-(marcoRef.current?.scrollLeft ?? 0)}px)`;
+  };
+  const revisarCabecera = () => {
+    const marco = marcoRef.current;
+    const thead = marco?.querySelector('thead');
+    const barra = desplazarRef.current;
+    if (!marco || !thead || !barra) return;
+    const titulos = thead.getBoundingClientRect();
+    const tope = barra.getBoundingClientRect().bottom;
+    setCabeceraFija(titulos.top < tope - 2 && marco.getBoundingClientRect().bottom > tope + 48);
+  };
 
   const medir = () => {
     const marco = marcoRef.current;
@@ -390,6 +426,10 @@ export function PasoCompletar(p: Props) {
       const pendiente = (tabla.faltantesPorColumna[col] ?? 0) > 0 || columnasConError.has(col);
       if (pendiente && th.offsetLeft + th.offsetWidth / 2 > borde) pendientes.push(col);
     });
+    const nuevos = Array.from(marco.querySelectorAll<HTMLTableCellElement>('thead th')).map((th) => th.offsetWidth);
+    setAnchos((a) => (a.join() === nuevos.join() ? a : nuevos));
+    moverPista();
+    revisarCabecera();
     setVista((v) => {
       const nueva = {
         izquierda: scrollLeft > 4,
@@ -403,7 +443,7 @@ export function PasoCompletar(p: Props) {
   };
 
   const alDesplazarTabla = () => {
-    if (barraRef.current && !sincronizando.current) {
+    if (barraRef.current && !sincronizando.current && !arrastrandoBarra.current) {
       sincronizando.current = true;
       barraRef.current.scrollLeft = marcoRef.current?.scrollLeft ?? 0;
       requestAnimationFrame(() => { sincronizando.current = false; });
@@ -433,9 +473,28 @@ export function PasoCompletar(p: Props) {
     const marco = marcoRef.current;
     const th = marco?.querySelector<HTMLTableCellElement>(`thead th[data-col="${col}"]`);
     if (!marco || !th) return;
-    // Queda a la vista pasando las columnas fijas (Fila y Fotos).
-    marco.scrollTo?.({ left: Math.max(0, th.offsetLeft - 190), behavior: 'smooth' });
+    // Queda a la vista justo después de las columnas fijas (Fila y Fotos).
+    marco.scrollTo?.({ left: Math.max(0, th.offsetLeft - anchoFijas()), behavior: 'smooth' });
   };
+  /** Ancho de Fila + Fotos, que quedan fijas a la izquierda. */
+  const anchoFijas = () => (anchos[0] ?? 58) + (anchos[1] ?? 113);
+
+  useEffect(() => {
+    const soltarBarra = () => {
+      if (!arrastrandoBarra.current) return;
+      arrastrandoBarra.current = false;
+      if (barraRef.current && marcoRef.current) barraRef.current.scrollLeft = marcoRef.current.scrollLeft;
+    };
+    window.addEventListener('pointerup', soltarBarra);
+    window.addEventListener('scroll', revisarCabecera, true);
+    window.addEventListener('resize', revisarCabecera);
+    return () => {
+      window.removeEventListener('pointerup', soltarBarra);
+      window.removeEventListener('scroll', revisarCabecera, true);
+      window.removeEventListener('resize', revisarCabecera);
+    };
+    // Sólo usa refs y setState: basta registrarlo una vez.
+  }, []);
 
   // Se vuelve a medir cuando cambia lo que se muestra o el tamaño de la ventana.
   useEffect(() => {
@@ -617,7 +676,18 @@ export function PasoCompletar(p: Props) {
         </section>
       )}
 
-      <div className="mx-desplazar" role="group" aria-label="Moverse entre las columnas de la tabla">
+      {cierres.length > 0 && (
+        <div className="mx-alerta aviso" role="status">
+          <AlertTriangle size={16} />
+          <span>
+            Cerramos «en adelante» en el último año que el catálogo tiene para el modelo en{' '}
+            {plural(cierres.length, 'repuesto', 'repuestos')} (por ejemplo, {cierres[0].marca} {cierres[0].modelo} hasta{' '}
+            {cierres[0].hasta}). Si tu repuesto sirve para un año más nuevo, cámbialo en la columna «Año hasta».
+          </span>
+        </div>
+      )}
+
+      <div ref={desplazarRef} className="mx-desplazar" role="group" aria-label="Moverse entre las columnas de la tabla">
         <button type="button" className="mx-icono-btn" onClick={() => desplazar(-1)} disabled={!vista.izquierda} aria-label="Ver las columnas de la izquierda" title="Columnas de la izquierda">
           <ChevronLeft size={18} />
         </button>
@@ -625,6 +695,7 @@ export function PasoCompletar(p: Props) {
           ref={barraRef}
           className="mx-barra-h"
           onScroll={alDesplazarBarra}
+          onPointerDown={() => { arrastrandoBarra.current = true; }}
           aria-hidden
           style={{ visibility: vista.izquierda || vista.derecha ? 'visible' : 'hidden' }}
         >
@@ -633,6 +704,23 @@ export function PasoCompletar(p: Props) {
         <button type="button" className="mx-icono-btn" onClick={() => desplazar(1)} disabled={!vista.derecha} aria-label="Ver las columnas de la derecha" title="Columnas de la derecha">
           <ChevronRight size={18} />
         </button>
+        {cabeceraFija && anchos.length > 2 && (
+          <div className="mx-cabecera-fija" aria-hidden="true" data-testid="mx-cabecera-fija">
+            <div className="mx-cf-fijas">
+              <span style={{ width: anchos[0] }}>Fila</span>
+              <span style={{ width: anchos[1] }}>Fotos</span>
+            </div>
+            <div className="mx-cf-ventana">
+              <div ref={(el) => { pistaRef.current = el; moverPista(); }} className="mx-cf-pista">
+                {columnasMostradas.map((c, i) => (
+                  <span key={c} className={(tabla.faltantesPorColumna[c] ?? 0) > 0 ? 'amarilla' : ''} style={{ width: anchos[i + 2] }}>
+                    {etiquetaDe(campos, c)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       {vista.pendientesDerecha.length > 0 && (
         <div className="mx-alerta aviso mx-pendientes-derecha" role="status">
@@ -650,7 +738,10 @@ export function PasoCompletar(p: Props) {
         </div>
       )}
 
-      <div className={`mx-tabla-marco ${vista.izquierda ? 'con-izquierda' : ''} ${vista.derecha ? 'con-derecha' : ''}`}>
+      <div
+        className={`mx-tabla-marco ${vista.izquierda ? 'con-izquierda' : ''} ${vista.derecha ? 'con-derecha' : ''}`}
+        style={{ '--mx-fijas': `${anchoFijas()}px` } as CSSProperties}
+      >
       <div ref={marcoRef} className="mx-tabla-wrap" role="region" aria-label="Tabla de tus repuestos" tabIndex={0} onScroll={alDesplazarTabla} onWheel={alGirarRueda}>
         <table className="mx-tabla">
           <thead>
@@ -731,7 +822,7 @@ export function PasoCompletar(p: Props) {
                     return (
                       <td
                         key={c}
-                        className={`${fila.faltantes.includes(c) ? 'amarilla' : ''} ${problema ? `mx-td-${problema.severidad}` : ''}`}
+                        className={`${fila.faltantes.includes(c) ? 'amarilla' : ''} ${problema ? `mx-td-${problema.severidad}` : ''} ${c === 'stock' && problema?.severidad === 'aviso' ? 'mx-stock-bajo' : ''}`}
                       >
                         <Celda
                           valor={valor}
@@ -756,7 +847,12 @@ export function PasoCompletar(p: Props) {
                           sugerencias={(lista) => sugerenciasDeCelda(valor, lista)}
                           etiqueta={`${campo?.label ?? c} de la fila ${fila.numeroFila}`}
                           opcional={campo ? !requiereValorEnPanel(campo, p.mapping) : true}
-                          onCambio={(v) => p.onParche(fila.clave, c, v)}
+                          onCambio={(v) => {
+                            const sigue = c === 'compatibilidad_marca'
+                              ? modeloQueSigue(v, leer('compatibilidad_modelo'), p.modelosDisponibles) : undefined;
+                            if (sigue) p.onParches(fila.clave, { compatibilidad_marca: v, compatibilidad_modelo: sigue });
+                            else p.onParche(fila.clave, c, v);
+                          }}
                         />
                       </td>
                     );

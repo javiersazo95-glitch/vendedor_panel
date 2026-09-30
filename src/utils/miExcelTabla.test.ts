@@ -11,6 +11,8 @@ import {
   aplicarATodasVacias,
   aplicarParche,
   camposACompletar,
+  cierresAlCatalogo,
+  modeloQueSigue,
   construirTabla,
   inferirColumna,
   problemasDeFila,
@@ -139,11 +141,47 @@ describe('Qué dato exacto impide publicar', () => {
       columnas: t.columnas,
       valores: { [fila.clave]: [...fila.valores] },
     };
-    expect(problemasDeFila(fila, t.columnas, campos, servidor)).toEqual([
+    // Sin el aviso de stock bajo (H51) del CSV de prueba: aquí se mira sólo lo del servidor.
+    expect(problemasDeFila(fila, t.columnas, campos, servidor).filter((x) => x.columna !== 'stock')).toEqual([
       { columna: 'marca_repuesto', severidad: 'error', mensaje: 'La marca del repuesto "Bosch" está bloqueada.' },
     ]);
     const corregida = tabla([], aplicarParche(aplicarATodasVacias(aplicarATodasVacias(mapping, 'categoria', 'Frenos'), 'marca_repuesto', 'Bosch'), fila.clave, 'marca_repuesto', 'Mann')).filas[0];
     // Ya no queda nada que impida publicar: sólo el aviso de que "Mann" no está en este catálogo de prueba.
     expect(problemasDeFila(corregida, t.columnas, campos, servidor).filter((x) => x.severidad === 'error')).toEqual([]);
+  });
+});
+
+describe('cierresAlCatalogo (H53)', () => {
+  const columnas = ['compatibilidad_general', 'compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'anio_hasta'];
+  const hilux = [{ id: 1, modelo: 'Hilux', anioDesde: 2016, anioHasta: 2025, motor: '2.4' }];
+  const versionesDe = (marca: string, modelo: string) => (marca === 'Toyota' && modelo === 'Hilux' ? hilux : undefined);
+  const fila = (clave: string, ...valores: string[]) => ({ clave, valores });
+
+  it('un "en adelante" (año actual) que pasa del catálogo se cierra en su último año', () => {
+    const r = cierresAlCatalogo([fila('a', 'NO', 'Toyota', 'Hilux', '2016', '2026')], columnas, versionesDe, 2026);
+    expect(r).toEqual([{ clave: 'a', marca: 'Toyota', modelo: 'Hilux', hasta: '2025' }]);
+  });
+
+  it('no toca años pasados, universales, modelos sin catálogo ni un "desde" posterior al catálogo', () => {
+    const r = cierresAlCatalogo([
+      fila('pasado', 'NO', 'Toyota', 'Hilux', '2016', '2024'),
+      fila('universal', 'SI', 'Toyota', 'Hilux', '2016', '2026'),
+      fila('sin-catalogo', 'NO', 'Toyota', 'Rush', '2016', '2026'),
+      fila('desde-nuevo', 'NO', 'Toyota', 'Hilux', '2026', '2026'),
+    ], columnas, versionesDe, 2026);
+    expect(r).toEqual([]);
+  });
+});
+
+describe('modeloQueSigue (H52)', () => {
+  const modelos = { suzuki: ['Alto', 'Swift'], toyota: ['Yaris'] };
+
+  it('corregir la marca conserva el modelo si existe en la marca nueva, con su nombre del catálogo', () => {
+    expect(modeloQueSigue('Suzuki', 'alto', modelos)).toBe('Alto');
+  });
+
+  it('si el modelo no es de la marca nueva, o no hay modelo, no se conserva', () => {
+    expect(modeloQueSigue('Toyota', 'Alto', modelos)).toBeUndefined();
+    expect(modeloQueSigue('Suzuki', '', modelos)).toBeUndefined();
   });
 });

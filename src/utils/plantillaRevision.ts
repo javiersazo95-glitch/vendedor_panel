@@ -21,6 +21,7 @@
  */
 import type { CampoMeta } from './plantillaMapping';
 import { ANIO_MAXIMO, ANIO_MINIMO, COLUMNAS_NUMERICAS, normalizarNumero } from './plantillaNormalizacion';
+import { STOCK_BAJO } from './inventoryOrder';
 import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
 import { buscarEnCatalogo, normalizarParaComparar, sugerirDelCatalogo } from './plantillaCatalogos';
 import type { EsquemaPlantilla } from './plantillaMapping';
@@ -222,6 +223,15 @@ export function revisarAoA(
         agregar(key, 'error', 'El precio no puede ser 0. Si este repuesto se cotiza, pon "SOLO_COTIZAR" en tipo de precio.');
       } else if (comoMiles) {
         agregar(key, 'aviso', `"${bruto}" se va a publicar como ${numero.toLocaleString('es-CL')}.`);
+      }
+      // H51 (prueba del 30-sep, decisión del usuario): un repuesto sin stock no se publica, y uno
+      // con poco se publica avisando. El umbral es el mismo con que el inventario marca "stock bajo".
+      if (key === 'stock' && numero !== null && Number.isInteger(numero)) {
+        if (numero === 0) {
+          agregar(key, 'error', 'Sin stock: con 0 unidades el repuesto no se publica. Escribe cuántas unidades tienes.');
+        } else if (numero > 0 && numero < STOCK_BAJO) {
+          agregar(key, 'aviso', `Stock bajo: ${numero === 1 ? 'queda 1 unidad' : `quedan ${numero} unidades`}. Se publica igual.`);
+        }
       }
     }
 

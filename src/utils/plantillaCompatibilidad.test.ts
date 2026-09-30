@@ -42,6 +42,15 @@ describe('parsearAplicacion', () => {
     expect(parsearAplicacion('', MARCAS)).toBeNull();
   });
 
+  it('una marca mal escrita se separa igual, dejándola como vino para que la revisión sugiera la correcta (H52)', () => {
+    expect(parsearAplicacion('Susuki Alto 2009-2015', [...MARCAS, 'Suzuki'])).toEqual({
+      marca: 'Susuki', modelo: 'Alto', anioDesde: '2009', anioHasta: '2015',
+    });
+    expect(parsearAplicacion('Hyndai Accent 2011-2017', MARCAS)?.marca).toBe('Hyndai');
+    // Lo que no se parece a ninguna marca sigue sin inventarse.
+    expect(parsearAplicacion('Corsa 1.4 2005', [...MARCAS, 'Suzuki'])).toBeNull();
+  });
+
   it('la columna se ofrece sólo si la mayoría de sus valores se entienden', () => {
     expect(pareceColumnaDeAplicacion(['Toyota Corolla 2014', 'Nissan V16 1998', 'varios'], MARCAS)).toBe(true);
     expect(pareceColumnaDeAplicacion(['varios', 'consultar', 'Toyota Yaris'], MARCAS)).toBe(false);

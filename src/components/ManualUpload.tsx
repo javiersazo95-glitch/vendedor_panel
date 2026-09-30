@@ -20,6 +20,12 @@ interface ManualUploadProps {
   onSave: (product: Omit<Product, 'id' | 'lastUpdated'> & { id?: string }, imageFiles?: File[] | null) => Promise<void>;
   editProduct?: Product | null;
   founder?: boolean;
+  /**
+   * "Ver en inventario" del resultado. Abierto desde "Cargar inventario", cerrar no bastaba: el
+   * panel se quedaba en esa sección y el botón parecía no hacer nada (H47, prueba del 30-sep).
+   * Sin esta prop el botón sólo cierra, como antes.
+   */
+  onVerInventario?: () => void;
 }
 
 type CatalogOption = {
@@ -701,6 +707,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   onSave,
   editProduct,
   founder = false,
+  onVerInventario,
 }) => {
   const [sku, setSku] = useState('');
   const [oem, setOem] = useState('');
@@ -1014,7 +1021,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setError(msg);
     setSaving(false);
     if (bodyRef.current) {
-      bodyRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      bodyRef.current.scrollTo?.({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -1353,7 +1360,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               {savedResult.edited ? 'ya tiene los datos nuevos.' : 'ya está en tu inventario y a la vista de los compradores.'}
             </p>
             <div className="manual-success-actions">
-              <button type="button" className="btn btn-primary" onClick={onClose}>Ver en inventario</button>
+              <button type="button" className="btn btn-primary" onClick={onVerInventario ?? onClose}>Ver en inventario</button>
               {!savedResult.edited && (
                 <button type="button" className="btn btn-secondary" onClick={resetToEmpty}>Publicar otro repuesto</button>
               )}

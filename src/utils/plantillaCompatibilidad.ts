@@ -11,7 +11,7 @@
  * La plantilla oficial ya soporta la hoja `compatibilidades` (una fila por vehículo,
  * agrupadas por `sku_proveedor`); acá se arma.
  */
-import { buscarEnCatalogo, normalizarParaComparar } from './plantillaCatalogos';
+import { buscarEnCatalogo, normalizarParaComparar, parecido } from './plantillaCatalogos';
 import { ALIAS_MARCAS_VEHICULO, claveCatalogo } from './nombresCatalogoVehiculo';
 
 /** Columnas de la hoja `compatibilidades`, en el orden que lee el backend. */
@@ -70,6 +70,9 @@ const PALABRAS_UNIVERSAL = /^(todos|todas|todo|universal|general|generico|generi
 
 const ANIO_ACTUAL = new Date().getFullYear();
 
+/** Qué tanto debe parecerse la primera palabra a una marca para leerla como marca mal escrita (H52). */
+const UMBRAL_MARCA_MAL_ESCRITA = 0.8;
+
 /** Sin tildes pero con mayúsculas y separadores: mismo largo que el original, para recortar. */
 const sinAcentosConCase = (texto: string) => texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const escapeRe = (texto: string) => texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -125,7 +128,17 @@ export function parsearAplicacion(texto: string, marcasVehiculo: string[]): Apli
     })
     .filter((c): c is { marca: string; largo: number; letras: number } => !!c)
     .sort((a, b) => b.letras - a.letras);
-  if (candidatas.length === 0) return null;
+  // H52 (prueba del 30-sep): "Susuki Alto 2009-2015" no reconocía la marca y el texto entero caía en
+  // el modelo, sin decir nada útil. Si la primera palabra se parece mucho a una marca, se separa igual
+  // DEJANDO la palabra como la escribió: la revisión la marca en rojo con "¿Querías decir "Suzuki"?" y
+  // el vendedor la confirma con un clic. No se corrige sola: una marca adivinada inventaría autos.
+  if (candidatas.length === 0) {
+    const primera = sinAcentos.match(/^\s*([A-Za-z]{4,})(?![A-Za-z0-9])/);
+    const parecida = primera
+      && marcasVehiculo.some((m) => parecido(primera[1], m) >= UMBRAL_MARCA_MAL_ESCRITA);
+    if (!primera || !parecida) return null;
+    candidatas.push({ marca: original.slice(0, primera[0].length).trim(), largo: primera[0].length, letras: primera[1].length });
+  }
   const { marca, largo } = candidatas[0];
   let resto = original.slice(largo).replace(/^[^A-Za-z0-9À-ɏ]+/, '').trim();
 

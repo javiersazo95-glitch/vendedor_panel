@@ -553,6 +553,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
       <ManualUpload
         isOpen={isManualOpen}
         onClose={() => { setIsManualOpen(false); setEditingProduct(null); }}
+        onVerInventario={() => { setIsManualOpen(false); setEditingProduct(null); setActiveView('inventory'); }}
         onSave={handleSaveProduct}
         editProduct={editingProduct}
         founder={founder}

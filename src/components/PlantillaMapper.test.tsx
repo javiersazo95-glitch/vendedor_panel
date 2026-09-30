@@ -325,8 +325,9 @@ describe('PlantillaMapper', () => {
     await subirYRelacionar([
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad',
       'A-1,Filtro de aceite,Bosch,Filtros,$ 4.990,10',
-      'A-2,Pastilla de freno,Brembo,Frenos,consultar,4',
-      'A-3,,Gates,Correas,9990,7',
+      // Stock de 10 o más: el stock bajo (H51) es un aviso aparte que este test no mira.
+      'A-2,Pastilla de freno,Brembo,Frenos,consultar,14',
+      'A-3,,Gates,Correas,9990,17',
     ].join('\n'));
     // Sin columna de vehículo el repuesto no se publica (Fase 2/3): este archivo es universal.
     fireEvent.click(screen.getByLabelText('Todo mi inventario es universal'));

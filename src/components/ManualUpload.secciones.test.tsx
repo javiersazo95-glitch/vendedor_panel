@@ -116,6 +116,20 @@ describe('1 a 1 por secciones', () => {
     expect((screen.getByPlaceholderText('Ej. Pastillas de freno delanteras') as HTMLInputElement).value).toBe('');
   });
 
+  it('"Ver en inventario" lleva al inventario y no solo cierra el modal (H47)', async () => {
+    const onClose = vi.fn();
+    const onVerInventario = vi.fn();
+    render(<ManualUpload isOpen onClose={onClose} onVerInventario={onVerInventario}
+      onSave={vi.fn(async () => {})} editProduct={null} />);
+    await completarLoObligatorio();
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar repuesto' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver en inventario' }));
+
+    expect(onVerInventario).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('un universal nuevo puede llevar número OEM', async () => {
     const onSave = abrir();
     await completarLoObligatorio();

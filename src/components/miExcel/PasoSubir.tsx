@@ -230,9 +230,12 @@ export function PasoSubir(p: Props) {
           )}
           <div className="mx-bloque">
             <h4 className="mx-subtitulo">¿Estamos leyendo bien tu archivo?</h4>
+            {/* H48 (prueba del 30-sep): "marcamos en azul" no decía para qué se usa esa fila. Ahora se
+                nombra la fila y lo que pasa con ella. */}
             <p className="mx-ayuda">
-              Marcamos en azul la fila donde creemos que están los <b>títulos de tus columnas</b>. Si no es
-              esa, haz clic en la fila correcta. Lo que está arriba de esa fila no se usa.
+              Usaremos la <b>fila {p.filaEncabezados + 1}</b> (en azul) como los <b>títulos de tus columnas</b>:
+              con ellos las relacionas en el paso 2. Lo que está arriba de esa fila no se carga.
+              ¿No es esa? Haz clic en la fila correcta.
             </p>
             <div className="mx-tabla-cruda-wrap">
               <table className="mx-tabla-cruda">
@@ -246,13 +249,13 @@ export function PasoSubir(p: Props) {
                   {filasVista.map((fila, i) => (
                     <tr
                       key={i}
-                      className={i === p.filaEncabezados ? 'titulos' : ''}
+                      className={i === p.filaEncabezados ? 'titulos' : i < p.filaEncabezados ? 'fuera' : ''}
                       onClick={() => p.onElegirFila(i)}
                       title={`Usar la fila ${i + 1} como títulos`}
                     >
                       <th scope="row">
                         {i + 1}
-                        {i === p.filaEncabezados && <span className="mx-etiqueta-titulos">títulos</span>}
+                        {i === p.filaEncabezados && <span className="mx-etiqueta-titulos">Títulos de tus columnas</span>}
                       </th>
                       {Array.from({ length: anchoVista }, (_, c) => <td key={c}>{String((fila as unknown[])[c] ?? '')}</td>)}
                     </tr>

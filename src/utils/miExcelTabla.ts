@@ -20,6 +20,7 @@ import {
   type UserColumn,
 } from './plantillaMapping';
 import type { CambioNormalizacion } from './plantillaNormalizacion';
+import { normalizarParaComparar } from './plantillaCatalogos';
 import { revisarAoA, type FilaRevisada } from './plantillaRevision';
 import type { FilaResultado } from './cargaExcelApi';
 import {
@@ -409,4 +410,50 @@ export function problemasDeCatalogo(fila: FilaRevisada, columnas: string[], vers
     });
   }
   return problemas;
+}
+
+/**
+ * H53 (prueba del 30-sep): "2016 en adelante" cierra en el año actual (H42), pero si el catálogo del
+ * modelo termina antes ("Toyota Hilux" llega a 2025) ese año no existe y la fila quedaba en rojo. Estas
+ * son las filas cuyo "año hasta" es el año actual y cae después del último año que el catálogo tiene
+ * para su modelo, con el año al que se cierran. Sólo el año actual: un año pasado que no está en el
+ * catálogo lo escribió el vendedor y sigue siendo un error que él decide.
+ */
+export function cierresAlCatalogo(
+  filas: { clave: string; valores: string[] }[],
+  columnas: string[],
+  versionesDe: VersionesDe,
+  anioActual = new Date().getFullYear(),
+): { clave: string; marca: string; modelo: string; hasta: string }[] {
+  const leer = (f: { valores: string[] }, col: string) => String(f.valores[columnas.indexOf(col)] ?? '').trim();
+  const salida: { clave: string; marca: string; modelo: string; hasta: string }[] = [];
+  for (const f of filas) {
+    if (SI.has(leer(f, 'compatibilidad_general').toUpperCase())) continue;
+    if (leer(f, 'anio_hasta') !== String(anioActual)) continue;
+    const marca = leer(f, 'compatibilidad_marca');
+    const modelo = leer(f, 'compatibilidad_modelo');
+    if (!marca || !modelo) continue;
+    const versiones = versionesDe(marca, modelo);
+    const todos = versiones ? rangoCompleto(versiones) : null;
+    if (!todos || Number(todos.hasta) >= anioActual) continue;
+    const desde = Number(leer(f, 'anio_desde'));
+    if (desde && desde > Number(todos.hasta)) continue;
+    salida.push({ clave: f.clave, marca, modelo, hasta: todos.hasta });
+  }
+  return salida;
+}
+
+/**
+ * H52: corregir una marca mal escrita ("Susuki" -> "Suzuki") no debe borrar el modelo que ya estaba
+ * bien ("Alto"). Devuelve el modelo con el nombre del catálogo si existe en la marca nueva; si no,
+ * undefined y el modelo se vacía como siempre (cambiar de marca es cambiar de auto).
+ */
+export function modeloQueSigue(
+  marcaNueva: string,
+  modeloActual: string,
+  modelosPorMarca: Record<string, string[]>,
+): string | undefined {
+  const modelo = normalizarParaComparar(modeloActual);
+  if (!modelo) return undefined;
+  return (modelosPorMarca[normalizarParaComparar(marcaNueva)] ?? []).find((m) => normalizarParaComparar(m) === modelo);
 }

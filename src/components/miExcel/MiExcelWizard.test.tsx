@@ -69,6 +69,21 @@ describe('Mi propio Excel: etapas 1 y 2', () => {
     expect(screen.getByRole('button', { name: /Siguiente: relacionar columnas/ })).toBeDisabled();
   });
 
+  it('nombra la fila que se usará como títulos y atenúa lo que queda arriba (H48)', async () => {
+    montar();
+    await subirCsv();
+
+    const ayuda = screen.getByText(/como los/).closest('p') as HTMLElement;
+    expect(ayuda).toHaveTextContent('Usaremos la fila 1 (en azul) como los títulos de tus columnas');
+    expect(screen.getByText('Títulos de tus columnas')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle('Usar la fila 2 como títulos'));
+
+    expect(ayuda).toHaveTextContent('Usaremos la fila 2 (en azul)');
+    expect(screen.getByTitle('Usar la fila 1 como títulos')).toHaveClass('fuera');
+    expect(screen.getByTitle('Usar la fila 2 como títulos')).toHaveClass('titulos');
+  });
+
   it('"No tengo esta columna" avisa que el dato se completa en el paso 3 y no ofrece un valor fijo', async () => {
     montar();
     await subirCsv();

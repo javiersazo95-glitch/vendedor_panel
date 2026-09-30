@@ -192,7 +192,8 @@ describe('archivos crudos: lo que ya funciona', () => {
     // En la hoja, los tres repuestos están en las filas 2, 3 y 7: entre medio hay un
     // subtotal, una fila vacía y los títulos repetidos. Si el número se calculara sobre el
     // archivo ya generado dirían 2, 3 y 4, y el vendedor iría a mirar el subtotal.
-    expect(r.revision.filas.map((f) => f.numeroFila)).toEqual([2, 3, 7]);
+    // Ordenados: la tabla pone primero las filas con algo que revisar (un stock bajo, H51).
+    expect(r.revision.filas.map((f) => f.numeroFila).sort((a, b) => a - b)).toEqual([2, 3, 7]);
   });
 
   it('el número de fila aguanta que una fila se separe en varios vehículos', () => {
@@ -318,8 +319,9 @@ describe('archivos crudos: lo que ya funciona', () => {
     // "CONSULTAR" no es un precio roto: es el tipo de precio en la columna equivocada.
     expect(valorEn(r.oficial, 4, 'tipo_precio')).toBe('SOLO_COTIZAR');
     expect(valorEn(r.oficial, 4, 'precio')).toBe('');
-    // De 1 publicable a 3; lo que queda ("SIN STOCK", stock vacío) no se puede inventar.
-    expect(r.revision.publicables).toBe(3);
+    // De 1 publicable a 2; lo que queda ("SIN STOCK", stock vacío) no se puede inventar, y la
+    // bujía con stock 0 se retiene: sin stock no se publica (H51, decisión del usuario del 30-sep).
+    expect(r.revision.publicables).toBe(2);
   });
 
   it('la coma de miles no se lee como decimal', () => {

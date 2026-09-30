@@ -306,7 +306,15 @@ export function marcasDelArchivo(
     if (colModelo && (mapping.parsearAplicacion || mapping.separarAplicaciones)) {
       for (const parte of separarAplicaciones(String(r[colModelo.index] ?? ''), marcas)) {
         const parsed = parsearAplicacion(parte, marcas);
-        if (parsed?.marca) encontradas.add(normalizarParaComparar(parsed.marca));
+        if (parsed?.marca) {
+          encontradas.add(normalizarParaComparar(parsed.marca));
+          // H52: con una marca mal escrita ("Susuki") se traen también los modelos de la sugerida,
+          // para que al corregirla el modelo que ya estaba ("Alto") se conserve.
+          if (!buscarEnCatalogo(parsed.marca, marcas)) {
+            const [sugerida] = sugerirDelCatalogo(parsed.marca, marcas, 1);
+            if (sugerida) encontradas.add(normalizarParaComparar(sugerida));
+          }
+        }
       }
     }
     if (encontradas.size >= 40) break;
