@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearSession, saveSession } from './session';
 import {
   ESTADO_VACIO,
+  FotoBorradorRechazadaError,
+  subirImagenBorrador,
   deserializarBorrador,
   fotosAsignadas,
   serializarBorrador,
@@ -37,5 +40,55 @@ describe('Borrador de "Mi propio Excel"', () => {
 
   it('las fotos que se guardan son sólo las asignadas, sin repetir', () => {
     expect(fotosAsignadas(estado.fotos.asignaciones).sort()).toEqual(['pf-1.jpg', 'pf-1_2.jpg']);
+  });
+});
+
+/**
+ * H33 (revisión del 30-sep): la subida de fotos del borrador comparte el tope de 120 peticiones
+ * por minuto con todo el panel. Un 429 o un corte no son un rechazo de la foto.
+ */
+describe('subirImagenBorrador ante 429 y errores', () => {
+  const foto = new Blob(['x'], { type: 'image/jpeg' });
+  const respuestas = (lista: Response[]) => {
+    const fetchMock = vi.fn(async () => lista.shift()!);
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  beforeEach(() => {
+    saveSession({ email: 'v@x.cl', role: 'vendedor', token: 'tok', sellerId: '1' });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    clearSession();
+  });
+
+  it('un 429 con Retry-After espera y vuelve a intentar', async () => {
+    const fetchMock = respuestas([
+      new Response('', { status: 429, headers: { 'Retry-After': '2' } }),
+      new Response(JSON.stringify({ id: 7, nombreArchivo: 'a.jpg' }), { status: 200 }),
+    ]);
+    const esperas: number[] = [];
+    const guardada = await subirImagenBorrador(foto, 'a.jpg', { esperar: async (ms) => { esperas.push(ms); } });
+
+    expect(guardada.id).toBe(7);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(esperas[0]).toBeGreaterThanOrEqual(2000);
+  });
+
+  it('un 400 es un rechazo definitivo de la foto', async () => {
+    respuestas([new Response(JSON.stringify({ message: 'Solo JPG, PNG o WEBP' }), { status: 400 })]);
+    await expect(subirImagenBorrador(foto, 'a.gif')).rejects.toBeInstanceOf(FotoBorradorRechazadaError);
+  });
+
+  it('un 500 o un 429 que no cede no la dan por rechazada', async () => {
+    respuestas([new Response('', { status: 503 })]);
+    const error = await subirImagenBorrador(foto, 'a.jpg').catch((e) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(FotoBorradorRechazadaError);
+
+    respuestas([new Response('', { status: 429 }), new Response('', { status: 429 })]);
+    const otro = await subirImagenBorrador(foto, 'a.jpg', { intentos: 2, esperar: async () => {} }).catch((e) => e);
+    expect(otro).not.toBeInstanceOf(FotoBorradorRechazadaError);
   });
 });

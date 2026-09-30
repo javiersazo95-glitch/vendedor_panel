@@ -12,8 +12,10 @@
  * terminar.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { SessionExpiredError } from './apiFetch';
 import {
   ConflictoBorradorError,
+  FotoBorradorRechazadaError,
   archivoParaBorrador,
   fotosAsignadas,
   guardarBorrador,
@@ -48,6 +50,8 @@ interface Opciones {
 }
 
 const FOTOS_EN_PARALELO = 3;
+/** Fotos que no se pudieron guardar por un corte o un 429: se reintentan solas después de esto. */
+const REINTENTO_FOTOS_MS = 30000;
 
 export function useBorradorCarga({ habilitado, estado, archivo, imagenes, esperaAutoguardado = 4000 }: Opciones) {
   const [estadoGuardado, setEstadoGuardado] = useState<EstadoGuardado>('sin-cambios');
@@ -67,6 +71,8 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
   /** Fotos que el servidor ya rechazó: no se reintentan en cada guardado automático. */
   const rechazadasRef = useRef<Set<string>>(new Set());
   const enCursoRef = useRef<Promise<boolean> | null>(null);
+  /** Sube en 1 cada vez que un guardado deja fotos pendientes: programa el reintento. */
+  const [fotosPorReintentar, setFotosPorReintentar] = useState(0);
   const pendienteRef = useRef(false);
   const actualRef = useRef({ estado, archivo, imagenes, habilitado });
   useEffect(() => {
@@ -98,7 +104,9 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
     setJsonGuardado(serializarBorrador(estadoActual));
   }, [setJsonGuardado]);
 
-  const sincronizarFotos = async (asignadas: string[], enMemoria: Record<string, Blob>) => {
+  /** Devuelve cuántas fotos quedaron sin guardar por un problema pasajero (se reintentan). */
+  const sincronizarFotos = async (asignadas: string[], enMemoria: Record<string, Blob>): Promise<number> => {
+    let pendientes = 0;
     const faltan = asignadas.filter((n) => guardadasRef.current[n] === undefined && enMemoria[n] && !rechazadasRef.current.has(n));
     if (faltan.length > 0) {
       let hechas = 0;
@@ -109,10 +117,17 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
             const { blob } = await comprimirImagen(enMemoria[nombre], nombre);
             const guardada = await subirImagenBorrador(blob, nombre);
             guardadasRef.current = { ...guardadasRef.current, [nombre]: guardada.id };
-          } catch {
-            rechazadasRef.current.add(nombre);
-            // Una foto que el servidor no acepta (un GIF, una demasiado pesada) no puede impedir
-            // guardar el resto del progreso: sigue en memoria y se sube igual al publicar.
+          } catch (err) {
+            if (err instanceof SessionExpiredError) throw err;
+            if (err instanceof FotoBorradorRechazadaError) {
+              // Una foto que el servidor no acepta (un GIF, una demasiado pesada) no puede impedir
+              // guardar el resto del progreso: sigue en memoria y se sube igual al publicar.
+              rechazadasRef.current.add(nombre);
+            } else {
+              // H33: un 429 que no cedió, un 5xx o un corte. Antes quedaba como rechazada para
+              // toda la sesión y el borrador se quedaba sin esa foto; ahora se vuelve a intentar.
+              pendientes += 1;
+            }
           } finally {
             hechas += 1;
             setProgresoFotos({ hechas, total: faltan.length });
@@ -129,6 +144,7 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
       guardadasRef.current = quedan;
     }
     setGuardadas(guardadasRef.current);
+    return pendientes;
   };
 
   const guardarUnaVez = async (): Promise<boolean> => {
@@ -148,8 +164,14 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
           shaArchivoRef.current = a.sha256;
         }
       }
-      await sincronizarFotos(fotosAsignadas(e.fotos.asignaciones), imgs);
+      const pendientes = await sincronizarFotos(fotosAsignadas(e.fotos.asignaciones), imgs);
       setUltimoGuardado(updatedAt);
+      if (pendientes > 0) {
+        setFotosPorReintentar((n) => n + 1);
+        setErrorGuardado(`${pendientes === 1 ? 'falta 1 foto' : `faltan ${pendientes} fotos`}`);
+        setEstadoGuardado('error');
+        return true;
+      }
       setEstadoGuardado(serializarBorrador(actualRef.current.estado) === jsonAhora ? 'guardado' : 'sin-guardar');
       return true;
     } catch (err) {
@@ -183,6 +205,14 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
     // guardarUnaVez lee todo por referencia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // El guardado automático sólo corre cuando algo cambia: sin esto, las fotos que quedaron
+  // pendientes por un 429 o un corte esperarían a que el vendedor tocara otra cosa.
+  useEffect(() => {
+    if (fotosPorReintentar === 0) return undefined;
+    const t = setTimeout(() => { void guardar(); }, REINTENTO_FOTOS_MS);
+    return () => clearTimeout(t);
+  }, [fotosPorReintentar, guardar]);
 
   /**
    * Guarda un estado que todavía no llegó a la pantalla (p. ej. "la publicación quedó a medias",

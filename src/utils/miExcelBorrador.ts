@@ -10,6 +10,7 @@
  * estado pesa lo que pesan las decisiones del vendedor, no su inventario entero.
  */
 import { apiFetch } from './apiFetch';
+import { conReintento429, type OpcionesReintento } from './reintento429';
 import { API_BASE_URL } from './imageHelper';
 import { getStoredSession } from './session';
 import { encId } from './url';
@@ -81,6 +82,12 @@ export const ESTADO_VACIO: EstadoBorrador = {
 
 /** Tope del backend para el archivo del borrador (multipart de 10 MB). */
 export const MAX_BYTES_ARCHIVO_BORRADOR = 10 * 1024 * 1024;
+
+/**
+ * El servidor no acepta esta foto (tipo, tamaño, tope de fotos): volver a mandarla no sirve.
+ * Un 429, un 5xx o un corte de red NO son esto: la foto se vuelve a intentar.
+ */
+export class FotoBorradorRechazadaError extends Error {}
 
 export class ConflictoBorradorError extends Error {
   version: number;
@@ -269,15 +276,25 @@ export async function descargarArchivoBorrador(nombre: string): Promise<File> {
   return new File([blob], nombre, { type: blob.type || 'application/octet-stream' });
 }
 
-export async function subirImagenBorrador(imagen: Blob, nombreArchivo: string): Promise<BorradorImagen> {
+export async function subirImagenBorrador(
+  imagen: Blob,
+  nombreArchivo: string,
+  reintento?: OpcionesReintento,
+): Promise<BorradorImagen> {
   const s = sesion();
   const form = new FormData();
   form.append('imagen', imagen, nombreArchivo);
   form.append('nombreArchivo', nombreArchivo);
-  const r = await apiFetch(`${base(s.sellerId)}/imagenes`, {
+  // H33: el guardado sube una petición por foto y comparte el tope de 120 por minuto de
+  // /api/v1/proveedores/** con todo el panel. Ante un 429 se espera lo que diga Retry-After.
+  const r = await conReintento429(() => apiFetch(`${base(s.sellerId)}/imagenes`, {
     method: 'POST', headers: { Authorization: `Bearer ${s.token}` }, body: form,
-  }, 60000);
-  if (!r.ok) throw new Error(await mensajeDe(r, 'No se pudo guardar una foto.'));
+  }, 60000), reintento);
+  if (!r.ok) {
+    const mensaje = await mensajeDe(r, 'No se pudo guardar una foto.');
+    const definitivo = r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429;
+    throw definitivo ? new FotoBorradorRechazadaError(mensaje) : new Error(mensaje);
+  }
   return r.json();
 }
 
