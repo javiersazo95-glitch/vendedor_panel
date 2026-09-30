@@ -326,6 +326,34 @@ describe('Fase 4: marca y modelo del vehículo contra el catálogo', () => {
     expect(r.filas[0].problemas).toEqual([]);
   });
 
+  it('"Corsa 1.4": la marca Corsa también es modelo de otras, y el mensaje dice cómo escribirlo', () => {
+    const r = revisarAoA([columnas, filaBase({ compatibilidad_marca: 'Corsa', compatibilidad_modelo: '1.4' })], PLANTILLA_CAMPOS, {
+      catalogos: { ...CATALOGOS, marcasVehiculo: [...CATALOGOS.marcasVehiculo, 'Corsa', 'Chevrolet', 'Opel'] },
+      modelosPorMarca: { ...CATALOGOS.modelosPorMarcaVehiculo, corsa: ['F4R', 'GP4'], chevrolet: ['Corsa', 'Sail'], opel: ['Astra', 'Corsa'] },
+    });
+    expect(r.conError).toBe(1);
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'compatibilidad_modelo');
+    expect(problema?.mensaje).toBe(
+      'El modelo "1.4" no existe para Corsa. "Corsa" también es un modelo de Chevrolet y Opel. '
+      + 'Si tu repuesto es para uno de esos, escribe la marca antes del modelo, por ejemplo "Chevrolet Corsa".');
+  });
+
+  it('"Dyna 2010" sin modelo: dice que falta y que Dyna también es un modelo', () => {
+    const r = revisarAoA([columnas, filaBase({ compatibilidad_marca: 'Dyna', compatibilidad_modelo: '' })], PLANTILLA_CAMPOS, {
+      catalogos: { ...CATALOGOS, marcasVehiculo: [...CATALOGOS.marcasVehiculo, 'Dyna'] },
+      modelosPorMarca: { ...CATALOGOS.modelosPorMarcaVehiculo, dyna: ['Low Rider'], toyota: ['Corolla', 'Dyna'] },
+    });
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'compatibilidad_modelo');
+    expect(problema?.mensaje).toBe('Falta el modelo del vehículo. "Dyna" también es un modelo de Toyota. '
+      + 'Si tu repuesto es para uno de esos, escribe la marca antes del modelo, por ejemplo "Toyota Dyna".');
+  });
+
+  it('una marca que no es modelo de nadie mantiene el mensaje de siempre', () => {
+    const r = revisarConModelos({ compatibilidad_modelo: 'Corola' });
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'compatibilidad_modelo');
+    expect(problema?.mensaje).not.toContain('también es un modelo');
+  });
+
   it('sin la lista de modelos de esa marca no se dice nada del modelo', () => {
     const r = revisarConModelos({ compatibilidad_marca: 'Nissan', compatibilidad_modelo: 'V16' });
     expect(r.filas[0].problemas).toEqual([]);

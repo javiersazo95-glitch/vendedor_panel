@@ -135,6 +135,28 @@ export function revisarAoA(
   };
   const subcategoriasPorCategoria = catalogos?.subcategoriasPorCategoria ?? {};
   // Una sugerencia sólo se nombra si existe; el mensaje ya sirve sin ella.
+  // Fase 5: marcas que también son el modelo de otras ("Corsa" es una marca de motos y el
+  // Chevrolet Corsa; "Dyna", "FOX", "RAM"). Si el vendedor escribió sólo el modelo, la fila se
+  // lee con esa marca y se retiene; el mensaje tiene que decir por qué y cómo escribirlo.
+  const nombreDeMarca = new Map(marcasVehiculo.map((m) => [normalizarParaComparar(m), m]));
+  const marcasConEseModelo = new Map<string, string[]>();
+  const tambienEsModeloDe = (marcaOficial: string) => {
+    const clave = normalizarParaComparar(marcaOficial);
+    let otras = marcasConEseModelo.get(clave);
+    if (!otras) {
+      otras = Object.entries(modelosPorMarca)
+        .filter(([marca, modelos]) => marca !== clave && modelos.some((m) => normalizarParaComparar(m) === clave))
+        .map(([marca]) => nombreDeMarca.get(marca) ?? marca)
+        .sort((a, b) => a.localeCompare(b, 'es'));
+      marcasConEseModelo.set(clave, otras);
+    }
+    if (otras.length === 0) return '';
+    const lista = otras.length === 1
+      ? otras[0]
+      : `${otras.slice(0, -1).join(', ')} y ${otras[otras.length - 1]}`;
+    return ` "${marcaOficial}" también es un modelo de ${lista}. Si tu repuesto es para uno de esos, `
+      + `escribe la marca antes del modelo, por ejemplo "${otras[0]} ${marcaOficial}".`;
+  };
   const conSugerencia = (valor: string, catalogo: string[]) => {
     const [mejor] = sugerirDelCatalogo(valor, catalogo, 1);
     return mejor ? ` ¿Querías decir "${mejor}"?` : '';
@@ -271,7 +293,9 @@ export function revisarAoA(
         agregar('compatibilidad_marca', 'error',
           'Falta el vehículo: indica marca, modelo y año, o pon SI en compatibilidad universal si sirve para todos.');
       } else if (!modelo) {
-        agregar('compatibilidad_modelo', 'error', 'Falta el modelo del vehículo.');
+        const marcaOficial = buscarEnCatalogo(marcaVehiculo, marcasVehiculo);
+        agregar('compatibilidad_modelo', 'error',
+          `Falta el modelo del vehículo.${marcaOficial ? tambienEsModeloDe(marcaOficial) : ''}`);
       } else if (!marcaVehiculo) {
         agregar('compatibilidad_marca', 'error', 'Falta la marca del vehículo.');
       } else if (!leer('anio_desde')) {
@@ -290,7 +314,7 @@ export function revisarAoA(
         const modelos = modelosPorMarca[normalizarParaComparar(marcaOficial)] ?? [];
         if (modelos.length > 0 && !buscarEnCatalogo(modelo, modelos)) {
           agregar('compatibilidad_modelo', 'error',
-            `El modelo "${modelo}" no existe para ${marcaOficial}.${conSugerencia(modelo, modelos)}`);
+            `El modelo "${modelo}" no existe para ${marcaOficial}.${tambienEsModeloDe(marcaOficial) || conSugerencia(modelo, modelos)}`);
         }
       }
     }
