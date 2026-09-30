@@ -92,6 +92,31 @@ describe('Mi propio Excel: etapas 1 y 2', () => {
     expect(within(grupo).getByRole('button', { name: /Dejar fuera/ })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  it('"Todo mi inventario es universal" con autos en el archivo pregunta en la pantalla, sin confirm del navegador (H39)', async () => {
+    const confirmar = vi.spyOn(window, 'confirm');
+    montar();
+    const conAutos = 'Codigo,Descripcion,Aplicacion,Precio,Stock\nPF-1,Pastilla freno,Toyota Yaris 2015-2019,24990,5\nPF-2,Disco freno,Chevrolet Sail 2012-2018,39990,2\n';
+    fireEvent.change(await screen.findByTestId('mx-input-excel'), { target: { files: [new File([conAutos], 'con-autos.csv', { type: 'text/csv' })] } });
+    await screen.findByText('con-autos.csv');
+    fireEvent.click(screen.getByRole('button', { name: /Siguiente: relacionar columnas/ }));
+
+    const interruptor = await screen.findByLabelText('Todo mi inventario es universal');
+    fireEvent.click(interruptor);
+    const pregunta = screen.getByRole('alertdialog', { name: /Todo tu inventario es universal/ });
+    expect(pregunta).toHaveTextContent(/trae el auto en 2 filas/);
+    expect(interruptor).not.toBeChecked();
+
+    fireEvent.click(within(pregunta).getByRole('button', { name: 'No, mis repuestos son para autos' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(interruptor).not.toBeChecked();
+
+    fireEvent.click(interruptor);
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, todo es universal' }));
+    expect(screen.getByLabelText('Todo mi inventario es universal')).toBeChecked();
+    expect(confirmar).not.toHaveBeenCalled();
+    confirmar.mockRestore();
+  });
+
   it('el aviso de qué corregir sólo aparece al tocar el ⚠ de la fila, y lleva a la celda con el error', async () => {
     montar();
     await subirCsv();

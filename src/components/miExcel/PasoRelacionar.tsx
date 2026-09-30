@@ -10,7 +10,7 @@
  * Las columnas de su Excel que no quedaron relacionadas se listan aparte, con dos botones claros:
  * sumarlas a la descripción o dejarlas fuera.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronDown, Info, PencilLine, Sparkles, Trash2, FileText,
 } from 'lucide-react';
@@ -68,6 +68,9 @@ function Interruptor({ checked, onChange, etiqueta, children }: {
 
 export function PasoRelacionar(p: Props) {
   const { mapping, detecciones: d, campos, userCols, userRows } = p;
+  // H39: la pregunta "¿todo es universal?" va en la pantalla, no en un confirm del navegador
+  // (un vendedor lo acepta sin leer, y el Audit Kit no admite alert/confirm nuevos).
+  const [preguntarUniversal, setPreguntarUniversal] = useState(false);
   const aCompletar = new Set(p.columnasACompletar);
   const asignadas = new Set(Object.values(mapping.oficial).filter(Boolean) as string[]);
   const sinAsignar = userCols.filter((c) => !asignadas.has(c.id));
@@ -266,14 +269,30 @@ export function PasoRelacionar(p: Props) {
           checked={universal}
           etiqueta="Todo mi inventario es universal"
           onChange={(v) => {
-            if (v && d.filasConVehiculo > 0 && !window.confirm(
-              `Tu archivo trae el auto en ${plural(d.filasConVehiculo, 'fila', 'filas')}. Si marcas todo como universal, esos repuestos se publican sin vehículo. ¿Seguir?`,
-            )) return;
+            if (v && d.filasConVehiculo > 0) {
+              setPreguntarUniversal(true);
+              return;
+            }
+            setPreguntarUniversal(false);
             p.onUniversal(v);
           }}
         >
           <b>Todo mi inventario es universal.</b> Márcalo sólo si tus repuestos sirven para cualquier vehículo.
         </Interruptor>
+        {preguntarUniversal && (
+          <div className="mx-alerta aviso" role="alertdialog" aria-label="¿Todo tu inventario es universal?">
+            <span>
+              Tu archivo trae el auto en {plural(d.filasConVehiculo, 'fila', 'filas')}. Si marcas todo como universal,
+              esos repuestos se publican sin vehículo y el comprador no los encuentra por su auto.
+            </span>
+            <button type="button" className="btn btn-primary btn-primary-blue mx-btn mx-btn-chico" onClick={() => setPreguntarUniversal(false)} autoFocus>
+              No, mis repuestos son para autos
+            </button>
+            <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => { setPreguntarUniversal(false); p.onUniversal(true); }}>
+              Sí, todo es universal
+            </button>
+          </div>
+        )}
         {ajustes === 0 && <p className="mx-nota">No encontramos nada que convertir: tus columnas ya vienen como las espera RepuesTop.</p>}
       </details>
 
