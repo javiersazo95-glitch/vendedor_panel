@@ -158,6 +158,18 @@ describe('useChatSoporte', () => {
     expect(obtenerMensajesSoporte).not.toHaveBeenCalled();
   });
 
+  it('un 429 no se muestra como "sin conexion"; un corte si', async () => {
+    vi.mocked(obtenerChatActivo).mockRejectedValueOnce(new SoporteApiError('Demasiadas solicitudes', 429));
+    const { result } = renderHook(() => useChatSoporte({ abierto: true }));
+    await avanzar(0);
+    expect(result.current.sinConexion).toBe(false);
+
+    vi.mocked(obtenerChatActivo).mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await avanzar(30_000);
+    expect(obtenerChatActivo).toHaveBeenCalledTimes(2);
+    expect(result.current.sinConexion).toBe(true);
+  });
+
   it('crear con 409 carga la conversacion que ya estaba abierta', async () => {
     vi.mocked(crearChatSoporte).mockRejectedValue(new SoporteApiError('ya existe', 409));
     const { result } = renderHook(() => useChatSoporte({ abierto: true }));

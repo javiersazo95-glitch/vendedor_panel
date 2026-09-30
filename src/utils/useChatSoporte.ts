@@ -209,7 +209,10 @@ export function useChatSoporte({ abierto }: { abierto: boolean }): ChatSoporte {
       await tarea();
       setSinConexion(false);
     } catch (err) {
-      setSinConexion(true);
+      // H34: un 429 es el servidor pidiendo calma (el tope de peticiones se comparte con la
+      // carga de fotos), no un corte: "sin conexión" asustaba sin razón. El sondeo igual espera
+      // cada vez más.
+      if (!(err instanceof SoporteApiError && err.status === 429)) setSinConexion(true);
       throw err;
     }
   }, []);
