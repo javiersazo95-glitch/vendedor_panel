@@ -92,11 +92,11 @@ function appendCompatibilidad(formData: FormData, product: { esUniversal?: boole
   formData.append('anioHasta', universal ? '' : String(product.vehicleYearTo ?? product.vehicleYear));
   formData.append('motor', universal ? '' : product.vehicleVersion);
   formData.append('compatibilityGroupsJson', universal ? '' : (product.compatibilityGroupsJson || ''));
-  if (!universal) {
-    (product.vehiculoCatalogoIds || []).forEach((id) => {
-      formData.append('vehiculoCatalogoIds', String(id));
-    });
-  }
+  // Todos los ids en UN campo ("1,2,3"; Spring lo lee como la misma lista). Uno por id pasaba el
+  // tope de 50 partes por multipart de Tomcat con un auto de muchas versiones (un Yaris 2015-2019
+  // trae 34) y el backend respondía 413 "El archivo supera el tamaño máximo permitido".
+  const ids = universal ? [] : (product.vehiculoCatalogoIds || []);
+  if (ids.length > 0) formData.append('vehiculoCatalogoIds', ids.join(','));
 }
 
 // Helper to retrieve JWT token and sellerId from the current tab session.

@@ -182,7 +182,10 @@ export async function subirFotosAProductos({
         formData.append('condicion', producto.condicion ?? 'ORIGINAL');
         formData.append('requiereChasis', String(producto.requiereChasis === true));
         formData.append('compatibilityGroupsJson', producto.compatibilityGroupsJson ?? '');
-        (producto.vehiculoCatalogoIds ?? []).forEach((id: number) => formData.append('vehiculoCatalogoIds', String(id)));
+        // En un solo campo: uno por id pasaba el tope de 50 partes de Tomcat (413) con autos de
+        // muchas versiones (prueba en local del 30-sep: 5 de 7 fotos perdidas).
+        const ids: number[] = producto.vehiculoCatalogoIds ?? [];
+        if (ids.length > 0) formData.append('vehiculoCatalogoIds', ids.join(','));
         formData.append('activo', String(producto.activo !== false));
         // Se comprime acá, justo antes de subir: cubre todas las fuentes por igual.
         for (const nombre of asignaciones[fila.clave] ?? []) {

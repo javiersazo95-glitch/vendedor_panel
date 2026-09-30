@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { asignarPorCodigo, extractFolderImages, matchesSku } from './fotosCarga';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { asignarPorCodigo, extractFolderImages, matchesSku, subirFotosAProductos } from './fotosCarga';
 
 describe('Fotos de la carga masiva', () => {
   it('reconoce la foto por el código del repuesto, con o sin sufijo', () => {
@@ -25,5 +25,35 @@ describe('Fotos de la carga masiva', () => {
   it('de una carpeta sólo toma imágenes', () => {
     const archivos = [new File(['x'], 'A1.JPG'), new File(['x'], 'lista.xlsx'), new File(['x'], 'b2.webp')];
     expect(Object.keys(extractFolderImages(archivos)).sort()).toEqual(['a1.jpg', 'b2.webp']);
+  });
+});
+
+/**
+ * Prueba en local del 30-sep: 5 de 7 fotos de una carga fallaban con 413 "El archivo supera el
+ * tamaño máximo permitido". Cada id de versión iba en su propia parte del multipart y un auto con
+ * muchas versiones pasaba el tope de 50 partes de Tomcat.
+ */
+describe('subirFotosAProductos', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('manda los vehículos en un solo campo, aunque sean muchos', async () => {
+    const ids = Array.from({ length: 66 }, (_, i) => 1000 + i);
+    const cuerpos: FormData[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith('/editar')) {
+        cuerpos.push(init?.body as FormData);
+        return new Response('{}', { status: 200 });
+      }
+      return new Response(JSON.stringify({ skuProveedor: 'T30-005', nombrePublicado: 'Radiador', vehiculoCatalogoIds: ids }), { status: 200 });
+    }));
+
+    const [resultado] = await subirFotosAProductos({
+      sellerId: '1', token: 't', productos: [{ clave: 'f5', sku: 'T30-005', productoId: 8082 }],
+      asignaciones: { f5: ['T30-005.jpg'] }, obtenerImagen: () => new Blob(['x'], { type: 'image/jpeg' }),
+    });
+
+    expect(resultado.ok).toBe(true);
+    expect(cuerpos[0].getAll('vehiculoCatalogoIds')).toEqual([ids.join(',')]);
+    expect([...cuerpos[0].keys()].length).toBeLessThan(50);
   });
 });

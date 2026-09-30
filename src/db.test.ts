@@ -231,6 +231,14 @@ describe('updateProduct: las fotos publicadas que se quedan (existingPhotos)', (
     expect((post!.body as FormData).getAll('imagenes')).toHaveLength(0);
   });
 
+  it('los vehículos van en un solo campo: uno por id pasaba el tope de 50 partes de Tomcat (413)', async () => {
+    const ids = Array.from({ length: 60 }, (_, i) => i + 1);
+    const requests = await editar({ esUniversal: false, vehiculoCatalogoIds: ids, existingPhotos: ['/api/v1/img/1'] });
+    const form = requests.find((r) => r.url.endsWith('/inventario/42/editar'))!.body as FormData;
+    expect(form.getAll('vehiculoCatalogoIds')).toEqual([ids.join(',')]);
+    expect([...form.keys()].length).toBeLessThan(50);
+  });
+
   it('quitar todas manda la lista vacía, no la omite', async () => {
     const requests = await editar({ existingPhotos: [] });
     const post = requests.find((r) => r.url.endsWith('/inventario/42/editar'));
