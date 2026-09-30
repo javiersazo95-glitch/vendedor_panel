@@ -147,9 +147,9 @@ describe('Fase 3: rangos con espacio, abiertos, y años con formato de fecha', (
     expect(normalizarCelda('anio_desde', '2006 2010').valor).toBe('2006 2010');
   });
 
-  it('"2012 en adelante" se cierra en el año que viene y lo dice', () => {
+  it('"2012 en adelante" se cierra en el año actual y lo dice', () => {
     const rango = partirRangoAnios('2012 en adelante');
-    expect(rango).toMatchObject({ desde: '2012', hasta: String(new Date().getFullYear() + 1), abierto: true });
+    expect(rango).toMatchObject({ desde: '2012', hasta: String(new Date().getFullYear()), abierto: true });
     expect(pareceColumnaDeRangos(['2012 en adelante'])).toBe(true);
   });
 

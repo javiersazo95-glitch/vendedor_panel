@@ -91,9 +91,10 @@ export function partirRangoAnios(valor: string): { desde: string; hasta: string;
   // Fase 3: también el espacio como separador ("2006 2010" se leía como el número 20062010).
   const m = texto.match(/^(\d{4})\s*(?:-|–|—|\/|>|a|al|hasta|\s)\s*(\d{4})$/i);
   if (m) return { desde: m[1], hasta: m[2] };
-  // "2012 en adelante": el rango sigue abierto. Se cierra en el año que viene y se avisa.
+  // "2012 en adelante": el rango sigue abierto. Se cierra en el año actual (el catálogo no llega
+  // más allá y el backend exige que lo cubra) y se avisa.
   const abierto = texto.match(/^(\d{4})\s*(?:en adelante|adelante|a la fecha|al presente|\+|>|→|->)$/i);
-  if (abierto) return { desde: abierto[1], hasta: String(new Date().getFullYear() + 1), abierto: true };
+  if (abierto) return { desde: abierto[1], hasta: String(new Date().getFullYear()), abierto: true };
   return null;
 }
 

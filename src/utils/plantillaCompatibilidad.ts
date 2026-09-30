@@ -61,7 +61,7 @@ export interface AplicacionParseada {
   anioHasta: string;
   /** "Todos", "Universal": la celda dice que sirve para cualquier vehículo. */
   universal?: boolean;
-  /** "2012 en adelante": el año hasta se puso en el año que viene y conviene decirlo. */
+  /** "2012 en adelante": el año hasta se puso en el año actual y conviene decirlo. */
   abierto?: boolean;
 }
 
@@ -93,7 +93,7 @@ const ANIO_4 = /(?:19|20)\d{2}/g;
  *
  * Fase 3 del plan de auditoría de carga: la marca se recorta por posición en el texto y no
  * por cantidad de palabras ("MERCEDES-BENZ SPRINTER" perdía el modelo), se entienden los
- * años de dos cifras ("14-18"), "2012 en adelante" cierra en el año que viene y lo dice,
+ * años de dos cifras ("14-18"), "2012 en adelante" cierra en el año actual y lo dice,
  * y "Todos" o "Universal" marcan el repuesto como universal en vez de quedar como modelo.
  */
 export function parsearAplicacion(texto: string, marcasVehiculo: string[]): AplicacionParseada | null {
@@ -142,7 +142,10 @@ export function parsearAplicacion(texto: string, marcasVehiculo: string[]): Apli
     resto = resto.replace(rango[0], ' ');
   } else if (rangoAbierto) {
     anioDesde = rangoAbierto[1];
-    anioHasta = String(ANIO_ACTUAL + 1);
+    // El año actual, no el que viene: el backend exige que el catálogo cubra hasta el año final
+    // declarado, y el catálogo de un modelo llega a lo más hasta este año. Con el año que viene
+    // "2016 en adelante" no se publicaba nunca (prueba en local del 30-sep).
+    anioHasta = String(ANIO_ACTUAL);
     abierto = true;
     resto = resto.replace(rangoAbierto[0], ' ');
   } else if (rangoCorto) {

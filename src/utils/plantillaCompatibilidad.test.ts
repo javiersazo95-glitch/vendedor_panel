@@ -61,10 +61,12 @@ describe('parsearAplicacion (Fase 3): lo que antes se leía mal', () => {
     expect(parsearAplicacion('G.M.C. Sierra 2015', MARCAS)).toMatchObject({ marca: 'GMC', modelo: 'Sierra', anioDesde: '2015' });
   });
 
-  it('"2012 en adelante" cierra en el año que viene y lo marca como abierto', () => {
+  it('"2012 en adelante" cierra en el año actual y lo marca como abierto', () => {
+    // No en el que viene: el backend exige que el catálogo cubra el año final y el catálogo llega
+    // a lo más hasta este año (prueba en local del 30-sep: "Tucson 2016 en adelante" no se publicaba).
     const app = parsearAplicacion('Chevrolet Sail 2012 en adelante', MARCAS);
     expect(app).toMatchObject({ marca: 'Chevrolet', modelo: 'Sail', anioDesde: '2012', abierto: true });
-    expect(app?.anioHasta).toBe(String(new Date().getFullYear() + 1));
+    expect(app?.anioHasta).toBe(String(new Date().getFullYear()));
   });
 
   it('entiende los años de dos cifras', () => {
