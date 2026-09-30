@@ -233,14 +233,15 @@ export async function obtenerBorrador(): Promise<BorradorCarga | null> {
 }
 
 export async function guardarBorrador(
-  estado: EstadoBorrador, versionEsperada: number | null,
+  estado: EstadoBorrador, versionEsperada: number | null, reintento?: OpcionesReintento,
 ): Promise<{ version: number; updatedAt: string }> {
   const s = sesion();
-  const r = await apiFetch(base(s.sellerId), {
+  // H33: el guardado comparte el tope de 120 peticiones por minuto con todo el panel.
+  const r = await conReintento429(() => apiFetch(base(s.sellerId), {
     method: 'PUT',
     headers: { Authorization: `Bearer ${s.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ estadoJson: serializarBorrador(estado), paso: estado.paso, versionEsperada }),
-  });
+  }), reintento);
   if (r.status === 409) {
     let version = versionEsperada ?? 0;
     let updatedAt: string | null = null;
@@ -261,9 +262,9 @@ export async function subirArchivoBorrador(archivo: File, sha256: string, recort
   form.append('file', archivo);
   form.append('sha256', sha256);
   form.append('recortado', String(recortado));
-  const r = await apiFetch(`${base(s.sellerId)}/archivo`, {
+  const r = await conReintento429(() => apiFetch(`${base(s.sellerId)}/archivo`, {
     method: 'PUT', headers: { Authorization: `Bearer ${s.token}` }, body: form,
-  }, 120000);
+  }, 120000));
   if (!r.ok) throw new Error(await mensajeDe(r, 'No se pudo guardar tu Excel.'));
   return r.json();
 }

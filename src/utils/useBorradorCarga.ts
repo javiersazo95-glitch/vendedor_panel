@@ -50,8 +50,12 @@ interface Opciones {
 }
 
 const FOTOS_EN_PARALELO = 3;
-/** Fotos que no se pudieron guardar por un corte o un 429: se reintentan solas después de esto. */
-const REINTENTO_FOTOS_MS = 30000;
+/**
+ * Un guardado que falló por algo pasajero (un corte, un 5xx, un 429 que no cedió, fotos que
+ * quedaron pendientes) se vuelve a intentar solo después de esto: la pantalla dice "Seguimos
+ * intentando" y el guardado automático sólo corre cuando algo cambia.
+ */
+const REINTENTO_MS = 30000;
 
 export function useBorradorCarga({ habilitado, estado, archivo, imagenes, esperaAutoguardado = 4000 }: Opciones) {
   const [estadoGuardado, setEstadoGuardado] = useState<EstadoGuardado>('sin-cambios');
@@ -71,8 +75,8 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
   /** Fotos que el servidor ya rechazó: no se reintentan en cada guardado automático. */
   const rechazadasRef = useRef<Set<string>>(new Set());
   const enCursoRef = useRef<Promise<boolean> | null>(null);
-  /** Sube en 1 cada vez que un guardado deja fotos pendientes: programa el reintento. */
-  const [fotosPorReintentar, setFotosPorReintentar] = useState(0);
+  /** Sube en 1 cada vez que un guardado queda a medias por algo pasajero: programa el reintento. */
+  const [reintentos, setReintentos] = useState(0);
   const pendienteRef = useRef(false);
   const actualRef = useRef({ estado, archivo, imagenes, habilitado });
   useEffect(() => {
@@ -167,7 +171,7 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
       const pendientes = await sincronizarFotos(fotosAsignadas(e.fotos.asignaciones), imgs);
       setUltimoGuardado(updatedAt);
       if (pendientes > 0) {
-        setFotosPorReintentar((n) => n + 1);
+        setReintentos((n) => n + 1);
         setErrorGuardado(`${pendientes === 1 ? 'falta 1 foto' : `faltan ${pendientes} fotos`}`);
         setEstadoGuardado('error');
         return true;
@@ -182,6 +186,8 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
       } else {
         setErrorGuardado(err instanceof Error ? err.message : 'No se pudo guardar tu progreso.');
         setEstadoGuardado('error');
+        // Con la sesión vencida no hay nada que reintentar: el panel ya pide volver a entrar.
+        if (!(err instanceof SessionExpiredError)) setReintentos((n) => n + 1);
       }
       return false;
     }
@@ -206,13 +212,13 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // El guardado automático sólo corre cuando algo cambia: sin esto, las fotos que quedaron
-  // pendientes por un 429 o un corte esperarían a que el vendedor tocara otra cosa.
+  // El guardado automático sólo corre cuando algo cambia: sin esto, un guardado que falló por un
+  // 429 o un corte (o que dejó fotos pendientes) esperaría a que el vendedor tocara otra cosa.
   useEffect(() => {
-    if (fotosPorReintentar === 0) return undefined;
-    const t = setTimeout(() => { void guardar(); }, REINTENTO_FOTOS_MS);
+    if (reintentos === 0) return undefined;
+    const t = setTimeout(() => { void guardar(); }, REINTENTO_MS);
     return () => clearTimeout(t);
-  }, [fotosPorReintentar, guardar]);
+  }, [reintentos, guardar]);
 
   /**
    * Guarda un estado que todavía no llegó a la pantalla (p. ej. "la publicación quedó a medias",

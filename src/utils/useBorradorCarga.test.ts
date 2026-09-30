@@ -81,6 +81,27 @@ describe('useBorradorCarga: fotos del borrador', () => {
     }
   });
 
+  it('un guardado que falló por un 429 o un corte se reintenta solo, como promete la pantalla', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(subirImagenBorrador).mockResolvedValue({ id: 9, nombreArchivo: 'a.jpg' } as never);
+      vi.mocked(guardarBorrador)
+        .mockRejectedValueOnce(new Error('Demasiadas solicitudes. Intenta nuevamente en unos segundos.'))
+        .mockResolvedValue({ version: 2, updatedAt: '2026-09-30T12:01:00Z' } as never);
+      const { result, unmount } = montar();
+
+      await act(async () => { await result.current.guardar(); });
+      expect(result.current.estadoGuardado).toBe('error');
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+
+      expect(guardarBorrador).toHaveBeenCalledTimes(2);
+      expect(result.current.estadoGuardado).toBe('guardado');
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('una foto que el servidor rechaza no se vuelve a mandar en cada guardado', async () => {
     vi.mocked(subirImagenBorrador).mockRejectedValue(new FotoBorradorRechazadaError('Solo JPG, PNG o WEBP'));
     const { result, unmount } = montar();

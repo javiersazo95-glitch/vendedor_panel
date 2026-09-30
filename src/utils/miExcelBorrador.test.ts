@@ -3,6 +3,7 @@ import { clearSession, saveSession } from './session';
 import {
   ESTADO_VACIO,
   FotoBorradorRechazadaError,
+  guardarBorrador,
   subirImagenBorrador,
   deserializarBorrador,
   fotosAsignadas,
@@ -74,6 +75,16 @@ describe('subirImagenBorrador ante 429 y errores', () => {
     expect(guardada.id).toBe(7);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(esperas[0]).toBeGreaterThanOrEqual(2000);
+  });
+
+  it('el guardado del progreso también espera un 429 y sigue', async () => {
+    const fetchMock = respuestas([
+      new Response('', { status: 429, headers: { 'Retry-After': '1' } }),
+      new Response(JSON.stringify({ version: 3, updatedAt: '2026-09-30T12:00:00Z' }), { status: 200 }),
+    ]);
+    const r = await guardarBorrador(ESTADO_VACIO, 2, { esperar: async () => {} });
+    expect(r.version).toBe(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('un 400 es un rechazo definitivo de la foto', async () => {
