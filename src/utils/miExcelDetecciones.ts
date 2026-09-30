@@ -112,6 +112,19 @@ export function conArreglosPropuestos(
   }
 
   propuesto.dividirAnios = base.dividirAnios ?? traeRangosDeAnios(propuesto, cols, rows);
+
+  // Una columna que trae las fotos (enlaces o nombres de archivo) se usa sola, como los otros
+  // ajustes detectados. Antes el interruptor venía apagado aunque el Excel tuviera "Foto", y un
+  // vendedor que no lo encendía publicaba sin fotos sin enterarse (prueba en local del 30-sep).
+  // `null` es que el vendedor lo apagó: eso se respeta.
+  if (base.columnaFotos === undefined) {
+    const asignadas = new Set(Object.values(propuesto.oficial).filter(Boolean) as string[]);
+    const colFotos = cols.find((c) => !asignadas.has(c.id) && tipoColumnaFotos(muestraDe(rows, c).filter(Boolean)) !== null);
+    if (colFotos) {
+      propuesto.columnaFotos = colFotos.id;
+      propuesto.extras = { ...propuesto.extras, [colFotos.id]: 'ignore' };
+    }
+  }
   return propuesto;
 }
 

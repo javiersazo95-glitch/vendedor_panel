@@ -720,6 +720,9 @@ export function reconcileMapping(
   if (saved.columnaFotos && validIds.has(saved.columnaFotos) && !usados.has(saved.columnaFotos)) {
     base.columnaFotos = saved.columnaFotos;
     base.extras[saved.columnaFotos] = 'ignore';
+  } else if (saved.columnaFotos === null) {
+    // El vendedor apagó "usar la columna de fotos": no se vuelve a encender sola la próxima vez.
+    base.columnaFotos = null;
   }
   return base;
 }
