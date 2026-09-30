@@ -3,6 +3,7 @@ import { Shield, Key, Mail, Zap, Cloud } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { API_BASE_URL } from '../utils/imageHelper';
 import { RequestTimeoutError } from '../utils/apiFetch';
+import { revocarSesionVencida } from '../db';
 import loginHero from '../assets/login_hero.png';
 import logoImg from '../assets/logo.png';
 
@@ -33,6 +34,30 @@ interface AuthProps {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * H61 (pruebas de lanzamiento, 30-sep): el login de una tienda suspendida responde 200 con
+ * `sellerBlocked`. El panel guardaba la sesion, el primer 403 la borraba y el vendedor volvia al
+ * login en menos de un segundo sin saber por que (y el correo le decia que entrara al panel).
+ */
+export class CuentaSuspendidaError extends Error {
+  constructor(message: string, readonly suspendidaHasta: string | null, readonly puedeApelar: boolean) {
+    super(message);
+    this.name = 'CuentaSuspendidaError';
+  }
+}
+
+interface AvisoSuspension {
+  motivo: string;
+  suspendidaHasta: string | null;
+  puedeApelar: boolean;
+}
+
+function formatearFechaLocal(iso: string): string {
+  const fecha = new Date(iso);
+  if (Number.isNaN(fecha.getTime())) return iso;
+  return new Intl.DateTimeFormat('es-CL', { dateStyle: 'long', timeStyle: 'short' }).format(fecha);
 }
 
 function getErrorMessage(error: unknown): string {
@@ -66,6 +91,19 @@ async function procesarRespuestaLogin(response: Response, onLogin: AuthProps['on
     throw new Error('Respuesta inválida del servidor.');
   }
 
+  if (data.sellerBlocked === true) {
+    // No se guarda la sesion: el panel no sirve con la tienda suspendida. El token recien emitido
+    // se revoca para que no quede vivo hasta su `exp`.
+    void revocarSesionVencida(data.token).catch(() => {});
+    throw new CuentaSuspendidaError(
+      typeof data.sellerBlockReason === 'string' && data.sellerBlockReason.trim()
+        ? data.sellerBlockReason.trim()
+        : 'Tu tienda fue suspendida.',
+      typeof data.suspendedUntil === 'string' ? data.suspendedUntil : null,
+      data.sellerCanAppeal === true,
+    );
+  }
+
   onLogin(data.usuario.email, 'Vendedor', data.token, String(data.sellerId), data.founder === true);
 }
 
@@ -73,11 +111,21 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [suspension, setSuspension] = useState<AvisoSuspension | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const mostrarError = (err: unknown) => {
+    if (err instanceof CuentaSuspendidaError) {
+      setSuspension({ motivo: err.message, suspendidaHasta: err.suspendidaHasta, puedeApelar: err.puedeApelar });
+      return;
+    }
+    setError(getErrorMessage(err));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuspension(null);
     setLoading(true);
 
     if (!email || !password) {
@@ -100,7 +148,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
       await procesarRespuestaLogin(response, onLogin);
     } catch (err: unknown) {
-      setError(getErrorMessage(err));
+      mostrarError(err);
     } finally {
       setLoading(false);
     }
@@ -112,6 +160,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       return;
     }
     setError(null);
+    setSuspension(null);
     setLoading(true);
     try {
       const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/auth/google`, {
@@ -124,7 +173,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
       await procesarRespuestaLogin(response, onLogin);
     } catch (err: unknown) {
-      setError(getErrorMessage(err));
+      mostrarError(err);
     } finally {
       setLoading(false);
     }
@@ -203,6 +252,27 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             <h2>Control de Inventario</h2>
             <p className="auth-subtitle">Inicia sesión con tu cuenta de Vendedor</p>
             
+            {suspension && (
+              <div className="auth-suspension" role="alert" data-testid="aviso-tienda-suspendida">
+                <strong>Tu tienda se encuentra suspendida</strong>
+                <p>{suspension.motivo}</p>
+                <p>
+                  Mientras dure la suspensión no puedes usar el panel.
+                  {suspension.suspendidaHasta
+                    ? ` La suspensión termina el ${formatearFechaLocal(suspension.suspendidaHasta)}.`
+                    : ''}
+                </p>
+                {suspension.puedeApelar ? (
+                  <p>
+                    Para aportar evidencias o solicitar la revisión, entra al Market web de RepuesTop
+                    con esta misma cuenta y usa «Solicitar Revisión» en el aviso de tu perfil.
+                  </p>
+                ) : (
+                  <p>Si necesitas más información, escríbenos desde la sección de ayuda del Market web de RepuesTop.</p>
+                )}
+              </div>
+            )}
+
             {error && (
               <div 
                 className="auth-error" 

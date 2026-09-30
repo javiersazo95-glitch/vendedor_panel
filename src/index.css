@@ -3165,6 +3165,29 @@ h1, h2, h3, h4, h5, h6 {
   cursor: not-allowed;
 }
 
+/* H61: aviso de tienda suspendida en el login (en vez de expulsar sin explicar). */
+.auth-card .auth-suspension {
+  margin-bottom: 1.5rem;
+  padding: 0.95rem 1.1rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  color: #7c2d12;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.auth-card .auth-suspension strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.95rem;
+}
+
+.auth-card .auth-suspension p {
+  margin: 0.35rem 0 0;
+}
+
 .auth-card .auth-help-text {
   text-align: center;
   color: #64748b;
