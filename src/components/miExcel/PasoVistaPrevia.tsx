@@ -5,7 +5,7 @@
  * dato. Antes de publicar se revisa el archivo con el servidor, para que el vendedor sepa exactamente
  * qué se va a publicar y qué no.
  */
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, ArrowLeft, CheckCircle2, Eye, Info, Grid2X2, ImageOff, Images, List, Loader2, Pencil,
   RefreshCw, Rocket, ShieldCheck, XCircle,
@@ -13,7 +13,9 @@ import {
 import { etiquetaValor, type CampoMeta, type EsquemaPlantilla, type Mapping } from '../../utils/plantillaMapping';
 import { fichaDesdeFila } from '../../utils/plantillaRevision';
 import { opcionesDeCelda, type ContextoDeFila } from '../../utils/miExcelDetecciones';
-import type { FilaTabla, TablaMiExcel } from '../../utils/miExcelTabla';
+import {
+  problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel,
+} from '../../utils/miExcelTabla';
 import type { FilaResultado } from '../../utils/cargaExcelApi';
 import { validarValorFijo, limiteDeColumna } from '../../utils/plantillaNormalizacion';
 import { Miniatura, Modal } from './comunes';
@@ -49,24 +51,43 @@ interface Props {
   onAtras: () => void;
   onPublicar: () => void;
   nombreTienda?: string;
+  /** La última revisión del servidor, para decir qué dato exacto impide publicar. */
+  servidor?: RevisionServidorFilas | null;
 }
 
 type EstadoFila = 'ok' | 'aviso' | 'error';
 
 const POR_PAGINA = { lista: 50, tarjetas: 24 } as const;
 
-function estadoDe(fila: FilaTabla, revision: RevisionServidor): { estado: EstadoFila; mensajes: string[] } {
-  const delServidor = revision.estado === 'lista' ? revision.porClave[fila.clave] : undefined;
-  if (delServidor) {
-    return {
-      estado: delServidor.estado === 'ERROR' ? 'error' : delServidor.estado === 'ADVERTENCIA' ? 'aviso' : 'ok',
-      mensajes: delServidor.mensajes,
-    };
-  }
-  return {
-    estado: fila.tieneError ? 'error' : fila.problemas.length ? 'aviso' : 'ok',
-    mensajes: fila.problemas.map((x) => x.mensaje),
-  };
+interface EstadoConProblemas {
+  estado: EstadoFila;
+  problemas: ProblemaFila[];
+}
+
+/** Cómo queda un repuesto y por qué, dato por dato: lo que ve el panel más lo que objetó el servidor. */
+function estadoDe(fila: FilaTabla, columnas: string[], campos: CampoMeta[], servidor?: RevisionServidorFilas | null): EstadoConProblemas {
+  const problemas = problemasDeFila(fila, columnas, campos, servidor);
+  const estado: EstadoFila = problemas.some((x) => x.severidad === 'error') ? 'error' : problemas.length ? 'aviso' : 'ok';
+  // Los que impiden publicar, primero.
+  problemas.sort((a, b) => (a.severidad === b.severidad ? 0 : a.severidad === 'error' ? -1 : 1));
+  return { estado, problemas };
+}
+
+const etiquetaCampo = (campos: CampoMeta[], col: string | null) =>
+  (col ? campos.find((c) => c.key === col)?.label ?? col : 'Repuesto');
+
+/** Los problemas de un repuesto como etiquetas "Dato: motivo", en rojo lo que impide publicar. */
+function ListaProblemas({ problemas, campos }: { problemas: ProblemaFila[]; campos: CampoMeta[] }) {
+  if (problemas.length === 0) return <span className="mx-celda-vacia">—</span>;
+  return (
+    <ul className="mx-problemas">
+      {problemas.map((x, i) => (
+        <li key={i} className={x.severidad}>
+          <b>{etiquetaCampo(campos, x.columna)}:</b> {x.mensaje}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 const ETIQUETA_ESTADO: Record<EstadoFila, string> = { ok: 'Listo para publicar', aviso: 'Se publica (revisa el aviso)', error: 'No se publicará' };
@@ -78,26 +99,53 @@ function Estado({ estado }: { estado: EstadoFila }) {
 
 /** Un dato de la ficha que se corrige ahí mismo. */
 function DatoEditable({
-  columna, etiqueta, valor, opciones, onGuardar, children,
+  columna, etiqueta, valor, opciones, onGuardar, children, problema, editando, onEditar, onDejarDeEditar,
 }: {
   columna: string; etiqueta: string; valor: string; opciones: string[]; onGuardar: (v: string) => void; children: ReactNode;
+  /** El problema de este dato, si lo tiene: se marca en rojo y se dice qué pasa, junto al dato. */
+  problema?: ProblemaFila;
+  editando: boolean;
+  onEditar: () => void;
+  onDejarDeEditar: () => void;
 }) {
-  const [editando, setEditando] = useState(false);
   const [borrador, setBorrador] = useState(valor);
+  const [valorPrevio, setValorPrevio] = useState(valor);
+  if (valorPrevio !== valor) {
+    setValorPrevio(valor);
+    setBorrador(valor);
+  }
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (editando) ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  }, [editando]);
   const error = opciones.length === 0 && borrador ? validarValorFijo(columna, borrador, etiqueta) : null;
+  const motivo = problema && (
+    <span className={`mx-dato-motivo ${problema.severidad}`} role="note">
+      <AlertTriangle size={12} /> {problema.mensaje}
+    </span>
+  );
   if (!editando) {
     return (
-      <span className="mx-dato-editable">
+      <span ref={ref} className={`mx-dato-editable ${problema ? `con-${problema.severidad}` : ''}`} data-campo={columna}>
         {children}
-        <button type="button" className="mx-lapiz" onClick={() => { setBorrador(valor); setEditando(true); }} aria-label={`Cambiar ${etiqueta}`} title={`Cambiar ${etiqueta}`}>
+        <button
+          type="button"
+          className="mx-lapiz"
+          onClick={() => { setBorrador(valor); onEditar(); }}
+          aria-label={problema ? `Corregir ${etiqueta}` : `Cambiar ${etiqueta}`}
+          title={problema ? `Corregir ${etiqueta}: ${problema.mensaje}` : `Cambiar ${etiqueta}`}
+        >
           <Pencil size={13} />
         </button>
+        {motivo}
       </span>
     );
   }
-  const guardar = () => { if (!error) { onGuardar(borrador); setEditando(false); } };
+  const guardar = () => { if (!error) { onGuardar(borrador); onDejarDeEditar(); } };
   return (
-    <span className="mx-dato-editando">
+    <span ref={ref} className={`mx-dato-editando ${problema ? `con-${problema.severidad}` : ''}`} data-campo={columna}>
+      <span className="mx-dato-etiqueta">{etiqueta}</span>
+      {motivo}
       {opciones.length > 0 ? (
         <select className="form-control" value={borrador} onChange={(e) => setBorrador(e.target.value)} aria-label={etiqueta} autoFocus>
           <option value="">— sin dato —</option>
@@ -112,7 +160,7 @@ function DatoEditable({
       {error && <span className="mx-error-texto">{error}</span>}
       <span className="mx-botonera">
         <button type="button" className="btn btn-primary btn-primary-blue mx-btn mx-btn-chico" onClick={guardar} disabled={!!error}>Guardar</button>
-        <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => setEditando(false)}>Cancelar</button>
+        <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={onDejarDeEditar}>Cancelar</button>
       </span>
     </span>
   );
@@ -123,11 +171,19 @@ function VistaTienda({
   fila, tabla, campos, esquema, modelos, fotos, imagenes, guardadas, estado, onParche, onCambiarFotos, onCerrar, nombreTienda,
 }: {
   fila: FilaTabla; tabla: TablaMiExcel; campos: CampoMeta[]; esquema: EsquemaPlantilla; modelos: Record<string, string[]>;
-  fotos: string[]; imagenes: Record<string, Blob>; guardadas: Record<string, number>; estado: { estado: EstadoFila; mensajes: string[] };
+  fotos: string[]; imagenes: Record<string, Blob>; guardadas: Record<string, number>; estado: EstadoConProblemas;
   onParche: (col: string, v: string) => void; onCambiarFotos: () => void; onCerrar: () => void; nombreTienda?: string;
 }) {
   const [fotoActiva, setFotoActiva] = useState(0);
+  // Si el repuesto no se publicará, se abre directo el primer dato que lo impide.
+  const [editando, setEditando] = useState<string | null>(
+    () => (estado.estado === 'error' ? estado.problemas.find((x) => x.severidad === 'error' && x.columna)?.columna ?? null : null),
+  );
   const ficha = fichaDesdeFila(tabla.columnas, fila.valores);
+  const problemaDe = (col: string) => {
+    const deEse = estado.problemas.filter((x) => x.columna === col);
+    return deEse.find((x) => x.severidad === 'error') ?? deEse[0];
+  };
   const indice = new Map(tabla.columnas.map((c, i) => [c, i]));
   const leer = (c: string) => String(fila.valores[indice.get(c) ?? -1] ?? '').trim();
   const contexto: ContextoDeFila = { categoria: leer('categoria'), marcaVehiculo: leer('compatibilidad_marca'), anioDesde: leer('anio_desde') };
@@ -138,10 +194,19 @@ function VistaTienda({
       valor={leer(col)}
       opciones={opcionesDeCelda(col, contexto, esquema, campos, modelos)}
       onGuardar={(v) => onParche(col, v)}
+      problema={problemaDe(col)}
+      editando={editando === col}
+      onEditar={() => setEditando(col)}
+      onDejarDeEditar={() => setEditando((e) => (e === col ? null : e))}
     >
       {hijo}
     </DatoEditable>
   );
+  /** Datos con problema que la ficha del comprador no muestra: igual se tienen que poder corregir. */
+  const MOSTRADOS = new Set(['nombre_publicado', 'marca_repuesto', 'categoria', 'subcategoria', 'condicion', 'precio', 'tipo_precio',
+    'stock', 'compatibilidad_general', 'compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'anio_hasta', 'motor',
+    'descripcion', 'sku_proveedor', 'referencia_oem']);
+  const otrosConProblema = [...new Set(estado.problemas.map((x) => x.columna).filter((c): c is string => !!c && !MOSTRADOS.has(c)))];
   const principal = fotos[Math.min(fotoActiva, Math.max(0, fotos.length - 1))];
 
   return (
@@ -151,9 +216,25 @@ function VistaTienda({
         el cambio queda en tu carga.
       </p>
       {estado.estado !== 'ok' && (
-        <div className={`mx-alerta ${estado.estado === 'error' ? 'error' : 'aviso'}`}>
-          <AlertTriangle size={16} />
-          <span><b>{ETIQUETA_ESTADO[estado.estado]}.</b> {estado.mensajes.join(' ')}</span>
+        <div className={`mx-corregir ${estado.estado}`} role="alert">
+          <p>
+            <AlertTriangle size={16} />
+            {estado.estado === 'error'
+              ? <><b>No se publicará</b> hasta que corrijas {estado.problemas.filter((x) => x.severidad === 'error').length === 1 ? 'este dato' : 'estos datos'}. Están marcados en rojo en la ficha:</>
+              : <><b>Se publica</b>, pero revisa estos datos (marcados en la ficha):</>}
+          </p>
+          <ul>
+            {estado.problemas.map((x, i) => (
+              <li key={i} className={x.severidad}>
+                {x.columna ? (
+                  <button type="button" className="mx-foco-campo" onClick={() => setEditando(x.columna)}>
+                    Corregir {etiquetaCampo(campos, x.columna)}
+                  </button>
+                ) : <span className="mx-foco-campo sin">Repuesto</span>}
+                <span>{x.mensaje}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <article className="mx-tienda">
@@ -203,6 +284,16 @@ function VistaTienda({
           <p className="mx-tienda-meta">
             Código {editable('sku_proveedor', ficha.sku || '—')} · OEM {editable('referencia_oem', leer('referencia_oem') || '—')}
           </p>
+          {otrosConProblema.length > 0 && (
+            <section className="mx-tienda-bloque">
+              <h4>Otros datos por corregir</h4>
+              <div className="mx-tienda-compat">
+                {otrosConProblema.map((col) => (
+                  <span key={col}>{editable(col, <>{etiquetaCampo(campos, col)}: {etiquetaValor(leer(col)) || '—'}</>)}</span>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </article>
     </Modal>
@@ -217,8 +308,8 @@ export function PasoVistaPrevia(p: Props) {
   const [confirmar, setConfirmar] = useState(false);
 
   const conEstado = useMemo(
-    () => p.tabla.filas.map((fila) => ({ fila, ...estadoDe(fila, p.revision) })),
-    [p.tabla.filas, p.revision],
+    () => p.tabla.filas.map((fila) => ({ fila, ...estadoDe(fila, p.tabla.columnas, p.campos, p.servidor) })),
+    [p.tabla.filas, p.tabla.columnas, p.campos, p.servidor],
   );
   const cuenta = { ok: 0, aviso: 0, error: 0 } as Record<EstadoFila, number>;
   conEstado.forEach((x) => { cuenta[x.estado] += 1; });
@@ -306,7 +397,7 @@ export function PasoVistaPrevia(p: Props) {
               </tr>
             </thead>
             <tbody>
-              {visibles.map(({ fila, estado, mensajes }) => {
+              {visibles.map(({ fila, estado, problemas }) => {
                 const ficha = fichaDesdeFila(p.tabla.columnas, fila.valores);
                 const fotos = p.asignaciones[fila.clave] ?? [];
                 return (
@@ -320,7 +411,7 @@ export function PasoVistaPrevia(p: Props) {
                     <td>{ficha.precio}</td>
                     <td>{leer(fila, 'stock') || '—'}</td>
                     <td className="mx-td-compat">{ficha.compatibilidad}</td>
-                    <td className="mx-td-motivo">{mensajes.join(' ') || '—'}</td>
+                    <td className="mx-td-motivo"><ListaProblemas problemas={problemas} campos={p.campos} /></td>
                     <td className="mx-td-acciones">
                       <button type="button" className="mx-icono-btn" onClick={() => setEnTienda(fila.clave)} aria-label={`Ver ${ficha.nombre} como en tu tienda`} title="Ver como en tu tienda"><Eye size={16} /></button>
                       <button type="button" className="mx-icono-btn" onClick={() => p.onCorregir(fila.clave)} aria-label={`Corregir ${ficha.nombre} en la tabla`} title="Corregir en la tabla"><Pencil size={16} /></button>
@@ -333,7 +424,7 @@ export function PasoVistaPrevia(p: Props) {
         </div>
       ) : (
         <div className="inventory-grid mx-grilla" aria-label="Tus repuestos en cuadrícula">
-          {visibles.map(({ fila, estado }) => {
+          {visibles.map(({ fila, estado, problemas }) => {
             const ficha = fichaDesdeFila(p.tabla.columnas, fila.valores);
             const fotos = p.asignaciones[fila.clave] ?? [];
             return (
@@ -351,6 +442,15 @@ export function PasoVistaPrevia(p: Props) {
                     <span>{leer(fila, 'stock') ? `${leer(fila, 'stock')} unidades` : 'Sin stock'}</span>
                     <strong>{ficha.precio}</strong>
                   </div>
+                  {estado !== 'ok' && (
+                    <button type="button" className={`mx-card-corregir ${estado}`} onClick={() => setEnTienda(fila.clave)}>
+                      <AlertTriangle size={13} />
+                      <span>
+                        {estado === 'error' ? 'Corrige: ' : 'Revisa: '}
+                        <b>{[...new Set(problemas.filter((x) => x.severidad === estado).map((x) => etiquetaCampo(p.campos, x.columna)))].join(', ')}</b>
+                      </span>
+                    </button>
+                  )}
                 </div>
                 <footer className="inventory-grid-actions">
                   <button type="button" className="grid-action" onClick={() => setEnTienda(fila.clave)} title="Ver cómo se verá en tu tienda" aria-label={`Ver ${ficha.nombre} como en tu tienda`}><Eye size={16} /></button>
@@ -414,7 +514,8 @@ export function PasoVistaPrevia(p: Props) {
           fotos={p.asignaciones[filaTienda.fila.clave] ?? []}
           imagenes={p.imagenes}
           guardadas={p.guardadas}
-          estado={{ estado: filaTienda.estado, mensajes: filaTienda.mensajes }}
+          key={filaTienda.fila.clave}
+          estado={{ estado: filaTienda.estado, problemas: filaTienda.problemas }}
           onParche={(col, v) => p.onParche(filaTienda.fila.clave, col, v)}
           onCambiarFotos={() => setFotosDe(filaTienda.fila.clave)}
           onCerrar={() => setEnTienda(null)}

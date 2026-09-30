@@ -21,6 +21,7 @@ import {
 } from './plantillaMapping';
 import type { CambioNormalizacion } from './plantillaNormalizacion';
 import { revisarAoA, type FilaRevisada } from './plantillaRevision';
+import type { FilaResultado } from './cargaExcelApi';
 import {
   COLUMNAS_COMPATIBILIDADES,
   separarPorSku,
@@ -258,4 +259,93 @@ export function camposACompletar(
     // "Todo mi inventario es universal" ya decidió la compatibilidad de todas las filas.
     .filter((c) => !(c.key === 'compatibilidad_general' && (mapping.defaults?.compatibilidad_general ?? '') === 'SI'))
     .map((c) => c.key);
+}
+
+/* ---------------------- Qué campo tiene el problema ---------------------- */
+
+/**
+ * La revisión del servidor tal como quedó al hacerla: el resultado por fila y los valores que
+ * tenía cada fila en ese momento. Con los valores se sabe si el vendedor ya cambió el dato que el
+ * servidor objetó; si lo cambió, ese problema deja de mostrarse aunque todavía no se revise de nuevo.
+ */
+export interface RevisionServidorFilas {
+  porClave: Record<string, FilaResultado>;
+  columnas: string[];
+  valores: Record<string, string[]>;
+}
+
+export interface ProblemaFila {
+  /** Columna oficial del problema, o null si el mensaje no dice de qué dato habla. */
+  columna: string | null;
+  severidad: 'error' | 'aviso';
+  mensaje: string;
+}
+
+/** Otras formas en que un mensaje nombra cada dato, además de su etiqueta y su nombre técnico. */
+const ALIAS_COLUMNA: Record<string, string[]> = {
+  sku_proveedor: ['sku', 'codigo', 'sku proveedor'],
+  nombre_publicado: ['nombre', 'nombre publicado'],
+  marca_repuesto: ['marca del repuesto', 'marca repuesto', 'marca'],
+  compatibilidad_marca: ['marca del vehiculo', 'marca de vehiculo', 'marca vehiculo', 'vehiculo'],
+  compatibilidad_modelo: ['modelo del vehiculo', 'modelo'],
+  anio_desde: ['ano desde', 'anio desde'],
+  anio_hasta: ['ano hasta', 'anio hasta'],
+  tipo_precio: ['tipo de precio', 'tipo precio'],
+  referencia_oem: ['oem', 'referencia oem'],
+  compatibilidad_general: ['universal', 'compatibilidad general', 'compatibilidad universal'],
+  requiere_chasis: ['chasis'],
+};
+
+const normalizarTexto = (texto: string) => ` ${texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+
+/** De qué dato habla un mensaje del servidor ("Falta la categoría" -> categoria). Gana la coincidencia más larga. */
+export function inferirColumna(mensaje: string, campos: CampoMeta[]): string | null {
+  const texto = normalizarTexto(mensaje);
+  let mejor: { columna: string; largo: number } | null = null;
+  for (const campo of campos) {
+    const formas = [campo.label, campo.key.replace(/_/g, ' '), ...(ALIAS_COLUMNA[campo.key] ?? [])];
+    for (const forma of formas) {
+      const n = normalizarTexto(forma).trim();
+      if (n && texto.includes(` ${n} `) && (!mejor || n.length > mejor.largo)) mejor = { columna: campo.key, largo: n.length };
+    }
+  }
+  return mejor?.columna ?? null;
+}
+
+/**
+ * Todos los problemas de una fila, cada uno con el dato al que corresponde: los que ve el panel y
+ * los que informó el servidor en la última revisión (sólo mientras el dato objetado siga igual).
+ */
+export function problemasDeFila(
+  fila: FilaRevisada,
+  columnas: string[],
+  campos: CampoMeta[],
+  servidor?: RevisionServidorFilas | null,
+): ProblemaFila[] {
+  const propios: ProblemaFila[] = fila.problemas.map((x) => ({ columna: x.columna, severidad: x.severidad, mensaje: x.mensaje }));
+  const delServidor = servidor?.porClave[fila.clave];
+  if (!delServidor || delServidor.estado === 'OK') return propios;
+  const antes = servidor?.valores[fila.clave];
+  const valorAhora = (col: string) => String(fila.valores[columnas.indexOf(col)] ?? '');
+  const valorAntes = (col: string) => String(antes?.[servidor!.columnas.indexOf(col)] ?? '');
+  const filaIgual = !!antes && servidor!.columnas.every((col) => valorAhora(col) === valorAntes(col));
+  const severidad = delServidor.estado === 'ERROR' ? 'error' : 'aviso';
+  const conocidos = new Set(propios.map((x) => x.mensaje));
+  for (const mensaje of delServidor.mensajes) {
+    if (conocidos.has(mensaje)) continue;
+    const columna = inferirColumna(mensaje, campos);
+    const sigueIgual = columna ? !!antes && valorAhora(columna) === valorAntes(columna) : filaIgual;
+    if (!sigueIgual) continue;
+    // Si el panel ya marca ese mismo dato, no se repite: basta con un motivo por celda.
+    if (columna && propios.some((x) => x.columna === columna && x.severidad === severidad)) continue;
+    propios.push({ columna, severidad, mensaje });
+  }
+  // Un servidor que rechaza sin decir por qué sigue siendo un "no se publicará".
+  if (delServidor.estado === 'ERROR' && propios.every((x) => x.severidad !== 'error') && filaIgual) {
+    propios.push({ columna: null, severidad: 'error', mensaje: 'RepuesTop no pudo publicar este repuesto. Revisa sus datos.' });
+  }
+  // Un dato con un error y además un aviso se nombra una sola vez: lo que importa es el error.
+  const conError = new Set(propios.filter((x) => x.severidad === 'error' && x.columna).map((x) => x.columna));
+  return propios.filter((x) => x.severidad === 'error' || !x.columna || !conError.has(x.columna));
 }

@@ -13,7 +13,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Download, FolderOpen, ImagePlus, Info, Link2, Search, Sparkles,
+  AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Download, FolderOpen, ImagePlus, Info, Link2, Search, Sparkles,
   Undo2, Wand2, X,
 } from 'lucide-react';
 import { CeldaRevision } from '../CeldaRevision';
@@ -25,7 +25,9 @@ import { validarValorFijo } from '../../utils/plantillaNormalizacion';
 import {
   opcionesDeCelda, sugerenciasDeCelda, type ContextoDeFila,
 } from '../../utils/miExcelDetecciones';
-import type { FilaTabla, TablaMiExcel } from '../../utils/miExcelTabla';
+import {
+  problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel,
+} from '../../utils/miExcelTabla';
 import { MAX_IMAGES_PER_PRODUCT } from '../../utils/fotosCarga';
 import { Miniatura, Modal } from './comunes';
 import { plural } from './textos';
@@ -72,15 +74,19 @@ interface Props {
   onSiguiente: () => void;
   /** Fila a la que llevar al vendedor al entrar (el "Corregir" de la vista previa). */
   claveInicial?: string | null;
+  /** La última revisión del servidor: sus objeciones también se marcan en el dato exacto. */
+  servidor?: RevisionServidorFilas | null;
 }
 
 const etiquetaDe = (campos: CampoMeta[], key: string) => campos.find((c) => c.key === key)?.label ?? key;
 
 /** Una celda que sólo monta su editor cuando el vendedor la toca. */
 function Celda({
-  valor, columna, amarilla, problema, activa, onActivar, onCerrar, opciones, sugerencias, etiqueta, opcional, onCambio,
+  valor, columna, amarilla, problema, mostrarMotivo, activa, onActivar, onCerrar, opciones, sugerencias, etiqueta, opcional, onCambio,
 }: {
-  valor: string; columna: string; amarilla: boolean; problema?: { severidad: string; mensaje: string };
+  valor: string; columna: string; amarilla: boolean; problema?: ProblemaFila;
+  /** Escribe el motivo del problema dentro de la celda, no sólo al pasar el mouse. */
+  mostrarMotivo: boolean;
   activa: boolean; onActivar: () => void; onCerrar: () => void; opciones: () => string[];
   sugerencias: (opciones: string[]) => string[]; etiqueta: string; opcional: boolean; onCambio: (v: string) => void;
 }) {
@@ -93,8 +99,19 @@ function Celda({
   const clase = `mx-celda ${amarilla ? 'amarilla' : ''} ${problema ? `con-${problema.severidad}` : ''}`;
   if (!activa) {
     return (
-      <button type="button" className={clase} onClick={onActivar} title={problema?.mensaje ?? `${etiqueta}. Haz clic para cambiarlo.`} aria-label={etiqueta}>
-        {valor ? etiquetaValor(valor) : amarilla ? <span className="mx-celda-completar">Completar</span> : <span className="mx-celda-vacia">—</span>}
+      <button
+        type="button"
+        className={`${clase} ${problema && mostrarMotivo ? 'con-motivo' : ''}`}
+        onClick={onActivar}
+        title={problema?.mensaje ?? `${etiqueta}. Haz clic para cambiarlo.`}
+        aria-label={problema ? `${etiqueta}. Hay que corregirlo: ${problema.mensaje}` : etiqueta}
+      >
+        <span className="mx-celda-valor">
+          {valor ? etiquetaValor(valor) : amarilla ? <span className="mx-celda-completar">Completar</span> : <span className="mx-celda-vacia">—</span>}
+        </span>
+        {problema && mostrarMotivo && (
+          <span className={`mx-celda-motivo ${problema.severidad}`}><AlertTriangle size={12} /> {problema.mensaje}</span>
+        )}
       </button>
     );
   }
@@ -115,6 +132,7 @@ function Celda({
         destacada
         onCambio={(v) => { onCambio(v); onCerrar(); }}
       />
+      {problema && <span className={`mx-celda-motivo ${problema.severidad}`}><AlertTriangle size={12} /> {problema.mensaje}</span>}
       {opcional && lista.length === 0 && (
         <button type="button" className="mx-link" onMouseDown={(e) => e.preventDefault()} onClick={() => { onCambio(''); onCerrar(); }}>
           Dejar vacío
@@ -213,8 +231,30 @@ export function PasoCompletar(p: Props) {
   const [columnaMasiva, setColumnaMasiva] = useState<string | null>(null);
   const [fotosDe, setFotosDe] = useState<FilaTabla | null>(null);
   const [avisoAuto, setAvisoAuto] = useState<string | null>(null);
+  /** El repuesto que el vendedor está corrigiendo: se resalta y sus problemas se explican arriba. */
+  const [foco, setFoco] = useState<string | null>(p.claveInicial ?? null);
 
   const indice = useMemo(() => new Map(tabla.columnas.map((c, i) => [c, i])), [tabla.columnas]);
+
+  /** Los problemas de cada fila con el dato al que corresponden: los del panel y los del servidor. */
+  const problemasPorClave = useMemo(() => new Map(tabla.filas.map((f) => [
+    f.clave, problemasDeFila(f, tabla.columnas, campos, p.servidor),
+  ])), [tabla, campos, p.servidor]);
+  const tieneError = (f: FilaTabla) => (problemasPorClave.get(f.clave) ?? []).some((x) => x.severidad === 'error');
+
+  /** Columnas donde algún repuesto tiene un dato que impide publicar. */
+  const columnasConError = useMemo(() => {
+    const cols = new Set<string>();
+    problemasPorClave.forEach((lista) => lista.forEach((x) => { if (x.columna && x.severidad === 'error') cols.add(x.columna); }));
+    return cols;
+  }, [problemasPorClave]);
+
+  /** Un dato con problema siempre se ve, aunque la columna venga vacía en todo el archivo. */
+  const columnasMostradas = useMemo(() => {
+    const conProblema = new Set<string>();
+    problemasPorClave.forEach((lista) => lista.forEach((x) => { if (x.columna) conProblema.add(x.columna); }));
+    return tabla.columnas.filter((c) => columnas.includes(c) || conProblema.has(c));
+  }, [tabla.columnas, columnas, problemasPorClave]);
   const hayFotos = Object.keys(p.imagenes).length > 0 || Object.keys(p.guardadas).length > 0;
   const conFoto = tabla.filas.filter((f) => (p.asignaciones[f.clave] ?? []).length > 0).length;
 
@@ -222,12 +262,12 @@ export function PasoCompletar(p: Props) {
     const q = busqueda.trim().toLowerCase();
     return tabla.filas.filter((f) => {
       if (filtro === 'faltan' && f.faltantes.length === 0) return false;
-      if (filtro === 'problemas' && f.problemas.length === 0) return false;
+      if (filtro === 'problemas' && (problemasPorClave.get(f.clave) ?? []).length === 0) return false;
       if (filtro === 'sinfoto' && (p.asignaciones[f.clave] ?? []).length > 0) return false;
       if (q && !f.sku.toLowerCase().includes(q) && !f.nombre.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [tabla.filas, filtro, busqueda, p.asignaciones]);
+  }, [tabla.filas, filtro, busqueda, p.asignaciones, problemasPorClave]);
 
   const paginas = Math.max(1, Math.ceil(filasFiltradas.length / tamano));
   const actual = Math.min(pagina, paginas);
@@ -266,13 +306,101 @@ export function PasoCompletar(p: Props) {
     if (pos < 0) return;
     const fila = tabla.filas[pos];
     setPagina(Math.floor(pos / tamano) + 1);
-    setActiva({ clave, columna: fila.faltantes.find((c) => columnas.includes(c)) ?? fila.problemas[0]?.columna ?? columnas[0] });
+    // Se abre directo el dato que impide publicar; si no hay, el primero que falta.
+    const conError = (problemasPorClave.get(clave) ?? []).find((x) => x.severidad === 'error' && x.columna)?.columna;
+    setActiva({ clave, columna: conError ?? fila.faltantes.find((c) => columnas.includes(c)) ?? columnasMostradas[0] });
     setTimeout(() => document.getElementById(`mx-fila-${clave}`)?.scrollIntoView?.({ block: 'center' }), 50);
     // Sólo al entrar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const vigiladasAmarillas = columnas.filter((c) => (tabla.faltantesPorColumna[c] ?? 0) > 0);
+
+  /* ---------------- Desplazamiento horizontal ----------------
+   * Con muchas filas, la barra de desplazamiento horizontal de la tabla queda al fondo y el vendedor
+   * no llega a ella. Por eso hay una barra y botones arriba de la tabla (que se quedan a la vista al
+   * bajar), y un aviso de qué columnas con datos por completar siguen escondidas a la derecha. */
+  const marcoRef = useRef<HTMLDivElement>(null);
+  const barraRef = useRef<HTMLDivElement>(null);
+  const sincronizando = useRef(false);
+  const [vista, setVista] = useState({ izquierda: false, derecha: false, anchoTotal: 0, pendientesDerecha: [] as string[] });
+
+  const medir = () => {
+    const marco = marcoRef.current;
+    if (!marco) return;
+    const { scrollLeft, clientWidth, scrollWidth } = marco;
+    const borde = scrollLeft + clientWidth - 8;
+    const pendientes: string[] = [];
+    marco.querySelectorAll<HTMLTableCellElement>('thead th[data-col]').forEach((th) => {
+      const col = th.dataset.col as string;
+      const pendiente = (tabla.faltantesPorColumna[col] ?? 0) > 0 || columnasConError.has(col);
+      if (pendiente && th.offsetLeft + th.offsetWidth / 2 > borde) pendientes.push(col);
+    });
+    setVista((v) => {
+      const nueva = {
+        izquierda: scrollLeft > 4,
+        derecha: scrollLeft + clientWidth < scrollWidth - 4,
+        anchoTotal: scrollWidth,
+        pendientesDerecha: pendientes,
+      };
+      return v.izquierda === nueva.izquierda && v.derecha === nueva.derecha && v.anchoTotal === nueva.anchoTotal
+        && v.pendientesDerecha.join() === nueva.pendientesDerecha.join() ? v : nueva;
+    });
+  };
+
+  const alDesplazarTabla = () => {
+    if (barraRef.current && !sincronizando.current) {
+      sincronizando.current = true;
+      barraRef.current.scrollLeft = marcoRef.current?.scrollLeft ?? 0;
+      requestAnimationFrame(() => { sincronizando.current = false; });
+    }
+    medir();
+  };
+  const alDesplazarBarra = () => {
+    if (marcoRef.current && !sincronizando.current) {
+      sincronizando.current = true;
+      marcoRef.current.scrollLeft = barraRef.current?.scrollLeft ?? 0;
+      requestAnimationFrame(() => { sincronizando.current = false; });
+    }
+  };
+  const desplazar = (sentido: 1 | -1) => {
+    const marco = marcoRef.current;
+    if (!marco) return;
+    marco.scrollBy?.({ left: sentido * Math.max(240, marco.clientWidth * 0.7), behavior: 'smooth' });
+  };
+  const irAColumna = (col: string) => {
+    const marco = marcoRef.current;
+    const th = marco?.querySelector<HTMLTableCellElement>(`thead th[data-col="${col}"]`);
+    if (!marco || !th) return;
+    // Queda a la vista pasando las columnas fijas (Fila y Fotos).
+    marco.scrollTo?.({ left: Math.max(0, th.offsetLeft - 190), behavior: 'smooth' });
+  };
+
+  // Se vuelve a medir cuando cambia lo que se muestra o el tamaño de la ventana.
+  useEffect(() => {
+    medir();
+    const marco = marcoRef.current;
+    if (!marco || typeof ResizeObserver === 'undefined') return undefined;
+    const observador = new ResizeObserver(() => medir());
+    observador.observe(marco);
+    return () => observador.disconnect();
+  });
+
+  const filaFoco = foco ? tabla.filas.find((f) => f.clave === foco) ?? null : null;
+  const problemasFoco = filaFoco ? problemasPorClave.get(filaFoco.clave) ?? [] : [];
+  /** Lleva a la celda del dato con problema y abre su lista para corregirlo. */
+  const irACampo = (fila: FilaTabla, columna: string) => {
+    const pos = filasFiltradas.indexOf(fila);
+    if (pos < 0) {
+      setFiltro('todas');
+      setBusqueda('');
+      setPagina(Math.floor(tabla.filas.indexOf(fila) / tamano) + 1);
+    } else {
+      setPagina(Math.floor(pos / tamano) + 1);
+    }
+    setActiva({ clave: fila.clave, columna });
+    setTimeout(() => document.getElementById(`mx-fila-${fila.clave}`)?.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 50);
+  };
 
   return (
     <div className="mx-paso mx-paso-ancho">
@@ -323,7 +451,7 @@ export function PasoCompletar(p: Props) {
           {([
             ['todas', `Todos (${tabla.total.toLocaleString('es-CL')})`],
             ['faltan', `Por completar (${tabla.filasConFaltantes.toLocaleString('es-CL')})`],
-            ['problemas', `Por revisar (${tabla.filas.filter((f) => f.problemas.length).length.toLocaleString('es-CL')})`],
+            ['problemas', `Por revisar (${tabla.filas.filter((f) => (problemasPorClave.get(f.clave) ?? []).length).length.toLocaleString('es-CL')})`],
             ['sinfoto', `Sin foto (${(tabla.total - conFoto).toLocaleString('es-CL')})`],
           ] as [Filtro, string][]).map(([valor, texto]) => (
             <button key={valor} type="button" className={filtro === valor ? 'activo' : ''} aria-pressed={filtro === valor} onClick={() => { setFiltro(valor); setPagina(1); }}>
@@ -355,18 +483,94 @@ export function PasoCompletar(p: Props) {
       </div>
       {avisoAuto && <p className="mx-nota" role="status"><ImagePlus size={14} /> {avisoAuto}</p>}
 
-      <div className="mx-tabla-wrap" role="region" aria-label="Tabla de tus repuestos">
+      {filaFoco && (
+        <section className={`mx-foco ${problemasFoco.some((x) => x.severidad === 'error') ? 'error' : problemasFoco.length ? 'aviso' : 'ok'}`} aria-live="polite">
+          <header>
+            <strong>
+              Corrigiendo la fila {filaFoco.numeroFila}{filaFoco.nombre ? ` · ${filaFoco.nombre}` : ''}{filaFoco.sku ? ` (${filaFoco.sku})` : ''}
+            </strong>
+            <button type="button" className="mx-icono-btn" onClick={() => setFoco(null)} aria-label="Dejar de corregir este repuesto"><X size={14} /></button>
+          </header>
+          {problemasFoco.length === 0 ? (
+            <p className="mx-foco-listo">
+              <CheckCircle2 size={16} /> ¡Listo! Este repuesto ya no tiene nada por corregir.
+              <button type="button" className="btn btn-primary btn-primary-blue mx-btn mx-btn-chico" onClick={p.onSiguiente}>Volver a la vista previa</button>
+            </p>
+          ) : (
+            <>
+              <p>
+                {problemasFoco.some((x) => x.severidad === 'error')
+                  ? <><b>No se publicará</b> hasta que corrijas {problemasFoco.filter((x) => x.severidad === 'error').length === 1 ? 'este dato' : 'estos datos'}. Están marcados en rojo en la fila; haz clic en uno para ir a corregirlo:</>
+                  : <>Se publica, pero revisa estos datos (marcados en la fila):</>}
+              </p>
+              <ul className="mx-foco-lista">
+                {problemasFoco.map((x, i) => (
+                  <li key={i} className={x.severidad}>
+                    {x.columna ? (
+                      <button type="button" className="mx-foco-campo" onClick={() => irACampo(filaFoco, x.columna as string)}>
+                        {etiquetaDe(campos, x.columna)}
+                      </button>
+                    ) : <span className="mx-foco-campo sin">Repuesto</span>}
+                    <span>{x.mensaje}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+      )}
+
+      <div className="mx-desplazar" role="group" aria-label="Moverse entre las columnas de la tabla">
+        <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => desplazar(-1)} disabled={!vista.izquierda} aria-label="Ver las columnas de la izquierda">
+          <ChevronLeft size={16} /> Columnas anteriores
+        </button>
+        <div
+          ref={barraRef}
+          className="mx-barra-h"
+          onScroll={alDesplazarBarra}
+          aria-hidden
+          style={{ visibility: vista.izquierda || vista.derecha ? 'visible' : 'hidden' }}
+        >
+          <div style={{ width: vista.anchoTotal || '100%', height: 1 }} />
+        </div>
+        <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => desplazar(1)} disabled={!vista.derecha} aria-label="Ver más columnas a la derecha">
+          Más columnas <ChevronRight size={16} />
+        </button>
+      </div>
+      {vista.pendientesDerecha.length > 0 && (
+        <div className="mx-alerta aviso mx-pendientes-derecha" role="status">
+          <ArrowRight size={16} />
+          <span>
+            <b>Hay más columnas a la derecha con datos por completar:</b>{' '}
+            {vista.pendientesDerecha.map((c, i) => (
+              <span key={c}>
+                {i > 0 && ', '}
+                <button type="button" className="mx-link" onClick={() => irAColumna(c)}>{etiquetaDe(campos, c)}</button>
+              </span>
+            ))}
+            . No te olvides de completarlas.
+          </span>
+        </div>
+      )}
+
+      <div className={`mx-tabla-marco ${vista.izquierda ? 'con-izquierda' : ''} ${vista.derecha ? 'con-derecha' : ''}`}>
+      {vista.derecha && (
+        <button type="button" className="mx-mas-derecha" onClick={() => desplazar(1)} aria-label="Ver más columnas a la derecha">
+          Más columnas <ChevronRight size={15} />
+        </button>
+      )}
+      <div ref={marcoRef} className="mx-tabla-wrap" role="region" aria-label="Tabla de tus repuestos" tabIndex={0} onScroll={alDesplazarTabla}>
         <table className="mx-tabla">
           <thead>
             <tr>
               <th className="mx-col-fila">Fila</th>
               <th className="mx-col-fotos">Fotos</th>
-              {columnas.map((c) => {
+              {columnasMostradas.map((c) => {
                 const campo = campos.find((x) => x.key === c);
                 const faltan = tabla.faltantesPorColumna[c] ?? 0;
                 const obligatorio = campo ? requiereValorEnPanel(campo, p.mapping) : false;
                 return (
-                  <th key={c} className={faltan > 0 ? 'amarilla' : ''}>
+                  <th key={c} data-col={c} className={`${faltan > 0 ? 'amarilla' : ''} ${columnasConError.has(c) ? 'con-error' : ''}`}>
                     <span className="mx-th-nombre">{campo?.label ?? c}{obligatorio && <b className="mx-req">*</b>}</span>
                     {faltan > 0 && (
                       <span className="mx-th-faltan">
@@ -384,13 +588,32 @@ export function PasoCompletar(p: Props) {
             {filasPagina.map((fila) => {
               const leer = leerDe(fila);
               const contexto: ContextoDeFila = { categoria: leer('categoria'), marcaVehiculo: leer('compatibilidad_marca'), anioDesde: leer('anio_desde') };
-              const problemas = new Map(fila.problemas.map((x) => [x.columna, x]));
+              const listaProblemas = problemasPorClave.get(fila.clave) ?? [];
+              // Si un dato tiene un error y un aviso, se muestra el error: es el que impide publicar.
+              const problemas = new Map<string, ProblemaFila>();
+              for (const x of listaProblemas) {
+                if (!x.columna) continue;
+                const previo = problemas.get(x.columna);
+                if (!previo || (previo.severidad === 'aviso' && x.severidad === 'error')) problemas.set(x.columna, x);
+              }
+              const conError = tieneError(fila);
+              const enFoco = foco === fila.clave;
               const fotos = p.asignaciones[fila.clave] ?? [];
               return (
-                <tr key={fila.clave} id={`mx-fila-${fila.clave}`} className={fila.tieneError ? 'con-error' : ''}>
-                  <th scope="row" className="mx-col-fila" title={fila.problemas.map((x) => x.mensaje).join('\n') || undefined}>
-                    {fila.numeroFila}
-                    {fila.tieneError && <AlertTriangle size={13} className="mx-fila-alerta" aria-label="Esta fila tiene algo por revisar" />}
+                <tr key={fila.clave} id={`mx-fila-${fila.clave}`} className={`${conError ? 'con-error' : ''} ${enFoco ? 'mx-fila-foco' : ''}`}>
+                  <th scope="row" className="mx-col-fila">
+                    {listaProblemas.length > 0 ? (
+                      <button
+                        type="button"
+                        className="mx-fila-boton"
+                        onClick={() => setFoco(fila.clave)}
+                        title="Ver qué hay que corregir en este repuesto"
+                        aria-label={`Fila ${fila.numeroFila}: ver qué hay que corregir`}
+                      >
+                        {fila.numeroFila}
+                        <AlertTriangle size={13} className={`mx-fila-alerta ${conError ? '' : 'aviso'}`} />
+                      </button>
+                    ) : fila.numeroFila}
                   </th>
                   <td className="mx-col-fotos">
                     <button
@@ -406,18 +629,23 @@ export function PasoCompletar(p: Props) {
                       {fotos.length > 2 && <span className="mx-fotos-mas">+{fotos.length - 2}</span>}
                     </button>
                   </td>
-                  {columnas.map((c) => {
+                  {columnasMostradas.map((c) => {
                     const i = indice.get(c) as number;
                     const valor = String(fila.valores[i] ?? '');
                     const campo = campos.find((x) => x.key === c);
                     const esActiva = activa?.clave === fila.clave && activa.columna === c;
+                    const problema = problemas.get(c);
                     return (
-                      <td key={c} className={fila.faltantes.includes(c) ? 'amarilla' : ''}>
+                      <td
+                        key={c}
+                        className={`${fila.faltantes.includes(c) ? 'amarilla' : ''} ${problema ? `mx-td-${problema.severidad}` : ''}`}
+                      >
                         <Celda
                           valor={valor}
                           columna={c}
                           amarilla={fila.faltantes.includes(c)}
-                          problema={problemas.get(c)}
+                          problema={problema}
+                          mostrarMotivo={enFoco}
                           activa={esActiva}
                           onActivar={() => setActiva({ clave: fila.clave, columna: c })}
                           onCerrar={() => setActiva((a) => (a?.clave === fila.clave && a.columna === c ? null : a))}
@@ -434,10 +662,11 @@ export function PasoCompletar(p: Props) {
               );
             })}
             {filasPagina.length === 0 && (
-              <tr><td colSpan={columnas.length + 2} className="mx-tabla-vacia">No hay repuestos que mostrar con este filtro.</td></tr>
+              <tr><td colSpan={columnasMostradas.length + 2} className="mx-tabla-vacia">No hay repuestos que mostrar con este filtro.</td></tr>
             )}
           </tbody>
         </table>
+      </div>
       </div>
 
       <div className="mx-paginado">

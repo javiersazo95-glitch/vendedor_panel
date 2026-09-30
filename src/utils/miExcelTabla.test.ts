@@ -12,6 +12,8 @@ import {
   aplicarParche,
   camposACompletar,
   construirTabla,
+  inferirColumna,
+  problemasDeFila,
   transformar,
 } from './miExcelTabla';
 
@@ -116,5 +118,32 @@ describe('Tabla amarilla de la etapa 3', () => {
     const ms = performance.now() - inicio;
     expect(t.filas).toHaveLength(3000);
     expect(ms).toBeLessThan(4000);
+  });
+});
+
+describe('Qué dato exacto impide publicar', () => {
+  it('reconoce de qué dato habla un mensaje del servidor', () => {
+    expect(inferirColumna('Falta la marca del repuesto.', campos)).toBe('marca_repuesto');
+    expect(inferirColumna('La marca de vehículo "Toyot" no está en el catálogo.', campos)).toBe('compatibilidad_marca');
+    expect(inferirColumna('La subcategoría no corresponde', campos)).toBe('subcategoria');
+    expect(inferirColumna('Ya existe un producto con ese SKU para el proveedor', campos)).toBe('sku_proveedor');
+    expect(inferirColumna('Error inesperado', campos)).toBeNull();
+  });
+
+  it('marca el dato que objetó el servidor y deja de marcarlo apenas el vendedor lo cambia', () => {
+    const { mapping, tabla } = preparar((m) => aplicarATodasVacias(aplicarATodasVacias(m, 'categoria', 'Frenos'), 'marca_repuesto', 'Bosch'));
+    const t = tabla();
+    const fila = t.filas[0];
+    const servidor = {
+      porClave: { [fila.clave]: { fila: 2, sku: 'PF-1', estado: 'ERROR' as const, mensajes: ['La marca del repuesto "Bosch" está bloqueada.'] } },
+      columnas: t.columnas,
+      valores: { [fila.clave]: [...fila.valores] },
+    };
+    expect(problemasDeFila(fila, t.columnas, campos, servidor)).toEqual([
+      { columna: 'marca_repuesto', severidad: 'error', mensaje: 'La marca del repuesto "Bosch" está bloqueada.' },
+    ]);
+    const corregida = tabla([], aplicarParche(aplicarATodasVacias(aplicarATodasVacias(mapping, 'categoria', 'Frenos'), 'marca_repuesto', 'Bosch'), fila.clave, 'marca_repuesto', 'Mann')).filas[0];
+    // Ya no queda nada que impida publicar: sólo el aviso de que "Mann" no está en este catálogo de prueba.
+    expect(problemasDeFila(corregida, t.columnas, campos, servidor).filter((x) => x.severidad === 'error')).toEqual([]);
   });
 });

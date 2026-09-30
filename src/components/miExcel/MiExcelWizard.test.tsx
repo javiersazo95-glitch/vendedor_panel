@@ -164,8 +164,9 @@ describe('Mi propio Excel: retomar lo guardado', () => {
     expect(await screen.findByText('Falta completar')).toBeInTheDocument();
     expect(llamadas.some((l) => l.url.includes('borrador-carga/archivo'))).toBe(true);
     // Lo que había completado celda a celda sigue ahí: la categoría de la segunda fila.
-    expect(screen.getByRole('button', { name: 'Categoría de la fila 3' })).toHaveTextContent('Frenos');
-    expect(screen.getByRole('button', { name: 'Categoría de la fila 2' })).toHaveTextContent('Completar');
+    expect(screen.getByRole('button', { name: /^Categoría de la fila 3/ })).toHaveTextContent('Frenos');
+    // La que falta sigue marcada, y dice por qué hay que corregirla.
+    expect(screen.getByRole('button', { name: /^Categoría de la fila 2\. Hay que corregirlo: Falta categoría/ })).toHaveTextContent('Completar');
   });
 
   it('"Retomar desde el punto guardado" en la pregunta retoma sin volver a preguntar', async () => {
@@ -218,6 +219,34 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     rutas.push({ incluye: 'excel/cargar', respuesta: () => respuestaJson(resumen(filasOk.map((f, i) => ({ ...f, productoId: 100 + i })))) });
     rutas.push({ incluye: 'inventario/100/editar', metodo: 'POST', respuesta: () => respuestaJson({}) });
     rutas.push({ incluye: 'inventario/100', metodo: 'GET', respuesta: () => respuestaJson({ skuProveedor: 'PF-1', nombrePublicado: 'Pastilla freno', stock: 5 }) });
+  });
+
+  it('un repuesto que no se publicará dice qué dato corregir, y al corregirlo se abre justo ese dato', async () => {
+    rutas.unshift({
+      incluye: 'excel/validar',
+      respuesta: () => respuestaJson(resumen([filasOk[0], { fila: 3, sku: 'PF-2', estado: 'ERROR', mensajes: ['Falta la marca del repuesto.'] }])),
+    });
+    montar({ retomarDirecto: true });
+    fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
+    const aviso = await screen.findByRole('button', { name: /Corrige: Marca del repuesto/ });
+
+    // En la ficha de tienda el dato queda marcado, con su motivo, y abierto para corregirlo.
+    fireEvent.click(aviso);
+    const ficha = await screen.findByRole('dialog', { name: 'Así se verá en tu tienda' });
+    expect(within(ficha).getByRole('alert')).toHaveTextContent(/No se publicará/);
+    expect(within(ficha).getByRole('button', { name: 'Corregir Marca del repuesto' })).toBeInTheDocument();
+    expect(within(ficha).getByLabelText('Marca del repuesto')).toBeInTheDocument();
+    expect(within(ficha).getAllByText('Falta la marca del repuesto.').length).toBeGreaterThan(0);
+    fireEvent.click(within(ficha).getByRole('button', { name: 'Cerrar' }));
+
+    // "Corregir en la tabla" lleva a la fila, la explica arriba y abre la celda del dato con problema.
+    fireEvent.click(screen.getByRole('button', { name: 'Corregir Disco freno' }));
+    const banner = (await screen.findByText(/Corrigiendo la fila 3/)).closest('section') as HTMLElement;
+    expect(within(banner).getByText(/No se publicará/)).toBeInTheDocument();
+    expect(within(banner).getByRole('button', { name: 'Marca del repuesto' })).toBeInTheDocument();
+    expect(within(banner).getByText('Falta la marca del repuesto.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Marca del repuesto de la fila 3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver más columnas a la derecha' })).toBeInTheDocument();
   });
 
   it('revisa con el servidor, muestra lista y cuadrícula, publica, sube las fotos y borra lo guardado', async () => {

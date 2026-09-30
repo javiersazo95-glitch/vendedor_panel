@@ -39,7 +39,7 @@ import {
   autoDerivado, conArreglosPropuestos, detectar, marcasDelArchivo,
 } from '../../utils/miExcelDetecciones';
 import {
-  aplicarATodasVacias, aplicarParche, camposACompletar, columnasVigiladas, columnasVisibles, construirTabla, transformar,
+  aplicarATodasVacias, aplicarParche, camposACompletar, type RevisionServidorFilas, columnasVigiladas, columnasVisibles, construirTabla, transformar,
 } from '../../utils/miExcelTabla';
 import { useModelosVehiculo } from '../../utils/useModelosVehiculo';
 import {
@@ -144,6 +144,8 @@ export function MiExcelWizard({
   const revisadoRef = useRef<{ firma: string; file: File; claves: string[]; filas: FilaResultado[] } | null>(null);
   /** El mapeo con que se hizo la última revisión: si cambió, la revisión quedó vieja. */
   const [firmaRevisada, setFirmaRevisada] = useState<string | null>(null);
+  /** El resultado del servidor por fila y los valores que se revisaron, para marcar el dato exacto con problemas. */
+  const [revisionFilas, setRevisionFilas] = useState<RevisionServidorFilas | null>(null);
   const [publicacionPendiente, setPublicacionPendiente] = useState<EstadoBorrador['publicacion']>(null);
   const [progreso, setProgreso] = useState<{ texto: string; hechas: number; total: number } | null>(null);
   const [errorPublicar, setErrorPublicar] = useState<string | null>(null);
@@ -310,6 +312,7 @@ export function MiExcelWizard({
       setAsignaciones({});
       setOpcionalesVacios([]);
       setRevision(REVISION_VACIA);
+      setRevisionFilas(null);
     } catch (err) {
       setErrorArchivo(err instanceof Error ? err.message : 'No se pudo leer el archivo.');
     } finally {
@@ -474,6 +477,12 @@ export function MiExcelWizard({
       }
       revisadoRef.current = { firma, file, claves: transformacion.clavesInventario, filas: data.filas };
       setFirmaRevisada(firma);
+      const columnasRevisadas = (transformacion.inventario[0] ?? []).map(String);
+      const valores: Record<string, string[]> = {};
+      transformacion.clavesInventario.forEach((clave, i) => {
+        valores[clave] = columnasRevisadas.map((_, c) => String(transformacion.inventario[i + 1]?.[c] ?? ''));
+      });
+      setRevisionFilas({ porClave, columnas: columnasRevisadas, valores });
       setRevision({ estado: 'lista', porClave, error: null, avisosGenerales: data.avisosGenerales ?? [] });
     } catch (err) {
       setRevision({ ...REVISION_VACIA, estado: 'error', error: err instanceof Error ? err.message : 'No pudimos revisar tu inventario.' });
@@ -602,6 +611,7 @@ export function MiExcelWizard({
     setNombreZip(null);
     setTotalFotos(0);
     setRevision(REVISION_VACIA);
+    setRevisionFilas(null);
     revisadoRef.current = null;
     setPublicacionPendiente(null);
     setResultado(null);
@@ -976,6 +986,7 @@ export function MiExcelWizard({
           descargandoEnlaces={descargandoEnlaces}
           onTraerEnlaces={() => void traerEnlaces()}
           claveInicial={claveACorregir}
+          servidor={revisionFilas}
           onAtras={() => irAPaso(2)}
           onSiguiente={() => { setClaveACorregir(null); irAPaso(4); }}
         />
@@ -991,6 +1002,7 @@ export function MiExcelWizard({
           vista={vista}
           onVista={setVista}
           revision={revisionMostrada}
+          servidor={revisionMostrada.estado === 'lista' || revisionMostrada.estado === 'desactualizada' ? revisionFilas : null}
           onRevisar={() => void revisar()}
           onParche={(clave, col, v) => actualizar((m) => aplicarParche(m, clave, col, v))}
           imagenes={imagenes}
