@@ -18,12 +18,14 @@ import { descargarFotos, dominiosDeFotos, esUrlDeImagen } from '../utils/plantil
 import { conReintento429 } from '../utils/reintento429';
 import { useMapeosGuardados } from '../utils/plantillaMapeos';
 import { sanitizeAoaForExport, sanitizeRowsForExport } from '../utils/xlsxSafety';
-import { comprimirImagen } from '../utils/imageCompression';
-
-const MAX_IMAGES_PER_PRODUCT = 4;
-const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-// H32: 6 en paralelo (antes 12) -- cada producto son 2 peticiones y el backend limita a 120/min.
-const PHOTO_UPLOAD_BATCH_SIZE = 6;
+import {
+  MAX_IMAGES_PER_PRODUCT,
+  asignarPorCodigo,
+  extractFolderImages,
+  extractZipImages,
+  subirFotosAProductos,
+  type FotoUploadResultado,
+} from '../utils/fotosCarga';
 
 interface FullCreationUploadProps {
   isOpen: boolean;
@@ -47,12 +49,6 @@ interface FilaResultado {
   estado: 'OK' | 'ADVERTENCIA' | 'ERROR';
   mensajes: string[];
   productoId?: number | null;
-}
-
-interface FotoUploadResultado {
-  sku: string;
-  ok: boolean;
-  mensaje?: string;
 }
 
 interface CargaExcelResponse {
@@ -260,48 +256,12 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   }, [imageObjectUrls]);
 
   /**
-   * Matching por nombre de archivo = SKU (Fase 15): la plantilla oficial no tiene columna
-   * de imagen, asi que en vez de que el vendedor la complete a mano, el nombre del archivo
-   * hace de llave. Se permite un sufijo (SKU-123_1.jpg, SKU-123-2.jpg) para declarar mas de
-   * una foto por producto sin que el vendedor tenga que inventar un nombre distinto.
+   * Matching por nombre de archivo = SKU (Fase 15), con prioridad para los nombres que el
+   * vendedor declaró en la columna de fotos de su Excel. La lógica vive en utils/fotosCarga.ts,
+   * compartida con el asistente "Mi propio Excel".
    */
-  const matchesSku = (filenameLower: string, sku: string) => {
-    const base = filenameLower.replace(/\.[^.]+$/, '');
-    const skuLower = sku.trim().toLowerCase();
-    if (base === skuLower) return true;
-    return base.startsWith(skuLower + '_') || base.startsWith(skuLower + '-') || base.startsWith(skuLower + ' ');
-  };
-
-  /**
-   * Nombres de archivo que el vendedor declaro en su Excel para este SKU, cuando existen
-   * de verdad entre las fotos que subio. Manda sobre el emparejamiento por nombre = SKU:
-   * si el vendedor se tomo el trabajo de decir cual es la foto, esa es.
-   */
-  const declaradasParaSku = (sku: string, filenames: string[]): string[] => {
-    const declaradas = fotosDeclaradas?.[sku] ?? [];
-    return declaradas
-      .filter((d) => !esUrlDeImagen(d))
-      .map((d) => {
-        const nombre = d.split(/[\\/]/).pop()?.trim().toLowerCase() ?? '';
-        return filenames.find((f) => f.toLowerCase() === nombre);
-      })
-      .filter((f): f is string => !!f);
-  };
-
-  const computeAutoMatches = (skus: string[]): Record<string, string[]> => {
-    const filenames = Object.keys(availableImages);
-    const assignments: Record<string, string[]> = {};
-    skus.forEach((sku) => {
-      const declaradas = declaradasParaSku(sku, filenames);
-      const matches = (declaradas.length > 0 ? declaradas : filenames.filter((f) => matchesSku(f, sku)))
-        .sort()
-        .slice(0, MAX_IMAGES_PER_PRODUCT);
-      if (matches.length > 0) {
-        assignments[sku] = matches;
-      }
-    });
-    return assignments;
-  };
+  const computeAutoMatches = (skus: string[]): Record<string, string[]> =>
+    asignarPorCodigo(skus.map((sku) => ({ clave: sku, sku })), Object.keys(availableImages), fotosDeclaradas ?? {});
 
   /**
    * FilaCargaResultadoDTO (lo que devuelve el backend) solo trae fila/sku/estado/mensajes:
@@ -708,55 +668,6 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     }
   };
 
-  // Filas que crearon o actualizaron un producto real (con productoId): son las unicas
-  // candidatas a recibir foto. simulacion (preview) nunca trae productoId (Fase 15,
-  // backend): esta pantalla de fotos solo tiene sentido despues de una carga real.
-  const mimeTypeForExtension = (ext: string): string => {
-    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-    if (ext === 'png') return 'image/png';
-    if (ext === 'webp') return 'image/webp';
-    if (ext === 'gif') return 'image/gif';
-    return 'application/octet-stream';
-  };
-
-  /**
-   * El formato ZIP no guarda el Content-Type de sus archivos, y JSZip tampoco lo infiere:
-   * fileObj.async('blob') devuelve un Blob con type='' salvo que se lo indiques. Sin esto,
-   * el navegador manda cada foto como application/octet-stream en el multipart, y el
-   * backend las rechaza ("Solo se permiten imagenes de producto",
-   * InventarioImagenSupport.validarImagen) aunque el contenido sea una imagen real.
-   */
-  const extractZipImages = async (zipFile: File): Promise<Record<string, Blob>> => {
-    const imageFilesMap: Record<string, Blob> = {};
-    const JSZip = (await import('jszip')).default;
-    const zip = new JSZip();
-    const contents = await zip.loadAsync(zipFile);
-    for (const [filename, fileObj] of Object.entries(contents.files)) {
-      if (!fileObj.dir) {
-        const ext = filename.split('.').pop()?.toLowerCase();
-        if (ext && IMAGE_EXTENSIONS.includes(ext)) {
-          const arrayBuffer = await fileObj.async('arraybuffer');
-          const blob = new Blob([arrayBuffer], { type: mimeTypeForExtension(ext) });
-          const cleanName = filename.split('/').pop() || filename;
-          imageFilesMap[cleanName.toLowerCase()] = blob;
-        }
-      }
-    }
-    return imageFilesMap;
-  };
-
-  const extractFolderImages = (files: FileList): Record<string, File> => {
-    const imageFilesMap: Record<string, File> = {};
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext && IMAGE_EXTENSIONS.includes(ext)) {
-        imageFilesMap[file.name.toLowerCase()] = file;
-      }
-    }
-    return imageFilesMap;
-  };
-
   const onPhotoFolderSelected = (files: FileList | null) => {
     setPhotoErrorMsg(null);
     setPhotoZipFile(null);
@@ -897,89 +808,23 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     setPhotoUploadTotal(skusConFotos.length);
     setPhotoUploadDone(0);
 
-    const resultados: FotoUploadResultado[] = [];
-    let completadas = 0;
     // H32: al chocar con el límite de peticiones se avisa la pausa en vez de dar la foto por perdida.
     let finPausa = 0;
-    const avisarPausa = (segundos: number) => {
-      finPausa = Math.max(finPausa, Date.now() + segundos * 1000);
-      setPhotoPausaHasta(finPausa);
-    };
-
-    for (let i = 0; i < skusConFotos.length; i += PHOTO_UPLOAD_BATCH_SIZE) {
-      const chunk = skusConFotos.slice(i, i + PHOTO_UPLOAD_BATCH_SIZE);
-      await Promise.all(chunk.map(async (fila) => {
-        try {
-          // El endpoint de edicion es un reemplazo completo del producto (exige nombre,
-          // categoria, marca, sku, precio/stock validos), no un "solo agregar imagenes" --
-          // no existe un endpoint acotado para eso (a diferencia de precios-stock en la
-          // Fase 14). Se trae el producto actual y se reenvia tal cual mas las fotos, en
-          // vez de agregar un endpoint nuevo solo para esto.
-          const getResponse = await conReintento429(() => apiFetch(
-            `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(fila.productoId as number)}`,
-            { headers: { 'Authorization': `Bearer ${session.token}` } }
-          ), { onEspera: avisarPausa });
-          if (!getResponse.ok) {
-            // 404 puntual aca casi siempre significa que el producto que esta carga creo
-            // ya no existe (se borro despues) -- el mensaje generico del backend no deja
-            // eso claro, y el vendedor no tiene forma de saber que paso sin este contexto.
-            const mensaje = getResponse.status === 404
-              ? 'Este producto ya no existe en tu inventario (puede haber sido eliminado). No se pudo subir la foto para este SKU.'
-              : await readErrorMessage(getResponse, 'No se pudo leer el producto antes de subir la foto.');
-            resultados.push({ sku: fila.sku, ok: false, mensaje });
-            return;
-          }
-          const producto = await getResponse.json();
-
-          const formData = new FormData();
-          formData.append('skuProveedor', producto.skuProveedor ?? fila.sku);
-          formData.append('nombrePublicado', producto.nombrePublicado ?? '');
-          formData.append('categoria', producto.categoria ?? '');
-          if (producto.subcategoria) formData.append('subcategoria', producto.subcategoria);
-          formData.append('marcaRepuesto', producto.marcaRepuesto ?? '');
-          formData.append('referenciaOem', producto.referenciaOem ?? '');
-          formData.append('compatibilidadMarca', producto.compatibilidadMarca ?? '');
-          formData.append('compatibilidadModelo', producto.compatibilidadModelo ?? '');
-          if (producto.anioDesde != null) formData.append('anioDesde', String(producto.anioDesde));
-          if (producto.anioHasta != null) formData.append('anioHasta', String(producto.anioHasta));
-          formData.append('motor', producto.motor ?? '');
-          formData.append('pricingMode', producto.pricingMode ?? 'SHOW_PRICE');
-          if (producto.precio != null) formData.append('precio', String(producto.precio));
-          formData.append('stock', String(producto.stock ?? 0));
-          formData.append('descripcion', producto.descripcion ?? '');
-          formData.append('condicion', producto.condicion ?? 'ORIGINAL');
-          formData.append('requiereChasis', String(producto.requiereChasis === true));
-          formData.append('compatibilityGroupsJson', producto.compatibilityGroupsJson ?? '');
-          (producto.vehiculoCatalogoIds ?? []).forEach((id: number) => formData.append('vehiculoCatalogoIds', String(id)));
-          formData.append('activo', String(producto.activo !== false));
-          // Se comprime aca, justo antes de subir: cubre las 3 fuentes por igual (carpeta,
-          // ZIP y fotos bajadas por URL del Excel), que llegan sin tratamiento a
-          // availableImages. Ver imageCompression.ts.
-          await Promise.all((imageAssignments[fila.sku] || []).map(async (filename) => {
-            const blob = availableImages[filename];
-            if (!blob) return;
-            const { blob: comprimido, filename: nombreFinal } = await comprimirImagen(blob, filename);
-            formData.append('imagenes', comprimido, nombreFinal);
-          }));
-
-          const response = await conReintento429(() => apiFetch(
-            `${API_BASE_URL}/api/v1/proveedores/${encId(session.sellerId)}/inventario/${encId(fila.productoId as number)}/editar`,
-            { method: 'POST', headers: { 'Authorization': `Bearer ${session.token}` }, body: formData }
-          ), { onEspera: avisarPausa });
-          if (!response.ok) {
-            resultados.push({ sku: fila.sku, ok: false, mensaje: await readErrorMessage(response, 'No se pudo subir la foto.') });
-          } else {
-            resultados.push({ sku: fila.sku, ok: true });
-          }
-        } catch (err) {
-          resultados.push({ sku: fila.sku, ok: false, mensaje: err instanceof Error ? err.message : 'Error al subir la foto.' });
-        } finally {
-          completadas++;
-          setPhotoUploadProgress(Math.round((completadas / skusConFotos.length) * 100));
-          setPhotoUploadDone(completadas);
-        }
-      }));
-    }
+    const resultados = await subirFotosAProductos({
+      sellerId: session.sellerId,
+      token: session.token,
+      productos: skusConFotos.map((f) => ({ clave: f.sku, sku: f.sku, productoId: f.productoId as number })),
+      asignaciones: imageAssignments,
+      obtenerImagen: (nombre) => availableImages[nombre] ?? null,
+      onProgreso: (hechas, total) => {
+        setPhotoUploadDone(hechas);
+        setPhotoUploadProgress(total > 0 ? Math.round((hechas / total) * 100) : 0);
+      },
+      onEspera: (segundos) => {
+        finPausa = Math.max(finPausa, Date.now() + segundos * 1000);
+        setPhotoPausaHasta(finPausa);
+      },
+    });
 
     setPhotoUploadResults(resultados);
     setPhotoPausaHasta(null);

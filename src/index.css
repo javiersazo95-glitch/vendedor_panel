@@ -4838,6 +4838,24 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* "Tienes una carga guardada": retomar "Mi propio Excel" desde la pregunta. */
+.carga-guardada {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.85rem 1rem;
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(27, 100, 218, 0.3);
+  border-radius: 14px;
+  background: rgba(27, 100, 218, 0.06);
+  color: hsl(var(--primary));
+}
+.carga-guardada > div { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; min-width: 220px; }
+.carga-guardada strong { color: var(--text-primary); font-size: 0.98rem; }
+.carga-guardada span { color: var(--text-secondary); font-size: 0.84rem; }
+.carga-guardada .btn { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 44px; }
+
 .carga-recientes {
   margin-top: 1.5rem;
   padding-top: 1.25rem;

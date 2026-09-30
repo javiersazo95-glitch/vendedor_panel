@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { FileSpreadsheet, History, PackagePlus, Tag, Wand2 } from 'lucide-react';
 import { FullCreationUpload } from './FullCreationUpload';
+import { MiExcelWizard } from './miExcel/MiExcelWizard';
+import { PASOS_MI_EXCEL } from './miExcel/textos';
+import { deserializarBorrador, fechaYHora, obtenerBorrador, type EstadoBorrador } from '../utils/miExcelBorrador';
+import type { RegistrarGuardia } from '../utils/guardiaSalida';
 import { ExpressUpload } from './ExpressUpload';
 import { HistorialCargas } from './HistorialCargas';
 import { apiFetch } from '../utils/apiFetch';
@@ -19,6 +23,12 @@ import { NOMBRE_EXPRESS } from '../utils/expressPreciosStock';
 
 type Camino = 'uno' | 'mi-excel' | 'plantilla' | 'precios';
 
+/**
+ * El asistente nuevo de "Mi propio Excel" (4 etapas, progreso guardado). Con
+ * VITE_MI_EXCEL_V2=false se vuelve al adaptador anterior, por si hubiera que retroceder.
+ */
+const MI_EXCEL_V2 = import.meta.env.VITE_MI_EXCEL_V2 !== 'false';
+
 interface CargaInventarioProps {
   isOpen: boolean;
   onClose: () => void;
@@ -32,6 +42,10 @@ interface CargaInventarioProps {
   onVerHistorial?: () => void;
   embedded?: boolean;
   onBusyChange?: (busy: boolean) => void;
+  /** Para que el Dashboard pregunte antes de salir con cambios sin guardar. */
+  onRegistrarGuardia?: RegistrarGuardia;
+  /** La etapa 3 de "Mi propio Excel" usa todo el ancho: el menú lateral se oculta. */
+  onAnchoCompletoChange?: (activo: boolean) => void;
 }
 
 interface CargaReciente {
@@ -100,6 +114,41 @@ function UltimasCargas({ onVerHistorial }: { onVerHistorial?: () => void }) {
   );
 }
 
+/**
+ * "Tienes una carga guardada": si el vendedor dejó a medias "Mi propio Excel", se le ofrece
+ * retomarla desde la misma pregunta, sin tener que recordar por dónde entrar.
+ */
+function CargaGuardada({ onRetomar }: { onRetomar: () => void }) {
+  const [guardada, setGuardada] = useState<{ updatedAt: string; estado: EstadoBorrador } | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    obtenerBorrador()
+      .then((b) => {
+        const estado = b?.estadoJson ? deserializarBorrador(b.estadoJson) : null;
+        if (vivo && b && estado?.archivo) setGuardada({ updatedAt: b.updatedAt, estado });
+      })
+      .catch(() => { /* Sin conexión no se ofrece; el asistente lo vuelve a buscar al entrar. */ });
+    return () => { vivo = false; };
+  }, []);
+  if (!guardada) return null;
+  const { fecha, hora } = fechaYHora(guardada.updatedAt);
+  const paso = PASOS_MI_EXCEL[guardada.estado.paso - 1];
+  return (
+    <section className="carga-guardada" aria-label="Carga guardada">
+      <History size={22} />
+      <div>
+        <strong>Tienes una carga de "Mi propio Excel" guardada</strong>
+        <span>
+          {guardada.estado.archivo?.nombre} · guardada el {fecha} a las {hora} · ibas en el paso {paso.n}: {paso.titulo}
+        </span>
+      </div>
+      <button type="button" className="btn btn-primary btn-primary-blue" onClick={onRetomar}>
+        <History size={16} /> Retomar desde el punto guardado
+      </button>
+    </section>
+  );
+}
+
 const OPCIONES: { camino: Camino; titulo: string; detalle: string; icono: React.ReactNode }[] = [
   {
     camino: 'uno',
@@ -137,8 +186,11 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   onVerHistorial,
   embedded = false,
   onBusyChange,
+  onRegistrarGuardia,
+  onAnchoCompletoChange,
 }) => {
   const [camino, setCamino] = useState<Camino | null>(null);
+  const [retomarDirecto, setRetomarDirecto] = useState(false);
 
   if (!isOpen) return null;
 
@@ -152,7 +204,21 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
     );
   }
 
-  const volver = () => setCamino(null);
+  const volver = () => { setCamino(null); setRetomarDirecto(false); };
+
+  if (camino === 'mi-excel' && MI_EXCEL_V2) {
+    return (
+      <MiExcelWizard
+        onVolver={volver}
+        onClose={onClose}
+        onUploadSuccess={onUploadSuccess}
+        onBusyChange={onBusyChange}
+        onRegistrarGuardia={onRegistrarGuardia}
+        onAnchoCompletoChange={onAnchoCompletoChange}
+        retomarDirecto={retomarDirecto}
+      />
+    );
+  }
 
   if (camino === 'mi-excel' || camino === 'plantilla') {
     return (
@@ -187,6 +253,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
       <div className="bulk-upload-page-content carga-inventario">
         <h3 className="carga-inventario-titulo">¿Qué tienes?</h3>
         <p className="carga-inventario-sub">Elige lo que más se parece a lo que traes. Siempre puedes volver a esta pregunta.</p>
+        {MI_EXCEL_V2 && <CargaGuardada onRetomar={() => { setRetomarDirecto(true); setCamino('mi-excel'); }} />}
         <div className="carga-inventario-opciones">
           {OPCIONES.map((opcion) => (
             <button

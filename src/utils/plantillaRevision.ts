@@ -116,10 +116,18 @@ export function revisarAoA(
      * contra el catálogo antes de subir; sin esto no se dice nada del modelo.
      */
     modelosPorMarca?: Record<string, string[]>;
+    /**
+     * Devuelve las filas en el orden del archivo en vez de poner primero las que tienen
+     * problemas. Es lo que usa la tabla del asistente "Mi propio Excel", que muestra todas las
+     * filas y marca en amarillo lo que falta: ahí reordenar movería las filas bajo el dedo del
+     * vendedor cada vez que completa una celda.
+     */
+    conservarOrden?: boolean;
   } = {},
 ): RevisionArchivo {
   const {
     maxFilas = 20, primeraFilaArchivo = 2, catalogos, numerosDeFila, clavesDeFila, modelosPorMarca = {},
+    conservarOrden = false,
   } = opciones;
   // Sin catálogos —porque el esquema no respondió— no se revisa nada contra ellos: es
   // preferible no decir nada a inventar un error con una copia local desactualizada.
@@ -324,7 +332,7 @@ export function revisarAoA(
     else publicables += 1;
     if (!tieneError && problemas.length > 0) conAviso += 1;
 
-    const balde = tieneError ? errores : problemas.length > 0 ? avisos : limpias;
+    const balde = conservarOrden ? limpias : tieneError ? errores : problemas.length > 0 ? avisos : limpias;
     if (balde.length < maxFilas) {
       balde.push({
         numeroFila: numerosDeFila?.[i - 1] ?? primeraFilaArchivo + i - 1,

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { LogOut, History, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { LogOut, History, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
 import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, getSellerProfileImage, setProductTop, type ProductTopSummary } from '../db';
@@ -13,6 +13,9 @@ import { TopModal } from './TopModal';
 import { WalletModal } from './WalletModal';
 import { RepuestopCoin } from './RepuestopCoin';
 import { ordenarInventario, type OrdenInventario } from '../utils/inventoryOrder';
+import type { GuardiaSalida } from '../utils/guardiaSalida';
+import { DialogoGuardarCambios } from './DialogoGuardarCambios';
+import { BotonSoporte } from './soporte/BotonSoporte';
 
 interface DashboardProps {
   userEmail: string;
@@ -43,6 +46,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   /** Mientras se revisa, publica o suben fotos, el menú no deja salir (se perdería el avance). */
   const [cargaOcupada, setCargaOcupada] = useState(false);
   const [inventoryView, setInventoryView] = useState<'table' | 'grid'>('table');
+  /**
+   * La pantalla con trabajo sin guardar ("Mi propio Excel") registra acá su guardia: antes de
+   * cambiar de vista se le pregunta si hay cambios pendientes y, si los hay, se avisa.
+   */
+  const guardiaRef = useRef<GuardiaSalida | null>(null);
+  const [salidaPendiente, setSalidaPendiente] = useState<(() => void) | null>(null);
+  const registrarGuardia = useCallback((guardia: GuardiaSalida | null) => { guardiaRef.current = guardia; }, []);
+  const solicitarSalida = (accion: () => void) => {
+    if (guardiaRef.current?.hayCambiosSinGuardar()) setSalidaPendiente(() => accion);
+    else accion();
+  };
+  /** La etapa 3 de "Mi propio Excel" pide todo el ancho: el menú se pliega y un botón lo muestra. */
+  const [anchoCompleto, setAnchoCompleto] = useState(false);
+  const [menuEnAncho, setMenuEnAncho] = useState(false);
+  const cambiarAnchoCompleto = useCallback((activo: boolean) => {
+    setAnchoCompleto(activo);
+    if (activo) setMenuEnAncho(false);
+  }, []);
+  const menuPlegado = anchoCompleto && !menuEnAncho;
   const [inventoryOrder, setInventoryOrder] = useState<OrdenInventario>('recomendado');
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
@@ -269,7 +291,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
       {isSidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebarOnMobile} />}
 
       {/* Sidebar Navigation */}
-      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''}`}>
+      <aside className={`sidebar ${isSidebarOpen ? 'sidebar-open' : ''} ${menuPlegado ? 'sidebar-plegada' : ''}`}>
         <div className="logo-container" style={{ margin: '0.5rem 0 2.5rem 0', justifyContent: 'center' }}>
           <img
             src={logoImg}
@@ -286,7 +308,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         <nav className="nav-links">
           <button
             className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`}
-            onClick={() => { setActiveView('inventory'); closeSidebarOnMobile(); }}
+            onClick={() => solicitarSalida(() => { setActiveView('inventory'); closeSidebarOnMobile(); })}
             disabled={cargaOcupada}
           >
             <Database size={18} />
@@ -295,7 +317,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
 
           <button
             className={`nav-item ${activeView === 'bulk' && cargaVista === 'elegir' ? 'active' : ''}`}
-            onClick={() => { setCargaVista('elegir'); setCargaKey((k) => k + 1); setExpressCargados(null); setActiveView('bulk'); closeSidebarOnMobile(); }}
+            onClick={() => solicitarSalida(() => { setCargaVista('elegir'); setCargaKey((k) => k + 1); setExpressCargados(null); setActiveView('bulk'); closeSidebarOnMobile(); })}
             disabled={cargaOcupada}
           >
             <UploadCloud size={18} />
@@ -304,7 +326,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
 
           <button
             className={`nav-item ${activeView === 'bulk' && cargaVista === 'historial' ? 'active' : ''}`}
-            onClick={() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); closeSidebarOnMobile(); }}
+            onClick={() => solicitarSalida(() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); closeSidebarOnMobile(); })}
             disabled={cargaOcupada}
           >
             <History size={18} />
@@ -318,7 +340,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         <div className="sidebar-footer">
 
 
-          <button className="nav-item" onClick={onLogout} style={{ color: 'hsl(var(--danger))' }}>
+          <button className="nav-item" onClick={() => solicitarSalida(onLogout)} style={{ color: 'hsl(var(--danger))' }}>
             <LogOut size={18} />
             Cerrar Sesión
           </button>
@@ -326,7 +348,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
       </aside>
 
       {/* Main Panel Content Area */}
-      <main className={`main-content ${activeView === 'bulk' ? 'main-content-bulk' : ''}`}>
+      {anchoCompleto && activeView === 'bulk' && (
+        <button
+          type="button"
+          className={`menu-ancho-toggle ${menuEnAncho ? 'con-menu' : ''}`}
+          onClick={() => setMenuEnAncho((v) => !v)}
+          aria-label={menuEnAncho ? 'Ocultar el menú para ver la tabla completa' : 'Mostrar el menú'}
+          title={menuEnAncho ? 'Ocultar menú' : 'Mostrar menú'}
+        >
+          {menuEnAncho ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+        </button>
+      )}
+
+      <main className={`main-content ${activeView === 'bulk' ? 'main-content-bulk' : ''} ${menuPlegado ? 'contenido-ancho' : ''}`}>
         {/* Top Header Navigation */}
         <header className="top-header">
           <div className="header-title-section" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
@@ -422,7 +456,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
                 type="button"
                 className="btn btn-secondary"
                 style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', height: 'auto' }}
-                onClick={() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); setExpressCargados(null); }}
+                onClick={() => solicitarSalida(() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); setExpressCargados(null); })}
               >
                 Ver detalle
               </button>
@@ -450,6 +484,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             onVerHistorial={() => { setCargaVista('historial'); setCargaKey((k) => k + 1); }}
             embedded
             onBusyChange={setCargaOcupada}
+            onRegistrarGuardia={registrarGuardia}
+            onAnchoCompletoChange={cambiarAnchoCompleto}
           />
         ) : (
 
@@ -522,6 +558,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         founder={founder}
       />
       <TopModal product={topProduct} visible={!walletOpen} summary={topSummary} loading={topLoading} saving={topSaving} error={topError} onClose={() => !topSaving && setTopProduct(null)} onConfirm={handleTopConfirm} onRecharge={openWallet} />
+      {salidaPendiente && (
+        <DialogoGuardarCambios
+          onGuardarYSalir={async () => {
+            const ok = (await guardiaRef.current?.guardar()) ?? true;
+            if (ok) { const accion = salidaPendiente; setSalidaPendiente(null); accion(); }
+            return ok;
+          }}
+          onSalirSinGuardar={() => { const accion = salidaPendiente; setSalidaPendiente(null); accion(); }}
+          onQuedarse={() => setSalidaPendiente(null)}
+        />
+      )}
+      {/* Soporte: en todo el panel, abajo a la derecha. */}
+      <BotonSoporte />
       {walletOpen && <WalletModal
         balance={walletBalance}
         loading={walletLoading}
