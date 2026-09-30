@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { claveCatalogo, marcaCanonica, mismoNombreCatalogo, nombresUnicosOrdenados } from './nombresCatalogoVehiculo';
 import { parsearAplicacion } from './plantillaCompatibilidad';
+import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
 
 /**
  * Fase 5 del plan de auditoría de carga: un solo nombre por marca y modelo de vehículo, con la
@@ -53,5 +54,14 @@ describe('nombres del catálogo de vehículos', () => {
     });
     // Sin la marca en el catálogo, el alias no inventa nada.
     expect(parsearAplicacion('KIA MOTORS RIO 2015', ['Toyota'])).toBeNull();
+  });
+
+  it('la lista de respaldo usa la escritura oficial de las marcas que van en mayúsculas', () => {
+    const oficiales = ['SEAT', 'MINI', 'SAAB', 'IVECO', 'KYMCO', 'QJMOTOR', 'FLSTF', 'CFMOTO'];
+    expect(MARCAS_VEHICULO_BASE).toEqual(expect.arrayContaining(oficiales));
+    expect(MARCAS_VEHICULO_BASE).not.toEqual(expect.arrayContaining(['Seat']));
+    expect(MARCAS_VEHICULO_BASE).not.toContain('CF Moto');
+    expect(nombresUnicosOrdenados(MARCAS_VEHICULO_BASE)).toEqual(MARCAS_VEHICULO_BASE);
+    expect(parsearAplicacion('Seat Ibiza 2015', MARCAS_VEHICULO_BASE)?.marca).toBe('SEAT');
   });
 });
