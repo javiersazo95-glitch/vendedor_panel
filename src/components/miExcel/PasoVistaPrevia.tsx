@@ -73,6 +73,52 @@ interface Props {
 
 type EstadoFila = 'ok' | 'aviso' | 'error';
 
+/** Un repuesto con datos cambiados después de la última revisión: lo que falta confirmar. */
+interface CambioSinConfirmar {
+  clave: string;
+  nombre: string;
+  columnas: string[];
+}
+
+/**
+ * Qué datos cambió el vendedor desde la última revisión con RepuesTop: se comparan los valores que
+ * se revisaron con los de ahora, repuesto por repuesto.
+ */
+function cambiosDesdeLaRevision(tabla: TablaMiExcel, servidor: RevisionServidorFilas | null | undefined): CambioSinConfirmar[] {
+  if (!servidor) return [];
+  const indice = new Map(tabla.columnas.map((c, i) => [c, i]));
+  const cambios: CambioSinConfirmar[] = [];
+  for (const fila of tabla.filas) {
+    const antes = servidor.valores[fila.clave];
+    if (!antes) continue;
+    const columnas = servidor.columnas.filter((col, j) => {
+      const i = indice.get(col);
+      return i !== undefined && String(fila.valores[i] ?? '').trim() !== String(antes[j] ?? '').trim();
+    });
+    if (columnas.length > 0) cambios.push({ clave: fila.clave, nombre: fila.nombre || fila.sku || 'Repuesto', columnas });
+  }
+  return cambios;
+}
+
+/** "Cambiaste 3 datos en 2 repuestos", con el detalle de los primeros. */
+function ResumenCambios({ cambios, campos, maximo = 4 }: { cambios: CambioSinConfirmar[]; campos: CampoMeta[]; maximo?: number }) {
+  if (cambios.length === 0) return null;
+  const datos = cambios.reduce((n, c) => n + c.columnas.length, 0);
+  return (
+    <>
+      <p className="mx-cambios-total">
+        Cambiaste <b>{plural(datos, 'dato', 'datos')}</b> en <b>{plural(cambios.length, 'repuesto', 'repuestos')}</b>:
+      </p>
+      <ul className="mx-cambios-lista">
+        {cambios.slice(0, maximo).map((c) => (
+          <li key={c.clave}><b>{c.nombre}</b>: {c.columnas.map((col) => etiquetaCampo(campos, col)).join(', ')}</li>
+        ))}
+        {cambios.length > maximo && <li>…y {plural(cambios.length - maximo, 'repuesto más', 'repuestos más')}.</li>}
+      </ul>
+    </>
+  );
+}
+
 const POR_PAGINA = { lista: 50, tarjetas: 24 } as const;
 
 interface EstadoConProblemas {
@@ -219,8 +265,12 @@ function DatoEditable({
 /** "Así se verá en tu tienda": la ficha que ve el comprador, con cada dato corregible. */
 function VistaTienda({
   fila, tabla, campos, esquema, modelos, fotos, imagenes, guardadas, estado, onParche, onCambiarFotos, onCerrar, nombreTienda,
-  versiones, onParches,
+  versiones, onParches, cambiosSinConfirmar, onConfirmarCambios,
 }: {
+  /** Hay cambios en la carga que todavía no se revisaron con RepuesTop. */
+  cambiosSinConfirmar: boolean;
+  /** Cierra la ficha y confirma los cambios (los revisa con RepuesTop). */
+  onConfirmarCambios: () => void;
   versiones: VersionCatalogo[] | null | undefined;
   onParches: (valores: Record<string, string>) => void;
   fila: FilaTabla; tabla: TablaMiExcel; campos: CampoMeta[]; esquema: EsquemaPlantilla; modelos: Record<string, string[]>;
@@ -272,10 +322,24 @@ function VistaTienda({
   const principal = fotos[Math.min(fotoActiva, Math.max(0, fotos.length - 1))];
 
   return (
-    <Modal titulo="Así se verá en tu tienda" ancho={980} onCerrar={onCerrar} icono={<Eye size={18} />}>
+    <Modal
+      titulo="Así se verá en tu tienda"
+      ancho={980}
+      onCerrar={onCerrar}
+      icono={<Eye size={18} />}
+      acciones={cambiosSinConfirmar ? (
+        <>
+          <span className="mx-nota">Tus cambios ya quedaron guardados. Falta confirmarlos para poder publicarlos.</span>
+          <button type="button" className="btn btn-secondary mx-btn" onClick={onCerrar}>Seguir corrigiendo otros</button>
+          <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={onConfirmarCambios}>
+            <CheckCircle2 size={16} /> Confirmar cambios
+          </button>
+        </>
+      ) : undefined}
+    >
       <p className="mx-ayuda">
-        Esta es la publicación que verán los compradores. Toca el lápiz <Pencil size={12} /> junto a cualquier dato para corregirlo;
-        el cambio queda en tu carga.
+        Esta es la publicación que verán los compradores. Toca el lápiz <Pencil size={12} /> junto a cualquier dato para corregirlo
+        y luego <b>Guardar</b>. Cuando termines, toca <b>Confirmar cambios</b> (abajo) para revisarlos con RepuesTop antes de publicar.
       </p>
       {estado.estado !== 'ok' && (
         <div className={`mx-corregir ${estado.estado}`} role="alert">
@@ -369,6 +433,12 @@ export function PasoVistaPrevia(p: Props) {
   const [fotosDe, setFotosDe] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState(false);
   const [aQuitar, setAQuitar] = useState<FilaTabla | null>(null);
+  /** Publicar con cambios sin confirmar: primero se pide confirmarlos. */
+  const [pedirConfirmarAntesDePublicar, setPedirConfirmarAntesDePublicar] = useState(false);
+  /** Se confirmaron los cambios y, apenas termine la revisión, se sigue a publicar. */
+  const [publicarAlConfirmar, setPublicarAlConfirmar] = useState(false);
+  /** El vendedor confirmó sus cambios: se le dice que quedaron confirmados hasta que vuelva a cambiar algo. */
+  const [confirmacion, setConfirmacion] = useState<'confirmando' | 'confirmada' | null>(null);
 
   const todas = useMemo(
     () => p.tabla.filas.map((fila) => ({ fila, ...estadoDe(fila, p.tabla.columnas, p.campos, p.servidor, p.versionesDe) })),
@@ -400,12 +470,42 @@ export function PasoVistaPrevia(p: Props) {
   const indice = new Map(p.tabla.columnas.map((c, i) => [c, i]));
   const leer = (fila: FilaTabla, c: string) => String(fila.valores[indice.get(c) ?? -1] ?? '').trim();
   const puedePublicar = p.revision.estado === 'lista' && publicables > 0;
+  const hayCambiosSinConfirmar = p.revision.estado === 'desactualizada';
+  const cambios = useMemo(
+    () => (hayCambiosSinConfirmar ? cambiosDesdeLaRevision(p.tabla, p.servidor) : []),
+    [hayCambiosSinConfirmar, p.tabla, p.servidor],
+  );
+  /** Con cambios sin confirmar el botón Publicar sigue activo: al tocarlo se pide confirmarlos primero. */
+  const publicarActivo = puedePublicar || (hayCambiosSinConfirmar && conEstado.length > 0);
+  const confirmarCambios = () => {
+    setConfirmacion('confirmando');
+    p.onRevisar();
+  };
+  // Cómo terminó la confirmación: bien (se avisa y, si venía de "Publicar", se sigue a publicar) o con error.
+  const estadoRevision = p.revision.estado;
+  const [estadoAnterior, setEstadoAnterior] = useState(estadoRevision);
+  if (estadoAnterior !== estadoRevision) {
+    setEstadoAnterior(estadoRevision);
+    if (estadoRevision === 'lista' && confirmacion === 'confirmando') {
+      setConfirmacion('confirmada');
+      if (publicarAlConfirmar) {
+        setPublicarAlConfirmar(false);
+        setPedirConfirmarAntesDePublicar(false);
+        if (publicables > 0) setConfirmar(true);
+      }
+    } else if (estadoRevision === 'error') {
+      setConfirmacion(null);
+      setPublicarAlConfirmar(false);
+    } else if (estadoRevision === 'desactualizada') {
+      setConfirmacion(null);
+    }
+  }
   const motivoNoPublica = (() => {
     switch (p.revision.estado) {
       case 'revisando': return 'Estamos revisando tu inventario con RepuesTop…';
       case 'error': return 'No pudimos revisar tu inventario: toca «Reintentar» arriba.';
       case 'sin-revisar': return 'Primero revisamos tu inventario: toca «Revisar ahora» arriba.';
-      case 'desactualizada': return 'Cambiaste datos: toca «Revisar de nuevo» arriba antes de publicar.';
+      case 'desactualizada': return 'Tienes cambios sin confirmar: toca «Confirmar cambios» arriba.';
       default:
         if (conEstado.length === 0) return 'Quitaste todos los repuestos de esta carga: vuelve a incluir alguno desde «Quitados».';
         return 'Ningún repuesto se puede publicar todavía: corrige los que dicen «No se publicará» (toca el lápiz de cada uno).';
@@ -430,17 +530,39 @@ export function PasoVistaPrevia(p: Props) {
         {p.revision.estado === 'revisando' && (
           <p><Loader2 size={18} className="mx-girando" /> <b>Revisando tu inventario con RepuesTop…</b> Esto puede tardar un poco con archivos grandes.</p>
         )}
+        {p.revision.estado === 'revisando' && confirmacion === 'confirmando' && (
+          <p className="mx-nota">Estamos confirmando tus cambios: los revisamos con RepuesTop para decirte qué se puede publicar.</p>
+        )}
         {p.revision.estado === 'lista' && (
-          <p>
-            <ShieldCheck size={18} /> <b>Revisamos tu inventario:</b> {plural(publicables, 'repuesto se puede publicar', 'repuestos se pueden publicar')}
-            {cuenta.error > 0 ? ` y ${plural(cuenta.error, 'no se publicará', 'no se publicarán')} hasta que lo corrijas` : ''}.
-          </p>
+          <>
+            {confirmacion === 'confirmada' && (
+              <p className="mx-cambios-confirmados" role="status">
+                <CheckCircle2 size={18} /> <b>¡Listo! Tus cambios quedaron confirmados.</b>
+              </p>
+            )}
+            <p>
+              <ShieldCheck size={18} /> <b>Revisamos tu inventario:</b> {plural(publicables, 'repuesto se puede publicar', 'repuestos se pueden publicar')}
+              {cuenta.error > 0 ? ` y ${plural(cuenta.error, 'no se publicará', 'no se publicarán')} hasta que lo corrijas` : ''}.
+            </p>
+          </>
         )}
         {p.revision.estado === 'desactualizada' && (
-          <p>
-            <RefreshCw size={18} /> Hiciste cambios después de la última revisión.{' '}
-            <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={p.onRevisar}>Revisar de nuevo</button>
-          </p>
+          <div className="mx-cambios-pendientes" role="alert">
+            <div className="mx-cambios-cabecera">
+              <RefreshCw size={20} />
+              <div>
+                <h4>Tienes cambios sin confirmar</h4>
+                <p>
+                  Tus cambios ya quedaron guardados en tu carga, pero todavía no los revisamos con RepuesTop. Toca
+                  {' '}<b>Confirmar cambios</b> para revisarlos y ver si ya se pueden publicar.
+                </p>
+              </div>
+            </div>
+            <ResumenCambios cambios={cambios} campos={p.campos} />
+            <button type="button" className="btn btn-primary btn-primary-blue mx-btn mx-btn-confirmar" onClick={confirmarCambios}>
+              <CheckCircle2 size={17} /> Confirmar cambios
+            </button>
+          </div>
         )}
         {p.revision.estado === 'sin-revisar' && (
           <p>
@@ -585,13 +707,48 @@ export function PasoVistaPrevia(p: Props) {
         <button
           type="button"
           className="btn btn-primary btn-primary-blue mx-btn mx-btn-publicar"
-          onClick={() => setConfirmar(true)}
-          disabled={!puedePublicar}
-          title={!puedePublicar ? motivoNoPublica : undefined}
+          onClick={() => (hayCambiosSinConfirmar ? setPedirConfirmarAntesDePublicar(true) : setConfirmar(true))}
+          disabled={!publicarActivo}
+          title={!publicarActivo ? motivoNoPublica : undefined}
         >
           <Rocket size={17} /> Publicar {plural(publicables, 'repuesto', 'repuestos')}
         </button>
       </footer>
+
+      {pedirConfirmarAntesDePublicar && (
+        <Modal
+          titulo="Antes de publicar, confirma tus cambios"
+          icono={<RefreshCw size={18} />}
+          tono="aviso"
+          ancho={600}
+          onCerrar={p.revision.estado === 'revisando' ? undefined : () => { setPedirConfirmarAntesDePublicar(false); setPublicarAlConfirmar(false); }}
+          acciones={p.revision.estado === 'revisando' ? (
+            <span className="mx-nota"><Loader2 size={15} className="mx-girando" /> Confirmando tus cambios con RepuesTop…</span>
+          ) : (
+            <>
+              <button type="button" className="btn btn-secondary mx-btn" onClick={() => setPedirConfirmarAntesDePublicar(false)}>Volver a revisar</button>
+              <button
+                type="button"
+                className="btn btn-primary btn-primary-blue mx-btn"
+                onClick={() => { setPublicarAlConfirmar(true); confirmarCambios(); }}
+                autoFocus
+              >
+                <CheckCircle2 size={16} /> Confirmar cambios y publicar
+              </button>
+            </>
+          )}
+        >
+          <p>
+            Hiciste cambios después de la última revisión. Antes de publicar tenemos que <b>confirmarlos</b>: los revisamos con RepuesTop
+            para asegurarnos de que se van a publicar bien.
+          </p>
+          <ResumenCambios cambios={cambios} campos={p.campos} />
+          {p.revision.estado === 'error' && (
+            <div className="mx-alerta error"><AlertTriangle size={16} /> {p.revision.error ?? 'No pudimos confirmar tus cambios.'} Intenta de nuevo.</div>
+          )}
+          <p className="mx-nota">Después de confirmar te mostramos cuántos repuestos se publicarán y te preguntamos una última vez.</p>
+        </Modal>
+      )}
 
       {confirmar && (
         <Modal
@@ -611,6 +768,7 @@ export function PasoVistaPrevia(p: Props) {
           )}
         >
           <ul className="mx-lista-confirmar">
+            {confirmacion === 'confirmada' && <li><CheckCircle2 size={16} /> <b>Tus cambios quedaron confirmados.</b></li>}
             <li><CheckCircle2 size={16} /> Se publicarán <b>{plural(publicables, 'repuesto', 'repuestos')}</b> ({plural(conFotos, 'con foto', 'con foto')}).</li>
             {cuenta.error > 0 && <li><XCircle size={16} /> <b>{plural(cuenta.error, 'repuesto no se publicará', 'repuestos no se publicarán')}</b> porque tienen algo por corregir. Podrás cargarlos después.</li>}
             {quitadas.length > 0 && <li><Trash2 size={16} /> <b>{plural(quitadas.length, 'repuesto que quitaste', 'repuestos que quitaste')}</b> no se {quitadas.length === 1 ? 'publicará' : 'publicarán'}.</li>}
@@ -662,6 +820,8 @@ export function PasoVistaPrevia(p: Props) {
           )}
           onCambiarFotos={() => setFotosDe(filaTienda.fila.clave)}
           onCerrar={() => setEnTienda(null)}
+          cambiosSinConfirmar={hayCambiosSinConfirmar}
+          onConfirmarCambios={() => { setEnTienda(null); confirmarCambios(); }}
           nombreTienda={p.nombreTienda}
         />
       )}

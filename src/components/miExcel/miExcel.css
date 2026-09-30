@@ -373,6 +373,20 @@
 .mx-revision-lista p > svg { color: var(--mx-ok); }
 .mx-revision-desactualizada, .mx-revision-sin-revisar { border-color: #fcd34d; background: #fffdf5; }
 .mx-revision-error { border-color: rgba(190, 18, 60, 0.3); background: #fff7f8; }
+.mx-revision { display: flex; flex-direction: column; gap: 0.5rem; }
+
+/* Cambios sin confirmar en "Revisa y publica": qué cambió y el botón para confirmarlo. */
+.mx-cambios-pendientes { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+.mx-cambios-cabecera { display: flex; align-items: flex-start; gap: 0.7rem; }
+.mx-cambios-cabecera > svg { flex-shrink: 0; margin-top: 0.15rem; color: #b45309; }
+.mx-cambios-cabecera h4 { margin: 0 0 0.2rem; font-size: 1.05rem; color: var(--mx-amarillo-texto); }
+.mx-revision .mx-cambios-cabecera p { display: block; font-size: 0.92rem; color: var(--text-secondary); }
+.mx-revision p.mx-cambios-total { display: block; }
+.mx-cambios-total, .mx-cambios-lista { font-size: 0.9rem; }
+.mx-cambios-lista { margin: 0; padding-left: 1.2rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.15rem; }
+.mx-cambios-lista b { color: var(--text-primary); }
+.mx-btn-confirmar { min-height: 46px; padding: 0 1.4rem !important; font-size: 0.98rem !important; display: inline-flex !important; align-items: center; gap: 0.45rem; }
+.mx-revision p.mx-cambios-confirmados { padding: 0.5rem 0.75rem; border-radius: 10px; background: var(--success-bg); color: var(--mx-ok); font-size: 0.95rem; }
 .mx-avisos-generales { margin: 0.6rem 0 0 1.2rem; font-size: 0.84rem; color: var(--text-secondary); }
 .mx-estado { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; font-weight: 700; white-space: nowrap; padding: 0.15rem 0.5rem; border-radius: 999px; }
 .mx-estado.ok { background: var(--success-bg); color: var(--mx-ok); }

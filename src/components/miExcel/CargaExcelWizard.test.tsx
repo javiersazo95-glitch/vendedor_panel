@@ -399,6 +399,38 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     expect(screen.getByRole('button', { name: 'Quitados (1)' })).toBeInTheDocument();
   });
 
+  it('un cambio en la ficha queda "sin confirmar": se explica, se confirma, y Publicar pide confirmarlo antes', async () => {
+    montar({ retomar: 'mi-excel' });
+    fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
+    await screen.findByText(/Revisamos tu inventario:/);
+    const revisionesAntes = llamadas.filter((l) => l.url.includes('excel/validar')).length;
+
+    // Se corrige el nombre desde la ficha de tienda.
+    fireEvent.click(screen.getByRole('button', { name: /Ver Pastilla freno como en tu tienda/ }));
+    const ficha = await screen.findByRole('dialog', { name: 'Así se verá en tu tienda' });
+    fireEvent.click(within(ficha).getByRole('button', { name: 'Cambiar Nombre publicado' }));
+    fireEvent.change(within(ficha).getByLabelText('Nombre publicado'), { target: { value: 'Pastilla freno delantera' } });
+    fireEvent.click(within(ficha).getByRole('button', { name: 'Guardar' }));
+    expect(within(ficha).getByText(/Tus cambios ya quedaron guardados/)).toBeInTheDocument();
+    expect(within(ficha).getByRole('button', { name: /Confirmar cambios/ })).toBeInTheDocument();
+    fireEvent.click(within(ficha).getByRole('button', { name: /Seguir corrigiendo otros/ }));
+
+    // Arriba se explica qué cambió y cómo confirmarlo.
+    const aviso = screen.getByText('Tienes cambios sin confirmar').closest('.mx-cambios-pendientes') as HTMLElement;
+    expect(aviso).toHaveTextContent('Cambiaste 1 dato en 1 repuesto');
+    expect(aviso).toHaveTextContent('Pastilla freno delantera: Nombre publicado');
+    expect(within(aviso).getByRole('button', { name: /Confirmar cambios/ })).toBeInTheDocument();
+
+    // Publicar no se apaga: pide confirmar los cambios primero, los revisa y recién ahí pregunta si publicar.
+    fireEvent.click(screen.getByRole('button', { name: /Publicar 2 repuestos/ }));
+    const antes = await screen.findByRole('dialog', { name: 'Antes de publicar, confirma tus cambios' });
+    expect(antes).toHaveTextContent('Cambiaste 1 dato en 1 repuesto');
+    fireEvent.click(within(antes).getByRole('button', { name: /Confirmar cambios y publicar/ }));
+    expect(await screen.findByRole('dialog', { name: '¿Publicar tu inventario?' })).toBeInTheDocument();
+    expect(llamadas.filter((l) => l.url.includes('excel/validar')).length).toBe(revisionesAntes + 1);
+    expect(screen.getByText('¡Listo! Tus cambios quedaron confirmados.')).toBeInTheDocument();
+  });
+
   it('revisa con el servidor, muestra lista y cuadrícula, publica, sube las fotos y borra lo guardado', async () => {
     const props = montar({ retomar: 'mi-excel' });
     fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
