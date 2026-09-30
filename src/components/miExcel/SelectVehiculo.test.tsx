@@ -35,6 +35,18 @@ describe('Elegir año o motor del vehículo', () => {
     expect(onElegir).toHaveBeenCalledWith({ motor: '' });
   });
 
+  it('siempre es una lista con "Dejar en blanco", aunque falten la marca y el modelo', () => {
+    const onElegir = vi.fn();
+    const { rerender } = render(<SelectVehiculo columna="motor" valor="" etiqueta="Motor" leer={() => ''} versiones={yaris} respaldo={[]} onElegir={onElegir} />);
+    const select = screen.getByRole('combobox', { name: 'Motor' });
+    expect(within(select).getByRole('option', { name: 'Dejar en blanco' })).toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: /Primero elige la marca y el modelo/ })).toBeDisabled();
+
+    rerender(<SelectVehiculo columna="anio_desde" valor="2015" etiqueta="Año desde" leer={leer} versiones={yaris} respaldo={[]} onElegir={onElegir} />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Año desde' }), { target: { value: '' } });
+    expect(onElegir).toHaveBeenCalledWith({ anio_desde: '', anio_hasta: '' });
+  });
+
   it('sin marca y modelo pide elegirlos primero; un modelo sin versiones lo dice', () => {
     const { rerender } = render(<SelectVehiculo columna="anio_desde" valor="" etiqueta="Año" leer={() => ''} versiones={yaris} respaldo={[]} onElegir={() => {}} />);
     expect(screen.getByText(/Primero elige la marca y el modelo/)).toBeInTheDocument();

@@ -1,7 +1,8 @@
 /**
- * El progreso guardado del asistente "Mi propio Excel".
+ * El progreso guardado del asistente de carga con Excel.
  *
- * Todo vive en el servidor (un borrador por vendedor): el estado del asistente como JSON, el
+ * Todo vive en el servidor, un borrador por vendedor y tipo de carga (su propio Excel o la
+ * plantilla de RepuesTop: puede tener uno de cada uno a la vez y retomar cualquiera): el estado del asistente como JSON, el
  * Excel original y SOLO las fotos que ya se asignaron a un repuesto. Las fotos sin asignar no se
  * guardan -una carpeta puede traer miles y subirlas todas costaría tiempo y espacio sin servir de
  * nada-, así que al retomar se le pide al vendedor volver a elegir su carpeta, y se le dice por qué.
@@ -22,7 +23,17 @@ export interface BorradorImagen {
   bytes: number;
 }
 
+/** De qué carga es el progreso: el Excel del vendedor (pasa por "Relaciona") o la plantilla de RepuesTop. */
+export type TipoCarga = 'mi-excel' | 'plantilla';
+
+/** Cómo lo nombra el backend. */
+const TIPO_API: Record<TipoCarga, 'MI_EXCEL' | 'PLANTILLA'> = { 'mi-excel': 'MI_EXCEL', plantilla: 'PLANTILLA' };
+
+/** El tipo de un borrador según el backend; los de antes de que hubiera tipos son de "Mi propio Excel". */
+export const tipoDeBorrador = (b: Pick<BorradorCarga, 'tipo'>): TipoCarga => (b.tipo === 'PLANTILLA' ? 'plantilla' : 'mi-excel');
+
 export interface BorradorCarga {
+  tipo?: 'MI_EXCEL' | 'PLANTILLA';
   estadoJson: string;
   paso: number;
   version: number;
@@ -41,6 +52,8 @@ export type PasoMiExcel = 1 | 2 | 3 | 4;
 /** Lo que se guarda del asistente. `v` permite migrar borradores viejos si el formato cambia. */
 export interface EstadoBorrador {
   v: 1;
+  /** Con la plantilla no hay etapa 2 ("Relaciona"): del paso 1 se pasa al 3. */
+  tipo: TipoCarga;
   paso: PasoMiExcel;
   archivo: {
     nombre: string;
@@ -63,6 +76,11 @@ export interface EstadoBorrador {
   };
   vistaPaso4: 'lista' | 'tarjetas';
   /**
+   * Repuestos (claves de fila) que el vendedor quitó de esta carga en la etapa 4: no se publican y
+   * se pueden volver a incluir. Los borradores de antes no lo traen y se leen sin quitados.
+   */
+  quitados: string[];
+  /**
    * Una publicación que quedó a medias: los productos ya se crearon pero faltaban fotos. Con
    * esto, retomar ofrece terminar de subirlas en vez de volver a publicar.
    */
@@ -71,12 +89,14 @@ export interface EstadoBorrador {
 
 export const ESTADO_VACIO: EstadoBorrador = {
   v: 1,
+  tipo: 'mi-excel',
   paso: 1,
   archivo: null,
   mapping: null,
   opcionalesVacios: [],
   fotos: { asignaciones: {}, origen: null, totalDisponibles: 0 },
   vistaPaso4: 'tarjetas',
+  quitados: [],
   publicacion: null,
 };
 
@@ -144,6 +164,7 @@ export function deserializarBorrador(json: string): EstadoBorrador | null {
     : null;
   return {
     v: 1,
+    tipo: data.tipo === 'plantilla' ? 'plantilla' : 'mi-excel',
     paso,
     archivo,
     mapping,
@@ -154,6 +175,7 @@ export function deserializarBorrador(json: string): EstadoBorrador | null {
       totalDisponibles: Number(fotos.totalDisponibles) || 0,
     },
     vistaPaso4: data.vistaPaso4 === 'lista' ? 'lista' : 'tarjetas',
+    quitados: Array.isArray(data.quitados) ? data.quitados.filter((c): c is string => typeof c === 'string') : [],
     publicacion,
   };
 }
@@ -209,6 +231,9 @@ const sesion = () => {
 const base = (sellerId: string) =>
   `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/borrador-carga`;
 
+/** `?tipo=` del borrador: cada tipo de carga tiene el suyo. */
+const conTipo = (tipo: TipoCarga) => `?tipo=${TIPO_API[tipo]}`;
+
 const mensajeDe = async (r: Response, fallback: string) => {
   try {
     const data = await r.json();
@@ -224,12 +249,26 @@ export function rutaImagenBorrador(imagenId: number): string {
   return `/api/v1/proveedores/${encId(s?.sellerId ?? '')}/inventario/borrador-carga/imagenes/${encId(imagenId)}`;
 }
 
-export async function obtenerBorrador(): Promise<BorradorCarga | null> {
+export async function obtenerBorrador(tipo: TipoCarga): Promise<BorradorCarga | null> {
   const s = sesion();
-  const r = await apiFetch(base(s.sellerId), { headers: { Authorization: `Bearer ${s.token}` } });
+  const r = await apiFetch(`${base(s.sellerId)}${conTipo(tipo)}`, { headers: { Authorization: `Bearer ${s.token}` } });
   if (r.status === 204 || r.status === 404) return null;
   if (!r.ok) throw new Error(await mensajeDe(r, 'No pudimos revisar si tienes un progreso guardado.'));
-  return r.json();
+  return { ...(await r.json()), tipo: TIPO_API[tipo] };
+}
+
+/** Todas las cargas guardadas (una por tipo como mucho), la más reciente primero. */
+export async function listarBorradores(): Promise<BorradorCarga[]> {
+  const s = sesion();
+  const r = await apiFetch(`${base(s.sellerId)}/todos`, { headers: { Authorization: `Bearer ${s.token}` } });
+  // Un backend anterior a los tipos no tiene /todos: sólo puede haber uno de "Mi propio Excel".
+  if (r.status === 404) {
+    const unico = await obtenerBorrador('mi-excel');
+    return unico ? [unico] : [];
+  }
+  if (!r.ok) throw new Error(await mensajeDe(r, 'No pudimos revisar si tienes un progreso guardado.'));
+  const data = await r.json();
+  return Array.isArray(data) ? data : [];
 }
 
 export async function guardarBorrador(
@@ -237,7 +276,7 @@ export async function guardarBorrador(
 ): Promise<{ version: number; updatedAt: string }> {
   const s = sesion();
   // H33: el guardado comparte el tope de 120 peticiones por minuto con todo el panel.
-  const r = await conReintento429(() => apiFetch(base(s.sellerId), {
+  const r = await conReintento429(() => apiFetch(`${base(s.sellerId)}${conTipo(estado.tipo)}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${s.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ estadoJson: serializarBorrador(estado), paso: estado.paso, versionEsperada }),
@@ -256,28 +295,31 @@ export async function guardarBorrador(
   return r.json();
 }
 
-export async function subirArchivoBorrador(archivo: File, sha256: string, recortado: boolean): Promise<BorradorCarga> {
+export async function subirArchivoBorrador(
+  tipo: TipoCarga, archivo: File, sha256: string, recortado: boolean,
+): Promise<BorradorCarga> {
   const s = sesion();
   const form = new FormData();
   form.append('file', archivo);
   form.append('sha256', sha256);
   form.append('recortado', String(recortado));
-  const r = await conReintento429(() => apiFetch(`${base(s.sellerId)}/archivo`, {
+  const r = await conReintento429(() => apiFetch(`${base(s.sellerId)}/archivo${conTipo(tipo)}`, {
     method: 'PUT', headers: { Authorization: `Bearer ${s.token}` }, body: form,
   }, 120000));
   if (!r.ok) throw new Error(await mensajeDe(r, 'No se pudo guardar tu Excel.'));
   return r.json();
 }
 
-export async function descargarArchivoBorrador(nombre: string): Promise<File> {
+export async function descargarArchivoBorrador(tipo: TipoCarga, nombre: string): Promise<File> {
   const s = sesion();
-  const r = await apiFetch(`${base(s.sellerId)}/archivo`, { headers: { Authorization: `Bearer ${s.token}` } }, 120000);
+  const r = await apiFetch(`${base(s.sellerId)}/archivo${conTipo(tipo)}`, { headers: { Authorization: `Bearer ${s.token}` } }, 120000);
   if (!r.ok) throw new Error(await mensajeDe(r, 'No pudimos traer el Excel que guardaste.'));
   const blob = await r.blob();
   return new File([blob], nombre, { type: blob.type || 'application/octet-stream' });
 }
 
 export async function subirImagenBorrador(
+  tipo: TipoCarga,
   imagen: Blob,
   nombreArchivo: string,
   reintento?: OpcionesReintento,
@@ -288,7 +330,7 @@ export async function subirImagenBorrador(
   form.append('nombreArchivo', nombreArchivo);
   // H33: el guardado sube una petición por foto y comparte el tope de 120 por minuto de
   // /api/v1/proveedores/** con todo el panel. Ante un 429 se espera lo que diga Retry-After.
-  const r = await conReintento429(() => apiFetch(`${base(s.sellerId)}/imagenes`, {
+  const r = await conReintento429(() => apiFetch(`${base(s.sellerId)}/imagenes${conTipo(tipo)}`, {
     method: 'POST', headers: { Authorization: `Bearer ${s.token}` }, body: form,
   }, 60000), reintento);
   if (!r.ok) {
@@ -305,9 +347,9 @@ export async function descargarImagenBorrador(imagenId: number): Promise<Blob | 
   return r.ok ? r.blob() : null;
 }
 
-export async function sincronizarImagenesBorrador(nombresAsignados: string[]): Promise<number> {
+export async function sincronizarImagenesBorrador(tipo: TipoCarga, nombresAsignados: string[]): Promise<number> {
   const s = sesion();
-  const r = await apiFetch(`${base(s.sellerId)}/imagenes/sincronizar`, {
+  const r = await apiFetch(`${base(s.sellerId)}/imagenes/sincronizar${conTipo(tipo)}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${s.token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ nombresAsignados }),
@@ -317,9 +359,9 @@ export async function sincronizarImagenesBorrador(nombresAsignados: string[]): P
   return Number(data.eliminadas ?? 0);
 }
 
-export async function eliminarBorrador(): Promise<void> {
+export async function eliminarBorrador(tipo: TipoCarga): Promise<void> {
   const s = sesion();
-  const r = await apiFetch(base(s.sellerId), { method: 'DELETE', headers: { Authorization: `Bearer ${s.token}` } });
+  const r = await apiFetch(`${base(s.sellerId)}${conTipo(tipo)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${s.token}` } });
   if (!r.ok && r.status !== 404) throw new Error(await mensajeDe(r, 'No se pudo descartar tu progreso.'));
 }
 
@@ -330,4 +372,20 @@ export function fechaYHora(iso: string): { fecha: string; hora: string } {
     fecha: d.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     hora: d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }),
   };
+}
+
+/**
+ * Cuándo se guardó una carga, como lo diría una persona: "hoy a las 14:39", "ayer a las 09:15"
+ * o "el 28 de septiembre a las 14:39". Hora de 24 horas, sin "p. m.".
+ */
+export function cuandoSeGuardo(iso: string, ahora = new Date()): string {
+  const d = new Date(iso);
+  const hora = d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const dia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dias = Math.round((dia(ahora) - dia(d)) / 86400000);
+  if (dias === 0) return `hoy a las ${hora}`;
+  if (dias === 1) return `ayer a las ${hora}`;
+  const opciones: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long' };
+  if (d.getFullYear() !== ahora.getFullYear()) opciones.year = 'numeric';
+  return `el ${d.toLocaleDateString('es-CL', opciones)} a las ${hora}`;
 }

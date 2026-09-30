@@ -1,6 +1,7 @@
 /**
- * Guarda el progreso del asistente "Mi propio Excel" en el servidor: a pedido ("Guardar
- * progreso") y solo, unos segundos después del último cambio.
+ * Guarda el progreso del asistente de carga con Excel en el servidor: a pedido ("Guardar
+ * progreso") y solo, unos segundos después del último cambio. Va al borrador del tipo de carga
+ * del estado (`estado.tipo`): su propio Excel y la plantilla de RepuesTop se guardan por separado.
  *
  * Cada guardado hace, en orden:
  *  1. el estado del asistente (JSON), con la versión esperada para no pisar lo que guardó otra
@@ -119,7 +120,7 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
         await Promise.all(faltan.slice(i, i + FOTOS_EN_PARALELO).map(async (nombre) => {
           try {
             const { blob } = await comprimirImagen(enMemoria[nombre], nombre);
-            const guardada = await subirImagenBorrador(blob, nombre);
+            const guardada = await subirImagenBorrador(actualRef.current.estado.tipo, blob, nombre);
             guardadasRef.current = { ...guardadasRef.current, [nombre]: guardada.id };
           } catch (err) {
             if (err instanceof SessionExpiredError) throw err;
@@ -142,7 +143,7 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
     }
     const sobran = Object.keys(guardadasRef.current).filter((n) => !asignadas.includes(n));
     if (sobran.length > 0) {
-      await sincronizarImagenesBorrador(asignadas);
+      await sincronizarImagenesBorrador(actualRef.current.estado.tipo, asignadas);
       const quedan = { ...guardadasRef.current };
       for (const n of sobran) delete quedan[n];
       guardadasRef.current = quedan;
@@ -164,7 +165,7 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
       if (a && shaArchivoRef.current !== a.sha256) {
         const paraSubir = await archivoParaBorrador(a.file, a.aoa, a.nombreHoja);
         if (paraSubir) {
-          await subirArchivoBorrador(paraSubir.archivo, a.sha256, paraSubir.recortado);
+          await subirArchivoBorrador(e.tipo, paraSubir.archivo, a.sha256, paraSubir.recortado);
           shaArchivoRef.current = a.sha256;
         }
       }
@@ -237,17 +238,26 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
     return guardar();
   }, [conflicto, guardar]);
 
-  const descartar = useCallback(async () => {
-    await eliminarBorrador();
+  /**
+   * Deja de seguir el borrador actual sin borrarlo del servidor: p. ej. el vendedor cambió a un
+   * archivo de otro tipo, que se guarda en su propio borrador (el anterior queda para retomarlo).
+   */
+  const olvidar = useCallback(() => {
     versionRef.current = null;
     setJsonGuardado(null);
     shaArchivoRef.current = null;
     guardadasRef.current = {};
+    rechazadasRef.current = new Set();
     setGuardadas({});
     setUltimoGuardado(null);
     setConflicto(null);
     setEstadoGuardado('sin-cambios');
   }, [setJsonGuardado]);
+
+  const descartar = useCallback(async () => {
+    await eliminarBorrador(actualRef.current.estado.tipo);
+    olvidar();
+  }, [olvidar]);
 
   // Guardado automático: unos segundos después del último cambio, y enseguida al cambiar de etapa.
   const pasoAnterior = useRef(estado.paso);
@@ -278,6 +288,7 @@ export function useBorradorCarga({ habilitado, estado, archivo, imagenes, espera
     adoptar,
     marcarComoGuardado,
     resolverConflictoConservando,
+    olvidar,
     descartar,
   };
 }

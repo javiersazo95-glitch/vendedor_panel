@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { FileSpreadsheet, History, PackagePlus, Tag, Wand2 } from 'lucide-react';
+import { ArrowRight, ChevronRight, FileSpreadsheet, History, PackagePlus, Tag, Wand2 } from 'lucide-react';
 import { FullCreationUpload } from './FullCreationUpload';
-import { MiExcelWizard } from './miExcel/MiExcelWizard';
-import { PASOS_MI_EXCEL } from './miExcel/textos';
-import { deserializarBorrador, fechaYHora, obtenerBorrador, type EstadoBorrador } from '../utils/miExcelBorrador';
+import { CargaExcelWizard } from './miExcel/CargaExcelWizard';
+import { TarjetaCargaGuardada } from './miExcel/TarjetaCargaGuardada';
+import {
+  deserializarBorrador, listarBorradores, tipoDeBorrador, type EstadoBorrador, type TipoCarga,
+} from '../utils/miExcelBorrador';
 import type { RegistrarGuardia } from '../utils/guardiaSalida';
 import { ExpressUpload } from './ExpressUpload';
 import { HistorialCargas } from './HistorialCargas';
@@ -21,11 +23,18 @@ import { NOMBRE_EXPRESS } from '../utils/expressPreciosStock';
  * directo a la pantalla que le sirve.
  */
 
-type Camino = 'uno' | 'mi-excel' | 'plantilla' | 'precios';
+type Camino = 'uno' | 'excel' | 'mi-excel' | 'plantilla' | 'precios';
 
 /**
- * El asistente nuevo de "Mi propio Excel" (4 etapas, progreso guardado). Con
- * VITE_MI_EXCEL_V2=false se vuelve al adaptador anterior, por si hubiera que retroceder.
+ * "Cargar mi inventario con Excel": una sola entrada para el Excel propio y la plantilla de
+ * RepuesTop; el asistente reconoce cuál es. Con VITE_CARGA_EXCEL_UNIFICADA=false vuelven las dos
+ * entradas de antes ("Mi propio Excel" y "La plantilla de RepuesTop"), por si hubiera que retroceder.
+ */
+const CARGA_EXCEL_UNIFICADA = import.meta.env.VITE_CARGA_EXCEL_UNIFICADA !== 'false';
+
+/**
+ * Sin la carga unificada: el asistente de "Mi propio Excel" (4 etapas, progreso guardado). Con
+ * VITE_MI_EXCEL_V2=false se vuelve al adaptador anterior.
  */
 const MI_EXCEL_V2 = import.meta.env.VITE_MI_EXCEL_V2 !== 'false';
 
@@ -115,41 +124,79 @@ function UltimasCargas({ onVerHistorial }: { onVerHistorial?: () => void }) {
 }
 
 /**
- * "Tienes una carga guardada": si el vendedor dejó a medias "Mi propio Excel", se le ofrece
- * retomarla desde la misma pregunta, sin tener que recordar por dónde entrar.
+ * "Tienes una carga guardada": si el vendedor dejó a medias una carga con Excel (su propio Excel,
+ * la plantilla de RepuesTop o una de cada una), se le ofrece retomarla desde la misma pregunta.
  */
-function CargaGuardada({ onRetomar }: { onRetomar: () => void }) {
-  const [guardada, setGuardada] = useState<{ updatedAt: string; estado: EstadoBorrador } | null>(null);
+function CargasGuardadas({ onRetomar }: { onRetomar: (tipo: TipoCarga) => void }) {
+  const [guardadas, setGuardadas] = useState<{ updatedAt: string; estado: EstadoBorrador }[]>([]);
   useEffect(() => {
     let vivo = true;
-    obtenerBorrador()
-      .then((b) => {
-        const estado = b?.estadoJson ? deserializarBorrador(b.estadoJson) : null;
-        if (vivo && b && estado?.archivo) setGuardada({ updatedAt: b.updatedAt, estado });
+    listarBorradores()
+      .then((lista) => {
+        const validas = lista
+          .map((b) => {
+            const estado = b.estadoJson ? deserializarBorrador(b.estadoJson) : null;
+            return estado?.archivo ? { updatedAt: b.updatedAt, estado: { ...estado, tipo: tipoDeBorrador(b) } } : null;
+          })
+          .filter((g): g is { updatedAt: string; estado: EstadoBorrador } => g !== null);
+        if (vivo) setGuardadas(validas);
       })
       .catch(() => { /* Sin conexión no se ofrece; el asistente lo vuelve a buscar al entrar. */ });
     return () => { vivo = false; };
   }, []);
-  if (!guardada) return null;
-  const { fecha, hora } = fechaYHora(guardada.updatedAt);
-  const paso = PASOS_MI_EXCEL[guardada.estado.paso - 1];
+  if (guardadas.length === 0) return null;
   return (
-    <section className="carga-guardada" aria-label="Carga guardada">
-      <History size={22} />
-      <div>
-        <strong>Tienes una carga de "Mi propio Excel" guardada</strong>
-        <span>
-          {guardada.estado.archivo?.nombre} · guardada el {fecha} a las {hora} · ibas en el paso {paso.n}: {paso.titulo}
-        </span>
-      </div>
-      <button type="button" className="btn btn-primary btn-primary-blue" onClick={onRetomar}>
-        <History size={16} /> Retomar desde el punto guardado
-      </button>
+    <section className="carga-guardadas" aria-label="Cargas sin terminar">
+      <h4 className="carga-seccion-titulo">
+        <History size={18} /> {guardadas.length === 1 ? 'Tienes una carga sin terminar' : `Tienes ${guardadas.length} cargas sin terminar`}
+      </h4>
+      {guardadas.map(({ updatedAt, estado }) => (
+        <TarjetaCargaGuardada
+          key={estado.tipo}
+          compacta
+          estado={estado}
+          updatedAt={updatedAt}
+          acciones={(
+            <button type="button" className="btn btn-primary btn-primary-blue" onClick={() => onRetomar(estado.tipo)}>
+              Continuar donde quedé <ArrowRight size={18} />
+            </button>
+          )}
+        />
+      ))}
     </section>
   );
 }
 
-const OPCIONES: { camino: Camino; titulo: string; detalle: string; icono: React.ReactNode }[] = [
+type Opcion = {
+  camino: Camino; titulo: string; detalle: string; icono: React.ReactNode;
+  /** Para cuándo sirve, en pocas palabras. */
+  paraQue?: string;
+};
+
+const OPCION_UNO: Opcion = {
+  camino: 'uno',
+  titulo: 'Un repuesto',
+  detalle: 'Lo publicas llenando un formulario, con sus fotos.',
+  icono: <PackagePlus size={28} />,
+  paraQue: 'Para uno o pocos repuestos',
+};
+const OPCION_EXCEL: Opcion = {
+  camino: 'excel',
+  titulo: 'Cargar mi inventario con Excel',
+  detalle: 'Tu propio Excel o la plantilla de RepuesTop. Reconocemos cuál es y te guiamos paso a paso.',
+  icono: <FileSpreadsheet size={28} />,
+  paraQue: 'Para muchos repuestos de una vez',
+};
+const OPCION_PRECIOS: Opcion = {
+  camino: 'precios',
+  titulo: 'Sólo cambiar precios y stock',
+  detalle: 'De repuestos que ya publicaste. No crea productos nuevos.',
+  icono: <Tag size={28} />,
+  paraQue: 'Para actualizar lo que ya publicaste',
+};
+
+/** Las entradas de antes de la carga unificada (VITE_CARGA_EXCEL_UNIFICADA=false). */
+const OPCIONES_SEPARADAS: Opcion[] = [
   {
     camino: 'uno',
     titulo: 'Un repuesto',
@@ -176,6 +223,8 @@ const OPCIONES: { camino: Camino; titulo: string; detalle: string; icono: React.
   },
 ];
 
+const OPCIONES: Opcion[] = CARGA_EXCEL_UNIFICADA ? [OPCION_UNO, OPCION_EXCEL, OPCION_PRECIOS] : OPCIONES_SEPARADAS;
+
 export const CargaInventario: React.FC<CargaInventarioProps> = ({
   isOpen,
   onClose,
@@ -190,7 +239,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   onAnchoCompletoChange,
 }) => {
   const [camino, setCamino] = useState<Camino | null>(null);
-  const [retomarDirecto, setRetomarDirecto] = useState(false);
+  const [retomar, setRetomar] = useState<TipoCarga | null>(null);
 
   if (!isOpen) return null;
 
@@ -204,18 +253,18 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
     );
   }
 
-  const volver = () => { setCamino(null); setRetomarDirecto(false); };
+  const volver = () => { setCamino(null); setRetomar(null); };
 
-  if (camino === 'mi-excel' && MI_EXCEL_V2) {
+  if (camino === 'excel' || (camino === 'mi-excel' && MI_EXCEL_V2)) {
     return (
-      <MiExcelWizard
+      <CargaExcelWizard
         onVolver={volver}
         onClose={onClose}
         onUploadSuccess={onUploadSuccess}
         onBusyChange={onBusyChange}
         onRegistrarGuardia={onRegistrarGuardia}
         onAnchoCompletoChange={onAnchoCompletoChange}
-        retomarDirecto={retomarDirecto}
+        retomar={retomar}
       />
     );
   }
@@ -251,10 +300,12 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   return (
     <div className="bulk-upload-page">
       <div className="bulk-upload-page-content carga-inventario">
+        {(CARGA_EXCEL_UNIFICADA || MI_EXCEL_V2) && (
+          <CargasGuardadas onRetomar={(tipo) => { setRetomar(tipo); setCamino(CARGA_EXCEL_UNIFICADA ? 'excel' : 'mi-excel'); }} />
+        )}
         <h3 className="carga-inventario-titulo">¿Qué tienes?</h3>
         <p className="carga-inventario-sub">Elige lo que más se parece a lo que traes. Siempre puedes volver a esta pregunta.</p>
-        {MI_EXCEL_V2 && <CargaGuardada onRetomar={() => { setRetomarDirecto(true); setCamino('mi-excel'); }} />}
-        <div className="carga-inventario-opciones">
+        <div className={`carga-inventario-opciones ${OPCIONES.length === 3 ? 'tres' : ''}`}>
           {OPCIONES.map((opcion) => (
             <button
               key={opcion.camino}
@@ -267,6 +318,12 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
                 <strong>{opcion.titulo}</strong>
                 <span>{opcion.detalle}</span>
               </span>
+              {opcion.paraQue && (
+                <span className="carga-inventario-pie">
+                  <span className="carga-inventario-para">{opcion.paraQue}</span>
+                  <ChevronRight size={20} aria-hidden="true" />
+                </span>
+              )}
             </button>
           ))}
         </div>

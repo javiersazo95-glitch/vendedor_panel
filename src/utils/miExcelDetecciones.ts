@@ -329,6 +329,55 @@ export interface ContextoDeFila {
   categoria: string;
   marcaVehiculo: string;
   anioDesde: string;
+  /** La fila es universal (sirve para cualquier vehículo): no lleva marca, modelo, años ni motor. */
+  universal?: boolean;
+}
+
+/**
+ * Columnas que sólo aceptan lo que RepuesTop tiene registrado: se completan siempre con una
+ * lista (con la opción de dejarlas en blanco), nunca escribiendo. Un valor escrito a mano que no
+ * está en el catálogo es justamente lo que después no se publica.
+ */
+export const COLUMNAS_DE_CATALOGO = new Set([
+  'categoria', 'subcategoria', 'marca_repuesto', 'tipo_precio', 'condicion', 'compatibilidad_general',
+  'compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'anio_hasta', 'motor', 'requiere_chasis',
+]);
+
+const COLUMNAS_DEL_VEHICULO = new Set(['compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'anio_hasta', 'motor']);
+
+/** Busca en un mapa por nombre sin fijarse en mayúsculas ni espacios ("frenos" = "Frenos"). */
+function porNombre<T>(mapa: Record<string, T>, nombre: string): T | undefined {
+  if (mapa[nombre] !== undefined) return mapa[nombre];
+  const buscado = normalizarParaComparar(nombre);
+  const clave = Object.keys(mapa).find((k) => normalizarParaComparar(k) === buscado);
+  return clave === undefined ? undefined : mapa[clave];
+}
+
+/**
+ * Por qué una columna de catálogo no tiene opciones para esta fila, en palabras del vendedor.
+ * null si sí las tiene (o si la columna no es de catálogo).
+ */
+export function motivoSinOpciones(
+  columna: string,
+  fila: ContextoDeFila,
+  esquema: EsquemaPlantilla,
+  campos: CampoMeta[],
+  modelosDisponibles: Record<string, string[]>,
+): string | null {
+  if (!COLUMNAS_DE_CATALOGO.has(columna)) return null;
+  if (fila.universal && COLUMNAS_DEL_VEHICULO.has(columna)) {
+    return 'Es universal (sirve para cualquier vehículo): déjalo en blanco';
+  }
+  if (opcionesDeCelda(columna, fila, esquema, campos, modelosDisponibles).length > 0) return null;
+  if (columna === 'subcategoria') {
+    return fila.categoria ? `La categoría «${fila.categoria}» no tiene subcategorías: déjalo en blanco` : 'Primero elige la categoría';
+  }
+  if (columna === 'compatibilidad_modelo') {
+    return fila.marcaVehiculo
+      ? `No encontramos modelos de «${fila.marcaVehiculo}» en el catálogo: revisa la marca`
+      : 'Primero elige la marca del vehículo';
+  }
+  return 'No pudimos cargar la lista de RepuesTop: toca «Reintentar» en el aviso de arriba';
 }
 
 /** Los años que se pueden elegir, del más nuevo al más viejo, como en la carga 1:1. */
@@ -345,7 +394,8 @@ export function opcionesDeCelda(
   campos: CampoMeta[],
   modelosDisponibles: Record<string, string[]>,
 ): string[] {
-  if (columna === 'subcategoria') return esquema.catalogos.subcategoriasPorCategoria[fila.categoria] ?? [];
+  if (fila.universal && COLUMNAS_DEL_VEHICULO.has(columna)) return [];
+  if (columna === 'subcategoria') return fila.categoria ? porNombre(esquema.catalogos.subcategoriasPorCategoria, fila.categoria) ?? [] : [];
   if (columna === 'compatibilidad_modelo') return modelosDisponibles[normalizarParaComparar(fila.marcaVehiculo)] ?? [];
   if (columna === 'anio_desde') return ANIOS;
   if (columna === 'anio_hasta') return fila.anioDesde ? ANIOS.filter((a) => a >= fila.anioDesde) : ANIOS;

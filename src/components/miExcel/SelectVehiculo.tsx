@@ -31,8 +31,22 @@ export function SelectVehiculo({ columna, valor, etiqueta, leer, versiones, resp
   const marca = leer('compatibilidad_marca');
   const modelo = leer('compatibilidad_modelo');
 
+  const que = columna === 'motor' ? 'los motores' : 'los años';
+  /** Sin opciones que ofrecer: igual es una lista, con "Dejar en blanco" y el porqué. */
+  const listaVacia = (motivo: string, clase = '') => (
+    <select
+      className={`form-control ${clase}`}
+      value=""
+      aria-label={etiqueta}
+      autoFocus={autoFocus}
+      onChange={(e) => { if (e.target.value === '') onElegir({ [columna]: '' }); }}
+    >
+      <option value="">Dejar en blanco</option>
+      <option value="__motivo__" disabled>{motivo}</option>
+    </select>
+  );
   if (!marca || !modelo) {
-    return <span className="mx-vehiculo-nota">Primero elige la marca y el modelo del vehículo: {columna === 'motor' ? 'los motores' : 'los años'} dependen de ellos.</span>;
+    return listaVacia(`Primero elige la marca y el modelo del vehículo: ${que} dependen de ellos`);
   }
   if (versiones === undefined) {
     return (
@@ -42,7 +56,7 @@ export function SelectVehiculo({ columna, valor, etiqueta, leer, versiones, resp
     );
   }
   if (versiones !== null && versiones.length === 0) {
-    return <span className="mx-vehiculo-nota error">El {marca} {modelo} no tiene versiones en el catálogo de RepuesTop. Cambia el modelo o marca el repuesto como universal.</span>;
+    return listaVacia(`El ${marca} ${modelo} no tiene versiones en el catálogo de RepuesTop: cambia el modelo o márcalo universal`, 'con-error');
   }
 
   const todos = versiones ? rangoCompleto(versiones) : null;
@@ -70,14 +84,16 @@ export function SelectVehiculo({ columna, valor, etiqueta, leer, versiones, resp
       onChange={(e) => {
         const v = e.target.value;
         if (v === ESPECIAL && especial) onElegir(especial.valores);
+        // "Dejar en blanco" en "desde" también vacía el "hasta", que sin "desde" no significa nada.
+        else if (v === '' && columna === 'anio_desde') onElegir({ anio_desde: '', anio_hasta: '' });
         else onElegir({ [columna]: v });
       }}
     >
-      {!valor && <option value="">{columna === 'motor' ? '— Elige el motor —' : '— Elige el año —'}</option>}
+      <option value="">Dejar en blanco</option>
       {especial && <option value={ESPECIAL}>{especial.etiqueta}</option>}
       {fueraDeLista && (
-        <optgroup label="Lo que tenías (no está en el catálogo)">
-          <option value={fueraDeLista}>{fueraDeLista}</option>
+        <optgroup label="Tu dato (no está en el catálogo)">
+          <option value={fueraDeLista} disabled>{fueraDeLista}</option>
         </optgroup>
       )}
       <optgroup label={versiones ? `Según el catálogo para el ${marca} ${modelo}` : 'Todos'}>

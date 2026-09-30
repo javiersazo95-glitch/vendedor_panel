@@ -598,8 +598,9 @@ describe('contrato de columnas de la plantilla oficial', () => {
 
   it('el esquema de respaldo declara la misma lista y la version de la plantilla', () => {
     expect(ESQUEMA_FALLBACK.columnas).toEqual([...PLANTILLA_COLUMNAS]);
-    // Fase 9: 2.2.0 agrega las listas dependientes marca -> modelo; mismas columnas.
-    expect(ESQUEMA_FALLBACK.version).toBe('2.2.0');
+    // Fase 9: 2.2.0 agrega las listas dependientes marca -> modelo; 2.3.0, las de años y motor
+    // según el modelo (carga con Excel unificada). Mismas columnas.
+    expect(ESQUEMA_FALLBACK.version).toBe('2.3.0');
     expect(ESQUEMA_FALLBACK.hojaCompatibilidadesColumnas).toContain('referencia_oem');
   });
 });

@@ -169,3 +169,23 @@ export async function cargarExcel(
   }
   return data;
 }
+
+/**
+ * Descarga la plantilla de RepuesTop (con sus listas para elegir categoría, marca, modelo, años y
+ * motor según el catálogo) y la guarda en el computador del vendedor.
+ */
+export async function descargarPlantilla(sellerId: string, token: string): Promise<void> {
+  const r = await apiFetch(`${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/excel/plantilla`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(await leerMensajeError(r, 'No se pudo descargar la plantilla. Intenta de nuevo en un momento.'));
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const enlace = document.createElement('a');
+  enlace.href = url;
+  enlace.download = `plantilla-inventario-repuestop_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(enlace);
+  enlace.click();
+  document.body.removeChild(enlace);
+  URL.revokeObjectURL(url);
+}

@@ -11,7 +11,7 @@
  * Para inventarios grandes la tabla se pagina y sólo la celda que se está editando monta su lista:
  * con miles de filas, un desplegable con el catálogo completo en cada celda congelaría el navegador.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type WheelEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Download, FolderOpen, ImagePlus, Info, Link2, Search, Sparkles,
   Undo2, Wand2, X,
@@ -23,7 +23,7 @@ import {
 } from '../../utils/plantillaMapping';
 import { validarValorFijo } from '../../utils/plantillaNormalizacion';
 import {
-  opcionesDeCelda, sugerenciasDeCelda, type ContextoDeFila,
+  COLUMNAS_DE_CATALOGO, motivoSinOpciones, opcionesDeCelda, sugerenciasDeCelda, type ContextoDeFila,
 } from '../../utils/miExcelDetecciones';
 import { cierresAlCatalogo, modeloQueSigue,
   problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel, type VersionesDe,
@@ -92,8 +92,12 @@ const etiquetaDe = (campos: CampoMeta[], key: string) => campos.find((c) => c.ke
 /** Una celda que sólo monta su editor cuando el vendedor la toca. */
 function Celda({
   valor, columna, amarilla, problema, mostrarMotivo, activa, onActivar, onCerrar, opciones, sugerencias, etiqueta, opcional, onCambio,
-  vehiculo, onCambioVarios, destello,
+  vehiculo, onCambioVarios, destello, soloLista, sinOpciones,
 }: {
+  /** Dato de catálogo: se elige de una lista (o se deja en blanco), nunca se escribe. */
+  soloLista: boolean;
+  /** Por qué la lista viene vacía, para decirlo dentro de ella. */
+  sinOpciones: () => string | null;
   /** Año o motor: se elige sólo entre lo que el catálogo tiene para el modelo de la fila. */
   vehiculo?: { leer: (col: string) => string; versiones: VersionCatalogo[] | null | undefined; respaldo: string[] };
   onCambioVarios: (valores: Record<string, string>) => void;
@@ -167,10 +171,12 @@ function Celda({
         sugerencias={sugerencias(lista)}
         etiqueta={etiqueta}
         destacada
+        soloLista={soloLista}
+        sinOpciones={soloLista && lista.length === 0 ? sinOpciones() : null}
         onCambio={(v) => { onCambio(v); onCerrar(); }}
       />
       {problema && <span className={`mx-celda-motivo ${problema.severidad}`}><AlertTriangle size={12} /> {problema.mensaje}</span>}
-      {opcional && lista.length === 0 && (
+      {opcional && lista.length === 0 && !soloLista && (
         <button type="button" className="mx-link" onMouseDown={(e) => e.preventDefault()} onClick={() => { onCambio(''); onCerrar(); }}>
           Dejar vacío
         </button>
@@ -340,6 +346,8 @@ export function PasoCompletar(p: Props) {
     problemasPorClave.forEach((lista) => lista.forEach((x) => { if (x.columna) conProblema.add(x.columna); }));
     return tabla.columnas.filter((c) => columnas.includes(c) || conProblema.has(c));
   }, [tabla.columnas, columnas, problemasPorClave]);
+  /** ¿Alguna columna de la tabla tiene datos por completar o con error? (no depende del scroll) */
+  const columnasConPendientes = columnasMostradas.some((c) => (tabla.faltantesPorColumna[c] ?? 0) > 0 || columnasConError.has(c));
   const hayFotos = Object.keys(p.imagenes).length > 0 || Object.keys(p.guardadas).length > 0;
   const conFoto = tabla.filas.filter((f) => (p.asignaciones[f.clave] ?? []).length > 0).length;
 
@@ -390,8 +398,16 @@ export function PasoCompletar(p: Props) {
    * bajar), y un aviso de qué columnas con datos por completar siguen escondidas a la derecha. */
   const marcoRef = useRef<HTMLDivElement>(null);
   const barraRef = useRef<HTMLDivElement>(null);
-  const sincronizando = useRef(false);
-  const [vista, setVista] = useState({ izquierda: false, derecha: false, anchoTotal: 0, pendientesDerecha: [] as string[] });
+  /*
+   * Tabla y barra se siguen una a la otra sin "eco": cuando una mueve a la otra se anota a qué
+   * posición la llevó, y el evento de scroll que eso provoca se ignora. Antes se usaba una bandera
+   * que se apagaba en el cuadro siguiente: con el trackpad, que sigue moviendo la tabla por
+   * inercia, el eco de la barra llegaba después y devolvía la tabla atrás, y la pantalla temblaba.
+   */
+  const ecoEnBarra = useRef<number | null>(null);
+  const ecoEnTabla = useRef<number | null>(null);
+  const medidaPendiente = useRef<number | null>(null);
+  const [vista, setVista] = useState({ izquierda: false, derecha: false, rango: 0, pendientesDerecha: [] as string[] });
   /* H50 (prueba del 30-sep): los títulos son sticky DENTRO de la tabla, pero lo que baja es la página;
    * al bajar se iban y la barra seguía arriba sola. Cuando salen de la vista se muestra una copia de
    * los nombres pegada bajo la barra, con los mismos anchos y movida a lo ancho con la tabla. */
@@ -399,9 +415,6 @@ export function PasoCompletar(p: Props) {
   const pistaRef = useRef<HTMLDivElement | null>(null);
   const [anchos, setAnchos] = useState<number[]>([]);
   const [cabeceraFija, setCabeceraFija] = useState(false);
-  /* H49: mientras se arrastra la barra no se le devuelve la posición de la tabla, que salta de
-   * columna en columna (scroll-snap): sin esto barra y tabla se pelearían. */
-  const arrastrandoBarra = useRef(false);
   const moverPista = () => {
     if (pistaRef.current) pistaRef.current.style.transform = `translateX(${-(marcoRef.current?.scrollLeft ?? 0)}px)`;
   };
@@ -434,40 +447,58 @@ export function PasoCompletar(p: Props) {
       const nueva = {
         izquierda: scrollLeft > 4,
         derecha: scrollLeft + clientWidth < scrollWidth - 4,
-        anchoTotal: scrollWidth,
+        rango: Math.max(0, scrollWidth - clientWidth),
         pendientesDerecha: pendientes,
       };
-      return v.izquierda === nueva.izquierda && v.derecha === nueva.derecha && v.anchoTotal === nueva.anchoTotal
+      return v.izquierda === nueva.izquierda && v.derecha === nueva.derecha && v.rango === nueva.rango
         && v.pendientesDerecha.join() === nueva.pendientesDerecha.join() ? v : nueva;
+    });
+  };
+  /** Medir fuerza al navegador a recalcular la tabla: al desplazar, se hace una vez por cuadro. */
+  const medirEnElProximoCuadro = () => {
+    if (medidaPendiente.current !== null) return;
+    medidaPendiente.current = requestAnimationFrame(() => {
+      medidaPendiente.current = null;
+      medir();
     });
   };
 
   const alDesplazarTabla = () => {
-    if (barraRef.current && !sincronizando.current && !arrastrandoBarra.current) {
-      sincronizando.current = true;
-      barraRef.current.scrollLeft = marcoRef.current?.scrollLeft ?? 0;
-      requestAnimationFrame(() => { sincronizando.current = false; });
+    const marco = marcoRef.current;
+    const barra = barraRef.current;
+    if (!marco) return;
+    moverPista();
+    const esEco = ecoEnTabla.current !== null && Math.abs(marco.scrollLeft - ecoEnTabla.current) < 1;
+    ecoEnTabla.current = null;
+    if (!esEco && barra && Math.abs(barra.scrollLeft - marco.scrollLeft) >= 1) {
+      ecoEnBarra.current = marco.scrollLeft;
+      barra.scrollLeft = marco.scrollLeft;
     }
-    medir();
+    medirEnElProximoCuadro();
   };
   const alDesplazarBarra = () => {
-    if (marcoRef.current && !sincronizando.current) {
-      sincronizando.current = true;
-      marcoRef.current.scrollLeft = barraRef.current?.scrollLeft ?? 0;
-      requestAnimationFrame(() => { sincronizando.current = false; });
+    const marco = marcoRef.current;
+    const barra = barraRef.current;
+    if (!marco || !barra) return;
+    const esEco = ecoEnBarra.current !== null && Math.abs(barra.scrollLeft - ecoEnBarra.current) < 1;
+    ecoEnBarra.current = null;
+    if (!esEco && Math.abs(marco.scrollLeft - barra.scrollLeft) >= 1) {
+      ecoEnTabla.current = barra.scrollLeft;
+      marco.scrollLeft = barra.scrollLeft;
     }
   };
-  /** La barra de abajo no existe (sólo la de arriba): la rueda o el trackpad hacia el lado mueven la tabla igual. */
-  const alGirarRueda = (e: WheelEvent<HTMLDivElement>) => {
-    const marco = marcoRef.current;
-    if (!marco) return;
-    const lateral = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.shiftKey ? e.deltaY : 0;
-    if (lateral) marco.scrollLeft += lateral;
-  };
+  /** Las flechas llevan al comienzo de la columna siguiente o anterior, sin dejarla a medias. */
   const desplazar = (sentido: 1 | -1) => {
     const marco = marcoRef.current;
     if (!marco) return;
-    marco.scrollBy?.({ left: sentido * Math.max(240, marco.clientWidth * 0.7), behavior: 'smooth' });
+    const salto = Math.max(240, marco.clientWidth * 0.7);
+    const inicios = Array.from(marco.querySelectorAll<HTMLTableCellElement>('thead th[data-col]'))
+      .map((th) => Math.max(0, th.offsetLeft - anchoFijas()));
+    const objetivo = marco.scrollLeft + sentido * salto;
+    const destino = sentido > 0
+      ? inicios.filter((x) => x <= objetivo && x > marco.scrollLeft + 1).pop() ?? inicios.find((x) => x > marco.scrollLeft + 1)
+      : inicios.find((x) => x >= objetivo && x < marco.scrollLeft - 1) ?? [...inicios].reverse().find((x) => x < marco.scrollLeft - 1);
+    marco.scrollTo?.({ left: destino ?? (sentido > 0 ? marco.scrollWidth : 0), behavior: 'smooth' });
   };
   const irAColumna = (col: string) => {
     const marco = marcoRef.current;
@@ -480,18 +511,18 @@ export function PasoCompletar(p: Props) {
   const anchoFijas = () => (anchos[0] ?? 58) + (anchos[1] ?? 113);
 
   useEffect(() => {
-    const soltarBarra = () => {
-      if (!arrastrandoBarra.current) return;
-      arrastrandoBarra.current = false;
-      if (barraRef.current && marcoRef.current) barraRef.current.scrollLeft = marcoRef.current.scrollLeft;
+    // Sólo el scroll de la página (hacia abajo) mueve la cabecera flotante: el de la tabla ya se
+    // atiende en alDesplazarTabla. Antes se escuchaban todos los scroll, también los de la tabla.
+    const alDesplazarPagina = (e: Event) => {
+      if (e.target === marcoRef.current || e.target === barraRef.current) return;
+      revisarCabecera();
     };
-    window.addEventListener('pointerup', soltarBarra);
-    window.addEventListener('scroll', revisarCabecera, true);
+    window.addEventListener('scroll', alDesplazarPagina, true);
     window.addEventListener('resize', revisarCabecera);
     return () => {
-      window.removeEventListener('pointerup', soltarBarra);
-      window.removeEventListener('scroll', revisarCabecera, true);
+      window.removeEventListener('scroll', alDesplazarPagina, true);
       window.removeEventListener('resize', revisarCabecera);
+      if (medidaPendiente.current !== null) cancelAnimationFrame(medidaPendiente.current);
     };
     // Sólo usa refs y setState: basta registrarlo una vez.
   }, []);
@@ -695,11 +726,12 @@ export function PasoCompletar(p: Props) {
           ref={barraRef}
           className="mx-barra-h"
           onScroll={alDesplazarBarra}
-          onPointerDown={() => { arrastrandoBarra.current = true; }}
           aria-hidden
           style={{ visibility: vista.izquierda || vista.derecha ? 'visible' : 'hidden' }}
         >
-          <div style={{ width: vista.anchoTotal || '100%', height: 1 }} />
+          {/* Mismo recorrido que la tabla: la barra es más angosta, así que su contenido mide su
+              propio ancho más lo que la tabla se puede desplazar. */}
+          <div style={{ width: `calc(100% + ${vista.rango}px)`, height: 1 }} />
         </div>
         <button type="button" className="mx-icono-btn" onClick={() => desplazar(1)} disabled={!vista.derecha} aria-label="Ver las columnas de la derecha" title="Columnas de la derecha">
           <ChevronRight size={18} />
@@ -722,12 +754,19 @@ export function PasoCompletar(p: Props) {
           </div>
         )}
       </div>
-      {vista.pendientesDerecha.length > 0 && (
-        <div className="mx-alerta aviso mx-pendientes-derecha" role="status">
+      {/* Mientras la tabla tenga columnas por completar, el aviso guarda su lugar aunque esté
+          vacío: si apareciera y desapareciera al desplazarse, empujaría la tabla y la haría saltar. */}
+      {columnasConPendientes && (
+        <div
+          className="mx-alerta aviso mx-pendientes-derecha"
+          role="status"
+          style={{ visibility: vista.pendientesDerecha.length > 0 ? 'visible' : 'hidden' }}
+          aria-hidden={vista.pendientesDerecha.length === 0 || undefined}
+        >
           <ArrowRight size={16} />
           <span>
             <b>Hay más columnas a la derecha con datos por completar:</b>{' '}
-            {vista.pendientesDerecha.map((c, i) => (
+            {(vista.pendientesDerecha.length > 0 ? vista.pendientesDerecha : ['']).map((c, i) => c && (
               <span key={c}>
                 {i > 0 && ', '}
                 <button type="button" className="mx-link" onClick={() => irAColumna(c)}>{etiquetaDe(campos, c)}</button>
@@ -742,7 +781,7 @@ export function PasoCompletar(p: Props) {
         className={`mx-tabla-marco ${vista.izquierda ? 'con-izquierda' : ''} ${vista.derecha ? 'con-derecha' : ''}`}
         style={{ '--mx-fijas': `${anchoFijas()}px` } as CSSProperties}
       >
-      <div ref={marcoRef} className="mx-tabla-wrap" role="region" aria-label="Tabla de tus repuestos" tabIndex={0} onScroll={alDesplazarTabla} onWheel={alGirarRueda}>
+      <div ref={marcoRef} className="mx-tabla-wrap" role="region" aria-label="Tabla de tus repuestos" tabIndex={0} onScroll={alDesplazarTabla}>
         <table className="mx-tabla">
           <thead>
             <tr>
@@ -770,7 +809,10 @@ export function PasoCompletar(p: Props) {
           <tbody>
             {filasPagina.map((fila) => {
               const leer = leerDe(fila);
-              const contexto: ContextoDeFila = { categoria: leer('categoria'), marcaVehiculo: leer('compatibilidad_marca'), anioDesde: leer('anio_desde') };
+              const esUniversalFila = ['SI', 'SÍ', 'TRUE', '1', 'X'].includes(leer('compatibilidad_general').toUpperCase());
+              const contexto: ContextoDeFila = {
+                categoria: leer('categoria'), marcaVehiculo: leer('compatibilidad_marca'), anioDesde: leer('anio_desde'), universal: esUniversalFila,
+              };
               const listaProblemas = problemasPorClave.get(fila.clave) ?? [];
               // Si un dato tiene un error y un aviso, se muestra el error: es el que impide publicar.
               const problemas = new Map<string, ProblemaFila>();
@@ -781,7 +823,7 @@ export function PasoCompletar(p: Props) {
               }
               const conError = tieneError(fila);
               const enFoco = foco === fila.clave;
-              const esUniversal = ['SI', 'SÍ', 'TRUE', '1', 'X'].includes(leer('compatibilidad_general').toUpperCase());
+              const esUniversal = esUniversalFila;
               const fotos = p.asignaciones[fila.clave] ?? [];
               return (
                 <tr key={fila.clave} id={`mx-fila-${fila.clave}`} className={`${conError ? 'con-error' : ''} ${enFoco ? 'mx-fila-foco' : ''}`}>
@@ -844,6 +886,8 @@ export function PasoCompletar(p: Props) {
                           destello={destello?.clave === fila.clave && destello.columna === c}
                           onCerrar={() => setActiva((a) => (a?.clave === fila.clave && a.columna === c ? null : a))}
                           opciones={() => opcionesDeCelda(c, contexto, p.esquema, campos, p.modelosDisponibles)}
+                          soloLista={COLUMNAS_DE_CATALOGO.has(c)}
+                          sinOpciones={() => motivoSinOpciones(c, contexto, p.esquema, campos, p.modelosDisponibles)}
                           sugerencias={(lista) => sugerenciasDeCelda(valor, lista)}
                           etiqueta={`${campo?.label ?? c} de la fila ${fila.numeroFila}`}
                           opcional={campo ? !requiereValorEnPanel(campo, p.mapping) : true}

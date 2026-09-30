@@ -69,6 +69,36 @@ describe('los hooks de la carga masiva bajo StrictMode', () => {
     expect(result.current.esquema.version).toBe(ESQUEMA_FALLBACK.version);
   });
 
+  it('si el primer pedido falla se reintenta solo, y las listas llegan igual', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => esquemaDelBackend });
+
+    const { result } = renderHook(() => useEsquemaPlantilla(true), { wrapper: StrictMode });
+
+    await waitFor(() => expect(result.current.usandoRespaldo).toBe(false), { timeout: 4000 });
+    expect(result.current.esquema.catalogos.categorias).toEqual(['Frenos', 'Suspensión']);
+    expect(result.current.fallo).toBe(false);
+  });
+
+  it('si nunca llega lo avisa, y "reintentar" lo vuelve a pedir', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
+      const { result } = renderHook(() => useEsquemaPlantilla(true));
+      await vi.advanceTimersByTimeAsync(9000);
+      await waitFor(() => expect(result.current.fallo).toBe(true));
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => esquemaDelBackend });
+      result.current.reintentar();
+      await waitFor(() => expect(result.current.usandoRespaldo).toBe(false));
+      expect(result.current.fallo).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sin la carga masiva abierta no se pide nada', () => {
     renderHook(() => useEsquemaPlantilla(false), { wrapper: StrictMode });
     expect(fetchMock).not.toHaveBeenCalled();

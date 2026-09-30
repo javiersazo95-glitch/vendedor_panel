@@ -1,19 +1,21 @@
 /**
- * "Mi propio Excel": el asistente de cuatro etapas para cargar el inventario desde el Excel que el
- * vendedor ya usa.
+ * "Cargar mi inventario con Excel": el asistente para cargar el inventario desde un Excel, sea el
+ * que el vendedor ya usa o la plantilla de RepuesTop. El panel reconoce cuál es al subirlo.
  *
  *   1. Sube tu archivo   — el Excel y, si las tiene, la carpeta con las fotos.
- *   2. Relaciona         — qué columna de su Excel trae cada dato de RepuesTop.
- *   3. Completa          — la tabla con todos sus repuestos; lo amarillo falta por completar.
+ *   2. Relaciona         — qué columna de su Excel trae cada dato de RepuesTop. Con la plantilla
+ *                          no hay nada que relacionar y esta etapa se salta.
+ *   3. Completa/Corrige  — la tabla con todos sus repuestos; lo amarillo falta por completar.
  *   4. Revisa y publica  — cómo quedará cada publicación (lista o cuadrícula) y el botón de publicar.
  *
  * El progreso se guarda solo en la cuenta del vendedor (y con "Guardar progreso"), así que puede
- * salir y retomar otro día. Salir con cambios sin guardar pregunta antes.
+ * salir y retomar otro día; una carga de cada tipo a la vez. Salir con cambios sin guardar
+ * pregunta antes.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, Check, CheckCircle2, CloudOff, Download, FileArchive, FolderOpen, History,
-  Loader2, RotateCcw, Save, Trash2, Wand2, XCircle,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, CloudOff, Download, FileArchive, FilePlus, FolderOpen, History,
+  Loader2, Save, Trash2, Wand2, XCircle,
 } from 'lucide-react';
 import './miExcel.css';
 import {
@@ -36,11 +38,12 @@ import { useEsquemaPlantilla } from '../../utils/plantillaEsquema';
 import { mapeoParaFirma, useMapeosGuardados } from '../../utils/plantillaMapeos';
 import { excedeTamanoMaximoDatos, mensajeArchivoDemasiadoGrande, MENSAJE_EXCEL_INVALIDO, pareceExcelValido } from '../../utils/fileValidation';
 import {
-  autoDerivado, conArreglosPropuestos, detectar, marcasDelArchivo,
+  autoDerivado, COLUMNAS_DE_CATALOGO, conArreglosPropuestos, detectar, marcasDelArchivo,
 } from '../../utils/miExcelDetecciones';
 import {
   aplicarATodasVacias, aplicarParche, camposACompletar, type RevisionServidorFilas, columnasVigiladas, columnasVisibles, construirTabla, transformar,
 } from '../../utils/miExcelTabla';
+import { compatibilidadesDePlantilla, detectarPlantilla, mapeoDePlantilla, sinFilaDeEjemplo } from '../../utils/detectarPlantilla';
 import { useModelosVehiculo } from '../../utils/useModelosVehiculo';
 import { useVersionesCatalogo } from '../../utils/useVersionesCatalogo';
 import { rangoCompleto } from '../../utils/catalogoVersiones';
@@ -53,7 +56,8 @@ import { cargarExcel, validarExcel, type FilaResultado } from '../../utils/carga
 import { construirExcelSoloValidos } from '../../utils/excelSoloValidos';
 import {
   deserializarBorrador, descargarArchivoBorrador, descargarImagenBorrador, eliminarBorrador, fechaYHora, fotosAsignadas,
-  huellaArchivo, obtenerBorrador, type BorradorCarga, type EstadoBorrador, type PasoMiExcel,
+  huellaArchivo, listarBorradores, obtenerBorrador, tipoDeBorrador,
+  type BorradorCarga, type EstadoBorrador, type PasoMiExcel, type TipoCarga,
 } from '../../utils/miExcelBorrador';
 import { useBorradorCarga } from '../../utils/useBorradorCarga';
 import { useGuardiaDeSalida, type RegistrarGuardia } from '../../utils/guardiaSalida';
@@ -62,11 +66,12 @@ import { getStoredSession } from '../../utils/session';
 import { sanitizeAoaForExport } from '../../utils/xlsxSafety';
 import { DialogoGuardarCambios } from '../DialogoGuardarCambios';
 import { Modal } from './comunes';
-import { PASOS_MI_EXCEL, plural } from './textos';
+import { NOMBRE_TIPO, pasosDe, pasoVisible, plural } from './textos';
 import { PasoSubir } from './PasoSubir';
 import { PasoRelacionar } from './PasoRelacionar';
 import { PasoCompletar, type CambioMasivo } from './PasoCompletar';
 import { PasoVistaPrevia, type RevisionServidor } from './PasoVistaPrevia';
+import { TarjetaCargaGuardada } from './TarjetaCargaGuardada';
 
 interface Props {
   onVolver: () => void;
@@ -75,15 +80,20 @@ interface Props {
   onBusyChange?: (ocupado: boolean) => void;
   onRegistrarGuardia?: RegistrarGuardia;
   onAnchoCompletoChange?: (activo: boolean) => void;
-  /** Se entró por "Retomar desde el punto guardado": se retoma sin preguntar. */
-  retomarDirecto?: boolean;
+  /** Se entró por "Retomar" de una carga guardada: se retoma esa sin preguntar. */
+  retomar?: TipoCarga | null;
 }
+
+/** Una carga guardada, lista para ofrecerla. */
+interface Guardada { borrador: BorradorCarga; estado: EstadoBorrador }
 
 type Fase = 'buscando' | 'retomar' | 'cargando' | 'trabajo' | 'publicando' | 'publicado';
 
 interface ResultadoPublicacion {
   publicados: number;
   noPublicados: { fila: number; sku: string; nombre: string; motivos: string[] }[];
+  /** Los que el vendedor quitó de la carga en la etapa 4: no se publicaron porque así lo quiso. */
+  quitados: number;
   fotos: FotoUploadResultado[];
   archivoRepetidoEl: string | null;
 }
@@ -101,22 +111,30 @@ function haceCuanto(iso: string | null, ahora: number): string {
   return `el ${fecha} a las ${hora}`;
 }
 
-export function MiExcelWizard({
-  onVolver, onClose, onUploadSuccess, onBusyChange, onRegistrarGuardia, onAnchoCompletoChange, retomarDirecto = false,
+export function CargaExcelWizard({
+  onVolver, onClose, onUploadSuccess, onBusyChange, onRegistrarGuardia, onAnchoCompletoChange, retomar: retomarTipo = null,
 }: Props) {
-  const { esquema } = useEsquemaPlantilla(true);
+  const { esquema, fallo: listasCaidas, reintentar: reintentarListas } = useEsquemaPlantilla(true);
   const { mapeos, guardar: guardarMapeo } = useMapeosGuardados(true);
   const campos = useMemo(() => camposDesdeEsquema(esquema), [esquema]);
 
   const [fase, setFase] = useState<Fase>('buscando');
-  const [borradorEncontrado, setBorradorEncontrado] = useState<{ borrador: BorradorCarga; estado: EstadoBorrador } | null>(null);
+  /** Las cargas guardadas al entrar (una por tipo como mucho). */
+  const [guardadas, setGuardadas] = useState<Guardada[]>([]);
   const [errorRetomar, setErrorRetomar] = useState<string | null>(null);
   const [pedirMismoArchivo, setPedirMismoArchivo] = useState<{ borrador: BorradorCarga; estado: EstadoBorrador } | null>(null);
-  const [confirmarDescarte, setConfirmarDescarte] = useState<'retomar' | 'boton' | null>(null);
+  /** "retomar": descartar una de las cargas guardadas al entrar; "boton": la actual. */
+  const [confirmarDescarte, setConfirmarDescarte] = useState<{ desde: 'retomar'; tipo: TipoCarga } | { desde: 'boton' } | null>(null);
+  /** El archivo nuevo es de un tipo que ya tiene una carga guardada: se pregunta antes de reemplazarla. */
+  const [avisoReemplazo, setAvisoReemplazo] = useState<Guardada | null>(null);
   const [dialogoFotos, setDialogoFotos] = useState<{ guardadas: number; total: number } | null>(null);
   const [salirConfirmar, setSalirConfirmar] = useState(false);
 
   const [paso, setPaso] = useState<PasoMiExcel>(1);
+  /** Qué es el archivo: se sabe al leerlo. Con la plantilla no hay etapa 2. */
+  const [tipo, setTipo] = useState<TipoCarga | null>(null);
+  const [versionPlantilla, setVersionPlantilla] = useState<string | null>(null);
+  const [filasEjemploQuitadas, setFilasEjemploQuitadas] = useState(0);
   const [archivo, setArchivo] = useState<{ file: File; sha256: string } | null>(null);
   const [hojas, setHojas] = useState<HojaUsuario[]>([]);
   const [hojaIndex, setHojaIndex] = useState(0);
@@ -142,6 +160,8 @@ export function MiExcelWizard({
   const [descargandoEnlaces, setDescargandoEnlaces] = useState<{ hechas: number; total: number } | null>(null);
 
   const [vista, setVista] = useState<'lista' | 'tarjetas'>('tarjetas');
+  /** Repuestos que el vendedor quitó de la carga en la etapa 4 (claves de fila). */
+  const [quitados, setQuitados] = useState<string[]>([]);
   const [revision, setRevision] = useState<RevisionServidor>(REVISION_VACIA);
   const revisadoRef = useRef<{ firma: string; file: File; claves: string[]; filas: FilaResultado[] } | null>(null);
   /** El mapeo con que se hizo la última revisión: si cambió, la revisión quedó vieja. */
@@ -192,8 +212,13 @@ export function MiExcelWizard({
       : null),
     [transformacion, mapping, campos, esquema, modelosDisponibles, columnasACompletar, opcionalesVacios],
   );
+  // Además de lo obligatorio y lo que ya trae datos, siempre se ven las columnas que se eligen de
+  // una lista de RepuesTop (subcategoría, año hasta, motor, condición…): aunque vengan vacías en
+  // todo el archivo, el vendedor tiene que poder completarlas en la tabla.
   const columnasTabla = useMemo(
-    () => (tabla && mapping ? columnasVisibles(tabla, columnasVigiladas(campos, mapping, columnasACompletar)) : []),
+    () => (tabla && mapping
+      ? columnasVisibles(tabla, new Set([...columnasVigiladas(campos, mapping, columnasACompletar), ...COLUMNAS_DE_CATALOGO]))
+      : []),
     [tabla, mapping, campos, columnasACompletar],
   );
 
@@ -218,6 +243,7 @@ export function MiExcelWizard({
   const hoja = hojas[hojaIndex];
   const estadoBorrador: EstadoBorrador = useMemo(() => ({
     v: 1,
+    tipo: tipo ?? 'mi-excel',
     paso,
     archivo: archivo ? {
       nombre: archivo.file.name, sha256: archivo.sha256, hojaIndex, filaEncabezados, recortado: false, filas: userRows.length,
@@ -226,11 +252,13 @@ export function MiExcelWizard({
     opcionalesVacios,
     fotos: { asignaciones, origen: origenFotos, totalDisponibles: totalFotos },
     vistaPaso4: vista,
+    quitados,
     publicacion: publicacionPendiente,
-  }), [paso, archivo, hojaIndex, filaEncabezados, userRows.length, mapping, opcionalesVacios, asignaciones, origenFotos, totalFotos, vista, publicacionPendiente]);
+  }), [tipo, paso, archivo, hojaIndex, filaEncabezados, userRows.length, mapping, opcionalesVacios, asignaciones, origenFotos, totalFotos, vista, quitados, publicacionPendiente]);
 
   const borrador = useBorradorCarga({
-    habilitado: (fase === 'trabajo' || fase === 'publicando') && !!archivo && !!mapping,
+    // Mientras se pregunta si reemplazar la carga guardada de ese tipo, no se guarda encima.
+    habilitado: (fase === 'trabajo' || fase === 'publicando') && !!archivo && !!mapping && !!tipo && !avisoReemplazo,
     estado: estadoBorrador,
     archivo: archivo && hoja ? { file: archivo.file, sha256: archivo.sha256, aoa: hoja.aoa, nombreHoja: hoja.nombre } : null,
     imagenes,
@@ -253,14 +281,15 @@ export function MiExcelWizard({
 
   // El chat de soporte adjunta en qué etapa va el vendedor.
   useEffect(() => {
+    const visible = pasoVisible(tipo ?? 'mi-excel', paso);
     publicarContextoSoporte({
-      flujo: 'mi-excel',
-      paso,
-      pasoTitulo: PASOS_MI_EXCEL[paso - 1].titulo,
+      flujo: tipo ?? 'mi-excel',
+      paso: visible.numero,
+      pasoTitulo: visible.titulo,
       archivoNombre: archivo?.file.name,
       filas: archivo ? userRows.length : undefined,
     });
-  }, [paso, archivo, userRows.length]);
+  }, [tipo, paso, archivo, userRows.length]);
   useEffect(() => () => publicarContextoSoporte(null), []);
 
   useEffect(() => {
@@ -270,9 +299,30 @@ export function MiExcelWizard({
 
   /* --------------------------- Leer el archivo --------------------------- */
 
-  const aplicarSeleccion = useCallback((libro: HojaUsuario[], indice: number, fila: number, mappingPrevio?: Mapping | null) => {
+  const aplicarSeleccion = useCallback((
+    libro: HojaUsuario[], indice: number, fila: number, mappingPrevio?: Mapping | null, tipoCarga: TipoCarga = 'mi-excel',
+  ) => {
     const h = libro[indice];
-    const { cols, rows, filasOriginales: originales } = columnasDeHoja(h?.aoa ?? [], fila);
+    const leida = columnasDeHoja(h?.aoa ?? [], fila);
+    const { cols } = leida;
+    if (tipoCarga === 'plantilla') {
+      // La plantilla: sus columnas ya son las de RepuesTop y la fila de ejemplo no se carga.
+      const { rows, filasOriginales: originales, quitadas } = sinFilaDeEjemplo(cols, leida.rows, leida.filasOriginales);
+      const base = mapeoDePlantilla(cols, campos);
+      setUserCols(cols);
+      setUserRows(rows);
+      setFilasOriginales(originales);
+      setFilasEjemploQuitadas(quitadas);
+      setMapping(mappingPrevio
+        ? { ...base, parches: mappingPrevio.parches, compatibilidadesExtra: mappingPrevio.compatibilidadesExtra, compatibilidadesQuitadas: mappingPrevio.compatibilidadesQuitadas, defaults: mappingPrevio.defaults ?? {}, completar: mappingPrevio.completar }
+        : { ...base, compatibilidadesExtra: compatibilidadesDePlantilla(libro) });
+      setReutilizado(false);
+      setHojaIndex(indice);
+      setFilaEncabezados(fila);
+      return;
+    }
+    const { rows, filasOriginales: originales } = leida;
+    setFilasEjemploQuitadas(0);
     const firma = cols.length ? headerSignature(cols) : '';
     const guardado = mappingPrevio ?? (firma ? mapeoParaFirma(mapeos, firma) : null);
     const reconciliado = guardado ? reconcileMapping(guardado, cols, campos) : autoDetectMapping(cols, campos);
@@ -308,12 +358,31 @@ export function MiExcelWizard({
     try {
       const libro = await leerArchivo(file);
       if (!libro) return;
-      const indice = elegirHojaInicial(libro);
-      setHojas(libro);
-      aplicarSeleccion(libro, indice, detectarFilaEncabezados(libro[indice].aoa));
+      const plantilla = detectarPlantilla(libro, esquema);
+      const nuevoTipo: TipoCarga = plantilla ? 'plantilla' : 'mi-excel';
+      // Si ya se venía guardando esta misma carga, el archivo nuevo la reemplaza. Si no, puede
+      // haber una carga guardada de ese tipo (de otro día): se pregunta antes de pisarla.
+      const siguiendoEsta = tipo === nuevoTipo && borrador.ultimoGuardado !== null;
+      if (tipo && tipo !== nuevoTipo) borrador.olvidar();
+      if (!siguiendoEsta) {
+        const previa = await obtenerBorrador(nuevoTipo).catch(() => null);
+        const estadoPrevio = previa ? deserializarBorrador(previa.estadoJson) : null;
+        if (previa && estadoPrevio?.archivo) setAvisoReemplazo({ borrador: previa, estado: estadoPrevio });
+      }
+      setTipo(nuevoTipo);
+      setVersionPlantilla(plantilla?.version ?? null);
+      if (plantilla) {
+        setHojas(libro);
+        aplicarSeleccion(libro, plantilla.hojaIndex, 0, null, 'plantilla');
+      } else {
+        const indice = elegirHojaInicial(libro);
+        setHojas(libro);
+        aplicarSeleccion(libro, indice, detectarFilaEncabezados(libro[indice].aoa));
+      }
       setArchivo({ file, sha256: await huellaArchivo(file) });
       setAsignaciones({});
       setOpcionalesVacios([]);
+      setQuitados([]);
       setRevision(REVISION_VACIA);
       setRevisionFilas(null);
     } catch (err) {
@@ -325,11 +394,14 @@ export function MiExcelWizard({
 
   const quitarArchivo = () => {
     setArchivo(null);
+    setVersionPlantilla(null);
+    setFilasEjemploQuitadas(0);
     setHojas([]);
     setUserCols([]);
     setUserRows([]);
     setMapping(null);
     setAsignaciones({});
+    setQuitados([]);
     setErrorArchivo(null);
   };
 
@@ -605,15 +677,19 @@ export function MiExcelWizard({
       // ya trae, por ejemplo, el precio "15990,5" como el entero sugerido, así que el servidor lo
       // daba por bueno y se publicaba a $15.991 aunque la pantalla decía "No se publicará".
       const retenidoEnPanel = (f: FilaResultado) => retenidos[revisado.claves[f.fila - 2]] !== undefined;
+      // Los que el vendedor quitó de la carga no se suben ni cuentan como "tenían algo por corregir".
+      const sinQuitar = new Set(quitados);
+      const quitado = (f: FilaResultado) => sinQuitar.has(revisado.claves[f.fila - 2]);
       const excluidas = revisado.filas
-        .filter((f) => f.estado === 'ERROR' || retenidoEnPanel(f))
+        .filter((f) => !quitado(f) && (f.estado === 'ERROR' || retenidoEnPanel(f)))
         .map((f) => (f.estado === 'ERROR' ? f : { ...f, estado: 'ERROR' as const, mensajes: retenidos[revisado.claves[f.fila - 2]] ?? [] }));
-      const aSubir = revisado.filas.filter((f) => f.estado !== 'ERROR' && !retenidoEnPanel(f));
-      const archivoASubir = excluidas.length === 0 ? revisado.file : await construirExcelSoloValidos(revisado.file, aSubir.map((f) => f.fila));
+      const aSubir = revisado.filas.filter((f) => f.estado !== 'ERROR' && !retenidoEnPanel(f) && !quitado(f));
+      const completo = aSubir.length === revisado.filas.length;
+      const archivoASubir = completo ? revisado.file : await construirExcelSoloValidos(revisado.file, aSubir.map((f) => f.fila));
       const data = await cargarExcel(session.sellerId, session.token, archivoASubir, (hechas, total, mensaje) => {
         setProgreso({ texto: mensaje ?? `Publicando tus repuestos… ${hechas.toLocaleString('es-CL')} de ${total.toLocaleString('es-CL')}`, hechas, total });
       });
-      const filas = excluidas.length === 0 ? data.filas : data.filas.map((f, i) => ({ ...f, fila: aSubir[i]?.fila ?? f.fila }));
+      const filas = completo ? data.filas : data.filas.map((f, i) => ({ ...f, fila: aSubir[i]?.fila ?? f.fila }));
       const productoPorClave: Record<string, number> = {};
       const skuPorClave: Record<string, string> = {};
       for (const f of filas) {
@@ -628,7 +704,8 @@ export function MiExcelWizard({
         return { fila: info?.numero ?? f.fila, sku: f.sku, nombre: info?.nombre ?? '', motivos: f.mensajes };
       });
       const publicados = Object.keys(productoPorClave).length;
-      if (userCols.length && mapping) guardarMapeo(headerSignature(userCols), mapping, archivo?.file.name);
+      // La relación de columnas se recuerda para el próximo Excel propio; la de la plantilla es fija.
+      if (tipo === 'mi-excel' && userCols.length && mapping) guardarMapeo(headerSignature(userCols), mapping, archivo?.file.name);
       if (publicados > 0) onUploadSuccess();
 
       const pendiente = { etapa: 'fotos' as const, productoPorClave, skuPorClave };
@@ -636,7 +713,9 @@ export function MiExcelWizard({
       // Si se corta la luz subiendo las fotos, retomar ofrece terminarlas en vez de volver a publicar.
       await borrador.guardarConEstado({ ...estadoBorrador, publicacion: pendiente });
       const fotos = await subirFotosPublicadas(productoPorClave, skuPorClave);
-      await terminarPublicacion(fotos, { publicados, noPublicados, archivoRepetidoEl: data.archivoRepetido ? data.archivoYaCargadoEl ?? '' : null });
+      await terminarPublicacion(fotos, {
+        publicados, noPublicados, quitados: revisado.filas.filter(quitado).length, archivoRepetidoEl: data.archivoRepetido ? data.archivoYaCargadoEl ?? '' : null,
+      });
       if (fotos.some((f) => f.ok)) onUploadSuccess();
     } catch (err) {
       setProgreso(null);
@@ -650,7 +729,7 @@ export function MiExcelWizard({
     setFase('publicando');
     try {
       const fotos = await subirFotosPublicadas(publicacionPendiente.productoPorClave, publicacionPendiente.skuPorClave);
-      await terminarPublicacion(fotos, { publicados: Object.keys(publicacionPendiente.productoPorClave).length, noPublicados: [], archivoRepetidoEl: null });
+      await terminarPublicacion(fotos, { publicados: Object.keys(publicacionPendiente.productoPorClave).length, noPublicados: [], quitados: 0, archivoRepetidoEl: null });
       if (fotos.some((f) => f.ok)) onUploadSuccess();
     } catch (err) {
       setProgreso(null);
@@ -663,8 +742,11 @@ export function MiExcelWizard({
 
   const reiniciar = () => {
     quitarArchivo();
+    setTipo(null);
+    setAvisoReemplazo(null);
     setPaso(1);
     setOpcionalesVacios([]);
+    setQuitados([]);
     setImagenes({});
     setOrigenFotos(null);
     setNombreZip(null);
@@ -682,14 +764,18 @@ export function MiExcelWizard({
     const libro = await leerLibro(file);
     const indice = b.archivoRecortado ? 0 : Math.min(e.archivo?.hojaIndex ?? 0, libro.length - 1);
     setHojas(libro);
-    aplicarSeleccion(libro, indice, e.archivo?.filaEncabezados ?? detectarFilaEncabezados(libro[indice].aoa), e.mapping);
+    aplicarSeleccion(libro, indice, e.archivo?.filaEncabezados ?? detectarFilaEncabezados(libro[indice].aoa), e.mapping, e.tipo);
     setArchivo({ file, sha256: b.archivoSha256 ?? e.archivo?.sha256 ?? await huellaArchivo(file) });
-    setPaso(e.paso);
+    setTipo(e.tipo);
+    setVersionPlantilla(e.tipo === 'plantilla' ? detectarPlantilla(libro, esquema)?.version ?? null : null);
+    // La plantilla no tiene etapa 2.
+    setPaso(e.tipo === 'plantilla' && e.paso === 2 ? 3 : e.paso);
     setOpcionalesVacios(e.opcionalesVacios);
     setAsignaciones(e.fotos.asignaciones);
     setOrigenFotos(e.fotos.origen);
     setTotalFotos(e.fotos.totalDisponibles);
     setVista(e.vistaPaso4);
+    setQuitados(e.quitados);
     setPublicacionPendiente(e.publicacion);
     borrador.adoptar(b, e);
     const asignadas = fotosAsignadas(e.fotos.asignaciones).length;
@@ -706,7 +792,7 @@ export function MiExcelWizard({
         setFase('trabajo');
         return;
       }
-      await hidratar(b, e, await descargarArchivoBorrador(b.archivoNombre ?? e.archivo?.nombre ?? 'mi-inventario.xlsx'));
+      await hidratar(b, e, await descargarArchivoBorrador(e.tipo, b.archivoNombre ?? e.archivo?.nombre ?? 'mi-inventario.xlsx'));
     } catch (err) {
       setErrorRetomar(err instanceof Error ? err.message : 'No pudimos retomar tu progreso.');
       setFase('retomar');
@@ -737,33 +823,55 @@ export function MiExcelWizard({
   useEffect(() => {
     if (buscadoRef.current) return;
     buscadoRef.current = true;
-    obtenerBorrador()
-      .then((b) => {
-        const e = b ? deserializarBorrador(b.estadoJson) : null;
-        if (!b || !e || !e.archivo) { setFase('trabajo'); return; }
-        setBorradorEncontrado({ borrador: b, estado: e });
-        if (retomarDirecto) void retomar(b, e);
-        else setFase('retomar');
+    listarBorradores()
+      .then((lista) => {
+        const validas: Guardada[] = [];
+        for (const b of lista) {
+          const e = deserializarBorrador(b.estadoJson);
+          // El tipo lo manda el servidor (el borrador en que está guardado), no el JSON.
+          if (e?.archivo) validas.push({ borrador: b, estado: { ...e, tipo: tipoDeBorrador(b) } });
+        }
+        setGuardadas(validas);
+        const elegida = retomarTipo ? validas.find((g) => g.estado.tipo === retomarTipo) : null;
+        if (elegida) void retomar(elegida.borrador, elegida.estado);
+        else setFase(validas.length > 0 ? 'retomar' : 'trabajo');
       })
       .catch(() => setFase('trabajo'));
     // Sólo al entrar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const descartarTodo = async () => {
-    try {
-      await borrador.descartar();
-    } catch {
-      try { await eliminarBorrador(); } catch { /* sin conexión: se reintenta al guardar de nuevo */ }
+  /** Descarta la carga en curso (o, desde la pregunta de retomar, la guardada de ese tipo). */
+  const descartarTodo = async (tipoADescartar: TipoCarga | null = tipo) => {
+    if (tipoADescartar === tipo && tipo) {
+      try {
+        await borrador.descartar();
+      } catch {
+        try { await eliminarBorrador(tipo); } catch { /* sin conexión: se reintenta al guardar de nuevo */ }
+      }
+    } else if (tipoADescartar) {
+      try { await eliminarBorrador(tipoADescartar); } catch { /* sin conexión: queda para la limpieza */ }
     }
     setConfirmarDescarte(null);
-    setBorradorEncontrado(null);
+    const quedan = guardadas.filter((g) => g.estado.tipo !== tipoADescartar);
+    setGuardadas(quedan);
+    // Si desde la pregunta de retomar descartó una y queda la otra, se le sigue ofreciendo.
+    if (fase === 'retomar' && quedan.length > 0) return;
     reiniciar();
     setFase('trabajo');
   };
 
+  /** "Reemplazarla": el archivo nuevo ocupa el lugar de la carga guardada de ese tipo. */
+  const reemplazarGuardada = async () => {
+    if (!avisoReemplazo) return;
+    try { await eliminarBorrador(avisoReemplazo.estado.tipo); } catch { /* el guardado lo avisará */ }
+    setGuardadas((prev) => prev.filter((g) => g.estado.tipo !== avisoReemplazo.estado.tipo));
+    setAvisoReemplazo(null);
+  };
+
   const irAPaso = (n: PasoMiExcel) => {
-    setPaso(n);
+    // La plantilla no tiene etapa 2: se pasa derecho entre la 1 y la 3.
+    setPaso(tipo === 'plantilla' && n === 2 ? (paso === 1 ? 3 : 1) : n);
     document.querySelector('.mx-cabecera')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   };
 
@@ -801,37 +909,85 @@ export function MiExcelWizard({
     );
   }
 
-  if (fase === 'retomar' && borradorEncontrado) {
-    const { borrador: b, estado: e } = borradorEncontrado;
-    const { fecha, hora } = fechaYHora(b.updatedAt);
+  if (fase === 'retomar' && guardadas.length > 0) {
+    const aDescartar = confirmarDescarte?.desde === 'retomar' ? guardadas.find((g) => g.estado.tipo === confirmarDescarte.tipo) : null;
+    const unica = guardadas.length === 1 ? guardadas[0] : null;
+    const empezarOtra = (
+      <button type="button" className="mx-boton-texto" onClick={() => setFase('trabajo')}>
+        <FilePlus size={16} /> Empezar otra carga
+      </button>
+    );
     return (
       <div className="bulk-upload-page mx">
-        <Modal titulo="Tienes un progreso guardado" icono={<History size={18} />} ancho={540}>
-          {confirmarDescarte === 'retomar' ? (
+        <Modal
+          titulo={aDescartar ? '¿Descartar esta carga?' : unica ? 'Tienes una carga sin terminar' : `Tienes ${guardadas.length} cargas sin terminar`}
+          icono={aDescartar ? <Trash2 size={18} /> : <History size={18} />}
+          tono={aDescartar ? 'peligro' : 'normal'}
+          ancho={aDescartar || unica ? 600 : 860}
+        >
+          {aDescartar ? (
             <>
-              <p>¿Seguro que quieres <b>descartar todo lo que guardaste</b> y empezar de cero? Esto no se puede deshacer.</p>
+              <TarjetaCargaGuardada estado={aDescartar.estado} updatedAt={aDescartar.borrador.updatedAt} />
+              <p>
+                Se borra lo que corregiste y las fotos que asignaste en esta carga. <b>No se puede deshacer.</b> Lo que
+                ya tienes publicado en tu inventario no se toca.
+              </p>
               <div className="mx-botonera derecha">
                 <button type="button" className="btn btn-secondary mx-btn" onClick={() => setConfirmarDescarte(null)}>No, volver</button>
-                <button type="button" className="btn btn-secondary mx-btn mx-btn-peligro" onClick={descartarTodo}><Trash2 size={15} /> Sí, descartar y empezar de cero</button>
+                <button type="button" className="btn btn-secondary mx-btn mx-btn-peligro" onClick={() => void descartarTodo(aDescartar.estado.tipo)}>
+                  <Trash2 size={15} /> Sí, descartar la carga
+                </button>
               </div>
+            </>
+          ) : unica ? (
+            <>
+              <p className="mx-retomar-intro">La guardamos por ti. Puedes seguir justo donde quedaste.</p>
+              <TarjetaCargaGuardada estado={unica.estado} updatedAt={unica.borrador.updatedAt} />
+              {errorRetomar && <div className="mx-alerta error"><AlertTriangle size={16} /> {errorRetomar}</div>}
+              <button
+                type="button"
+                className="btn btn-primary btn-primary-blue mx-btn mx-retomar-principal"
+                onClick={() => void retomar(unica.borrador, unica.estado)}
+                autoFocus
+              >
+                Continuar donde quedé <ArrowRight size={18} />
+              </button>
+              <div className="mx-retomar-secundarias">
+                {empezarOtra}
+                <button type="button" className="mx-boton-texto peligro" onClick={() => setConfirmarDescarte({ desde: 'retomar', tipo: unica.estado.tipo })}>
+                  <Trash2 size={16} /> Descartar esta carga
+                </button>
+              </div>
+              <p className="mx-retomar-ayuda">
+                Si empiezas otra carga, esta sigue guardada. Solo se reemplaza si subes {unica.estado.tipo === 'plantilla' ? 'otra plantilla de RepuesTop' : 'otro Excel propio'}.
+              </p>
             </>
           ) : (
             <>
-              <p className="mx-retomar-texto">
-                Hemos notado que tienes un progreso guardado el <b>{fecha}</b> a las <b>{hora}</b>. ¿Quieres retomarlo?
-              </p>
-              <ul className="mx-retomar-resumen">
-                <li><span>Archivo</span><b>{e.archivo?.nombre}</b></li>
-                <li><span>Ibas en</span><b>Paso {e.paso} de 4: {PASOS_MI_EXCEL[e.paso - 1].titulo}</b></li>
-                {e.archivo?.filas ? <li><span>Repuestos</span><b>{e.archivo.filas.toLocaleString('es-CL')}</b></li> : null}
-                <li><span>Fotos asignadas</span><b>{fotosAsignadas(e.fotos.asignaciones).length.toLocaleString('es-CL')}</b></li>
-              </ul>
+              <p className="mx-retomar-intro">Tienes guardada una carga de cada tipo. ¿Con cuál quieres seguir?</p>
+              <div className="mx-retomar-opciones">
+                {guardadas.map((g) => (
+                  <TarjetaCargaGuardada
+                    key={g.estado.tipo}
+                    estado={g.estado}
+                    updatedAt={g.borrador.updatedAt}
+                    acciones={(
+                      <>
+                        <button type="button" className="mx-boton-texto peligro" onClick={() => setConfirmarDescarte({ desde: 'retomar', tipo: g.estado.tipo })}>
+                          <Trash2 size={16} /> Descartar
+                        </button>
+                        <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={() => void retomar(g.borrador, g.estado)}>
+                          Continuar esta carga <ArrowRight size={16} />
+                        </button>
+                      </>
+                    )}
+                  />
+                ))}
+              </div>
               {errorRetomar && <div className="mx-alerta error"><AlertTriangle size={16} /> {errorRetomar}</div>}
-              <div className="mx-botonera derecha">
-                <button type="button" className="btn btn-secondary mx-btn" onClick={() => setConfirmarDescarte('retomar')}><RotateCcw size={15} /> Descartar y empezar de cero</button>
-                <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={() => void retomar(b, e)} autoFocus>
-                  <History size={15} /> Retomar desde el punto guardado
-                </button>
+              <div className="mx-retomar-secundarias">
+                {empezarOtra}
+                <p className="mx-retomar-ayuda">Las dos siguen guardadas. Solo se reemplaza la del mismo tipo que el archivo que subas.</p>
               </div>
             </>
           )}
@@ -881,6 +1037,7 @@ export function MiExcelWizard({
             <li className="ok"><CheckCircle2 size={18} /> <b>{plural(resultado.publicados, 'repuesto publicado', 'repuestos publicados')}</b> en la web y la app.</li>
             {resultado.fotos.length > 0 && <li className={fotosMal.length ? 'aviso' : 'ok'}><CheckCircle2 size={18} /> {plural(fotosOk, 'repuesto con sus fotos', 'repuestos con sus fotos')}{fotosMal.length ? `; ${plural(fotosMal.length, 'no pudo recibir sus fotos', 'no pudieron recibir sus fotos')}` : ''}.</li>}
             {resultado.noPublicados.length > 0 && <li className="mal"><XCircle size={18} /> {plural(resultado.noPublicados.length, 'repuesto no se publicó', 'repuestos no se publicaron')} porque tenían algo por corregir.</li>}
+            {resultado.quitados > 0 && <li><Trash2 size={18} /> {plural(resultado.quitados, 'repuesto que quitaste no se publicó', 'repuestos que quitaste no se publicaron')}.</li>}
           </ul>
           {fotosMal.length > 0 && (
             <div className="mx-alerta aviso">
@@ -910,8 +1067,13 @@ export function MiExcelWizard({
         <div className="mx-cabecera-titulo">
           <button type="button" className="mx-icono-btn" onClick={volverAlInicio} aria-label="Volver a ¿Qué tienes?" title="Volver"><ArrowLeft size={18} /></button>
           <div>
-            <h2>Carga tu inventario desde tu propio Excel</h2>
-            <p>Te guiamos en 4 pasos. Tu progreso se guarda solo y puedes retomarlo cuando quieras.</p>
+            <h2>Carga tu inventario con Excel{tipo && archivo ? <span className="mx-tipo-carga">{NOMBRE_TIPO[tipo]}</span> : null}</h2>
+            <p>
+              {tipo === 'plantilla'
+                ? 'Es la plantilla de RepuesTop: te guiamos en 3 pasos.'
+                : tipo === 'mi-excel' && archivo ? 'Es tu propio Excel: te guiamos en 4 pasos.' : 'Tu propio Excel o la plantilla de RepuesTop: detectamos cuál es.'}
+              {' '}Tu progreso se guarda solo y puedes retomarlo cuando quieras.
+            </p>
           </div>
         </div>
         <div className="mx-cabecera-acciones">
@@ -921,7 +1083,7 @@ export function MiExcelWizard({
               <button type="button" className="btn btn-secondary mx-btn" onClick={() => void borrador.guardar()} disabled={borrador.estadoGuardado === 'guardando'}>
                 <Save size={15} /> Guardar progreso
               </button>
-              <button type="button" className="btn btn-secondary mx-btn mx-btn-peligro-suave" onClick={() => setConfirmarDescarte('boton')}>
+              <button type="button" className="btn btn-secondary mx-btn mx-btn-peligro-suave" onClick={() => setConfirmarDescarte({ desde: 'boton' })}>
                 <Trash2 size={15} /> Descartar todo
               </button>
             </>
@@ -930,13 +1092,13 @@ export function MiExcelWizard({
       </header>
 
       <ol className="mx-pasos" aria-label="Pasos de la carga">
-        {PASOS_MI_EXCEL.map((p) => {
+        {pasosDe(tipo ?? 'mi-excel').map((p) => {
           const estado = p.n < paso ? 'listo' : p.n === paso ? 'actual' : 'pendiente';
           const puede = p.n < paso;
           return (
             <li key={p.n} className={`mx-paso-item ${estado}`} aria-current={estado === 'actual' ? 'step' : undefined}>
               <button type="button" disabled={!puede} onClick={() => puede && irAPaso(p.n)} title={puede ? `Volver a "${p.titulo}"` : undefined}>
-                <span className="mx-paso-num">{estado === 'listo' ? <Check size={15} /> : p.n}</span>
+                <span className="mx-paso-num">{estado === 'listo' ? <Check size={15} /> : p.numero}</span>
                 <span className="mx-paso-texto"><b>{p.titulo}</b><small>{p.detalle}</small></span>
               </button>
             </li>
@@ -952,6 +1114,15 @@ export function MiExcelWizard({
         </div>
       )}
       {errorPublicar && <div className="mx-alerta error"><AlertTriangle size={16} /> {errorPublicar}</div>}
+      {listasCaidas && paso >= 2 && (
+        <div className="mx-alerta aviso" role="alert">
+          <CloudOff size={16} />
+          <span>
+            No pudimos traer las listas de RepuesTop (categorías, marcas y modelos). Sin ellas no puedes elegir esos datos.
+          </span>
+          <button type="button" className="btn btn-primary btn-primary-blue mx-btn mx-btn-chico" onClick={reintentarListas}>Reintentar</button>
+        </div>
+      )}
       {publicacionPendiente && paso === 4 && (
         <div className="mx-alerta aviso">
           <AlertTriangle size={16} />
@@ -984,7 +1155,10 @@ export function MiExcelWizard({
           onZip={(f) => void recibirZip(f)}
           onQuitarFotos={() => { setImagenes({}); setOrigenFotos(null); setNombreZip(null); setTotalFotos(0); }}
           onCancelar={volverAlInicio}
-          onSiguiente={() => irAPaso(2)}
+          tipo={archivo ? tipo : null}
+          versionPlantilla={versionPlantilla}
+          filasEjemploQuitadas={filasEjemploQuitadas}
+          onSiguiente={() => irAPaso(tipo === 'plantilla' ? 3 : 2)}
         />
       )}
 
@@ -1080,6 +1254,9 @@ export function MiExcelWizard({
             return sig;
           })}
           onCorregir={(clave) => { setClaveACorregir(clave); irAPaso(3); }}
+          quitados={quitados}
+          onQuitar={(clave) => setQuitados((prev) => (prev.includes(clave) ? prev : [...prev, clave]))}
+          onVolverAIncluir={(clave) => setQuitados((prev) => prev.filter((c) => c !== clave))}
           onAtras={() => irAPaso(3)}
           onPublicar={(retenidos) => void publicar(retenidos)}
         />
@@ -1099,7 +1276,7 @@ export function MiExcelWizard({
             <input type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void recibirMismoArchivo(f); e.target.value = ''; }} />
           </label>
           <div className="mx-botonera derecha">
-            <button type="button" className="mx-link" onClick={() => { setPedirMismoArchivo(null); void descartarTodo(); }}>Mejor empezar de cero</button>
+            <button type="button" className="mx-link" onClick={() => { const t = pedirMismoArchivo.estado.tipo; setPedirMismoArchivo(null); void descartarTodo(t); }}>Mejor empezar de cero</button>
           </div>
         </Modal>
       )}
@@ -1128,7 +1305,38 @@ export function MiExcelWizard({
         </Modal>
       )}
 
-      {confirmarDescarte === 'boton' && (
+      {avisoReemplazo && (
+        <Modal
+          titulo={avisoReemplazo.estado.tipo === 'plantilla' ? 'Ya tienes una plantilla sin terminar' : 'Ya tienes un Excel propio sin terminar'}
+          icono={<History size={18} />}
+          tono="aviso"
+          ancho={600}
+        >
+          <p className="mx-retomar-intro">
+            Guardamos una carga de cada tipo. Si sigues con el archivo que acabas de subir, <b>esta carga se reemplaza</b> y
+            no se puede recuperar.
+          </p>
+          <TarjetaCargaGuardada estado={avisoReemplazo.estado} updatedAt={avisoReemplazo.borrador.updatedAt} />
+          <button
+            type="button"
+            className="btn btn-primary btn-primary-blue mx-btn mx-retomar-principal"
+            onClick={() => { const g = avisoReemplazo; setAvisoReemplazo(null); void retomar(g.borrador, g.estado); }}
+            autoFocus
+          >
+            Continuar la carga guardada <ArrowRight size={18} />
+          </button>
+          <div className="mx-retomar-secundarias">
+            <button type="button" className="mx-boton-texto peligro" onClick={() => void reemplazarGuardada()}>
+              <Trash2 size={16} /> Reemplazarla con el archivo nuevo
+            </button>
+          </div>
+          <p className="mx-retomar-ayuda">
+            Tu carga de «{NOMBRE_TIPO[avisoReemplazo.estado.tipo === 'plantilla' ? 'mi-excel' : 'plantilla']}», si tienes una, no se toca.
+          </p>
+        </Modal>
+      )}
+
+      {confirmarDescarte?.desde === 'boton' && (
         <Modal
           titulo="¿Descartar todo y empezar de cero?"
           icono={<Trash2 size={18} />}
@@ -1141,8 +1349,8 @@ export function MiExcelWizard({
             </>
           )}
         >
-          <p>Se borra tu progreso guardado: el archivo, las relaciones de columnas, lo que completaste y las fotos asignadas. <b>No se puede deshacer.</b></p>
-          <p>Lo que ya esté publicado en tu inventario no se toca.</p>
+          <p>Se borra tu progreso guardado: el archivo, {tipo === 'plantilla' ? '' : 'las relaciones de columnas, '}lo que completaste y las fotos asignadas. <b>No se puede deshacer.</b></p>
+          <p>Lo que ya esté publicado en tu inventario no se toca{tipo ? `, ni tu carga guardada de «${NOMBRE_TIPO[tipo === 'plantilla' ? 'mi-excel' : 'plantilla']}»` : ''}.</p>
         </Modal>
       )}
 
@@ -1157,9 +1365,9 @@ export function MiExcelWizard({
               type="button"
               className="btn btn-secondary mx-btn"
               onClick={() => {
-                void obtenerBorrador().then((b) => {
+                void obtenerBorrador(tipo ?? 'mi-excel').then((b) => {
                   const e = b ? deserializarBorrador(b.estadoJson) : null;
-                  if (b && e) void retomar(b, e);
+                  if (b && e) void retomar(b, { ...e, tipo: tipoDeBorrador(b) });
                 });
               }}
             >

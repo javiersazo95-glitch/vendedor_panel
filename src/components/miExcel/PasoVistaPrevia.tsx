@@ -3,16 +3,19 @@
  * vistas: lista (tabla) y cuadrícula (tarjetas, como el menú Inventario). Desde una tarjeta, el ojo
  * abre "Así se verá en tu tienda" -la ficha que ve el comprador- y ahí mismo se puede corregir cada
  * dato. Antes de publicar se revisa el archivo con el servidor, para que el vendedor sepa exactamente
- * qué se va a publicar y qué no.
+ * qué se va a publicar y qué no. La papelera quita un repuesto de esta carga (no se publica); desde
+ * "Quitados" se vuelve a incluir.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, ArrowLeft, CheckCircle2, Eye, Info, Grid2X2, ImageOff, Images, List, Loader2, Pencil,
-  RefreshCw, Rocket, ShieldCheck, XCircle,
+  RefreshCw, Rocket, ShieldCheck, Trash2, Undo2, XCircle,
 } from 'lucide-react';
 import { etiquetaValor, type CampoMeta, type EsquemaPlantilla, type Mapping } from '../../utils/plantillaMapping';
 import { fichaDesdeFila } from '../../utils/plantillaRevision';
-import { opcionesDeCelda, type ContextoDeFila } from '../../utils/miExcelDetecciones';
+import {
+  COLUMNAS_DE_CATALOGO, motivoSinOpciones, opcionesDeCelda, type ContextoDeFila,
+} from '../../utils/miExcelDetecciones';
 import {
   problemasDeFila, type FilaTabla, type ProblemaFila, type RevisionServidorFilas, type TablaMiExcel, type VersionesDe,
 } from '../../utils/miExcelTabla';
@@ -50,6 +53,10 @@ interface Props {
   asignaciones: Record<string, string[]>;
   onAsignarFotos: (clave: string, nombres: string[]) => void;
   onCorregir: (clave: string) => void;
+  /** Repuestos que el vendedor quitó de esta carga: no se publican. */
+  quitados: string[];
+  onQuitar: (clave: string) => void;
+  onVolverAIncluir: (clave: string) => void;
   onAtras: () => void;
   /**
    * Publica. Recibe los repuestos que no se publicarán (clave -> motivos): los que retiene el
@@ -102,8 +109,10 @@ function ListaProblemas({ problemas, campos }: { problemas: ProblemaFila[]; camp
 }
 
 const ETIQUETA_ESTADO: Record<EstadoFila, string> = { ok: 'Listo para publicar', aviso: 'Se publica (revisa el aviso)', error: 'No se publicará' };
+const ETIQUETA_QUITADO = 'Quitado de la carga';
 
-function Estado({ estado }: { estado: EstadoFila }) {
+function Estado({ estado, quitado = false }: { estado: EstadoFila; quitado?: boolean }) {
+  if (quitado) return <span className="mx-estado quitado"><Trash2 size={14} /> {ETIQUETA_QUITADO}</span>;
   const Icono = estado === 'ok' ? CheckCircle2 : estado === 'aviso' ? AlertTriangle : XCircle;
   return <span className={`mx-estado ${estado}`}><Icono size={14} /> {ETIQUETA_ESTADO[estado]}</span>;
 }
@@ -111,7 +120,12 @@ function Estado({ estado }: { estado: EstadoFila }) {
 /** Un dato de la ficha que se corrige ahí mismo. */
 function DatoEditable({
   columna, etiqueta, valor, opciones, onGuardar, children, problema, editando, onEditar, onDejarDeEditar, vehiculo, onGuardarVarios,
+  soloLista = false, sinOpciones = null,
 }: {
+  /** Dato de catálogo: se elige de la lista (o se deja en blanco), nunca se escribe. */
+  soloLista?: boolean;
+  /** Por qué la lista viene vacía. */
+  sinOpciones?: string | null;
   /** Año o motor: se elige sólo entre lo que el catálogo tiene para el modelo. */
   vehiculo?: { leer: (col: string) => string; versiones: VersionCatalogo[] | null | undefined; respaldo: string[] };
   onGuardarVarios: (valores: Record<string, string>) => void;
@@ -132,7 +146,7 @@ function DatoEditable({
   useEffect(() => {
     if (editando) ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
   }, [editando]);
-  const error = opciones.length === 0 && borrador ? validarValorFijo(columna, borrador, etiqueta) : null;
+  const error = opciones.length === 0 && !soloLista && borrador ? validarValorFijo(columna, borrador, etiqueta) : null;
   const motivo = problema && (
     <span className={`mx-dato-motivo ${problema.severidad}`} role="note">
       <AlertTriangle size={12} /> {problema.mensaje}
@@ -181,10 +195,11 @@ function DatoEditable({
     <span ref={ref} className={`mx-dato-editando ${problema ? `con-${problema.severidad}` : ''}`} data-campo={columna}>
       <span className="mx-dato-etiqueta">{etiqueta}</span>
       {motivo}
-      {opciones.length > 0 ? (
+      {opciones.length > 0 || soloLista ? (
         <select className="form-control" value={borrador} onChange={(e) => setBorrador(e.target.value)} aria-label={etiqueta} autoFocus>
-          <option value="">— sin dato —</option>
-          {borrador && !opciones.includes(borrador) && <option value={borrador}>{borrador}</option>}
+          <option value="">Dejar en blanco</option>
+          {opciones.length === 0 && sinOpciones && <option value="__sin_opciones__" disabled>{sinOpciones}</option>}
+          {borrador && !opciones.includes(borrador) && <option value={borrador} disabled={soloLista}>{borrador}{soloLista ? ' (no está en la lista de RepuesTop)' : ''}</option>}
           {opciones.map((o) => <option key={o} value={o}>{etiquetaValor(o)}</option>)}
         </select>
       ) : columna === 'descripcion' ? (
@@ -224,16 +239,21 @@ function VistaTienda({
   };
   const indice = new Map(tabla.columnas.map((c, i) => [c, i]));
   const leer = (c: string) => String(fila.valores[indice.get(c) ?? -1] ?? '').trim();
-  const contexto: ContextoDeFila = { categoria: leer('categoria'), marcaVehiculo: leer('compatibilidad_marca'), anioDesde: leer('anio_desde') };
+  const universal = ['SI', 'SÍ', 'TRUE', '1', 'X'].includes(leer('compatibilidad_general').toUpperCase());
+  const contexto: ContextoDeFila = {
+    categoria: leer('categoria'), marcaVehiculo: leer('compatibilidad_marca'), anioDesde: leer('anio_desde'), universal,
+  };
   const editable = (col: string, hijo: ReactNode) => (
     <DatoEditable
       columna={col}
       etiqueta={campos.find((c) => c.key === col)?.label ?? col}
       valor={leer(col)}
       opciones={opcionesDeCelda(col, contexto, esquema, campos, modelos)}
+      soloLista={COLUMNAS_DE_CATALOGO.has(col)}
+      sinOpciones={motivoSinOpciones(col, contexto, esquema, campos, modelos)}
       onGuardar={(v) => onParche(col, v)}
       onGuardarVarios={onParches}
-      vehiculo={COLUMNAS_DE_VERSION.has(col) && !['SI', 'SÍ', 'TRUE', '1', 'X'].includes(leer('compatibilidad_general').toUpperCase())
+      vehiculo={COLUMNAS_DE_VERSION.has(col) && !universal
         ? { leer, versiones, respaldo: opcionesDeCelda(col, contexto, esquema, campos, modelos) }
         : undefined}
       problema={problemaDe(col)}
@@ -344,15 +364,22 @@ function VistaTienda({
 
 export function PasoVistaPrevia(p: Props) {
   const [pagina, setPagina] = useState(1);
-  const [filtro, setFiltro] = useState<'todas' | EstadoFila>('todas');
+  const [filtroElegido, setFiltro] = useState<'todas' | EstadoFila | 'quitados'>('todas');
   const [enTienda, setEnTienda] = useState<string | null>(null);
   const [fotosDe, setFotosDe] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState(false);
+  const [aQuitar, setAQuitar] = useState<FilaTabla | null>(null);
 
-  const conEstado = useMemo(
+  const todas = useMemo(
     () => p.tabla.filas.map((fila) => ({ fila, ...estadoDe(fila, p.tabla.columnas, p.campos, p.servidor, p.versionesDe) })),
     [p.tabla.filas, p.tabla.columnas, p.campos, p.servidor, p.versionesDe],
   );
+  // Lo quitado no cuenta para publicar: queda aparte, en "Quitados", para volver a incluirlo.
+  const quitadosSet = useMemo(() => new Set(p.quitados), [p.quitados]);
+  const conEstado = useMemo(() => todas.filter((x) => !quitadosSet.has(x.fila.clave)), [todas, quitadosSet]);
+  const quitadas = useMemo(() => todas.filter((x) => quitadosSet.has(x.fila.clave)), [todas, quitadosSet]);
+  // Si vuelve a incluir el último quitado, se vuelve a ver todo.
+  const filtro = filtroElegido === 'quitados' && quitadas.length === 0 ? 'todas' : filtroElegido;
   // Las versiones de cada modelo: con ellas se sabe de antemano qué años y motores acepta el catálogo.
   const { pedirVersiones } = p;
   useEffect(() => {
@@ -365,7 +392,7 @@ export function PasoVistaPrevia(p: Props) {
   conEstado.forEach((x) => { cuenta[x.estado] += 1; });
   const publicables = cuenta.ok + cuenta.aviso;
   const conFotos = conEstado.filter((x) => x.estado !== 'error' && (p.asignaciones[x.fila.clave] ?? []).length > 0).length;
-  const filtradas = filtro === 'todas' ? conEstado : conEstado.filter((x) => x.estado === filtro);
+  const filtradas = filtro === 'quitados' ? quitadas : filtro === 'todas' ? conEstado : conEstado.filter((x) => x.estado === filtro);
   const tam = POR_PAGINA[p.vista];
   const paginas = Math.max(1, Math.ceil(filtradas.length / tam));
   const actual = Math.min(pagina, paginas);
@@ -373,7 +400,19 @@ export function PasoVistaPrevia(p: Props) {
   const indice = new Map(p.tabla.columnas.map((c, i) => [c, i]));
   const leer = (fila: FilaTabla, c: string) => String(fila.valores[indice.get(c) ?? -1] ?? '').trim();
   const puedePublicar = p.revision.estado === 'lista' && publicables > 0;
-  const filaTienda = enTienda ? conEstado.find((x) => x.fila.clave === enTienda) : null;
+  const motivoNoPublica = (() => {
+    switch (p.revision.estado) {
+      case 'revisando': return 'Estamos revisando tu inventario con RepuesTop…';
+      case 'error': return 'No pudimos revisar tu inventario: toca «Reintentar» arriba.';
+      case 'sin-revisar': return 'Primero revisamos tu inventario: toca «Revisar ahora» arriba.';
+      case 'desactualizada': return 'Cambiaste datos: toca «Revisar de nuevo» arriba antes de publicar.';
+      default:
+        if (conEstado.length === 0) return 'Quitaste todos los repuestos de esta carga: vuelve a incluir alguno desde «Quitados».';
+        return 'Ningún repuesto se puede publicar todavía: corrige los que dicen «No se publicará» (toca el lápiz de cada uno).';
+    }
+  })();
+  const filaTienda = enTienda ? todas.find((x) => x.fila.clave === enTienda) : null;
+  const fichaAQuitar = aQuitar ? fichaDesdeFila(p.tabla.columnas, aQuitar.valores) : null;
   const filaFotos = fotosDe ? p.tabla.filas.find((f) => f.clave === fotosDe) : null;
 
   return (
@@ -427,7 +466,8 @@ export function PasoVistaPrevia(p: Props) {
             ['ok', `Listos (${cuenta.ok.toLocaleString('es-CL')})`],
             ['aviso', `Con aviso (${cuenta.aviso.toLocaleString('es-CL')})`],
             ['error', `No se publicarán (${cuenta.error.toLocaleString('es-CL')})`],
-          ] as ['todas' | EstadoFila, string][]).map(([v, t]) => (
+            ...(quitadas.length > 0 ? [['quitados', `Quitados (${quitadas.length.toLocaleString('es-CL')})`]] : []),
+          ] as ['todas' | EstadoFila | 'quitados', string][]).map(([v, t]) => (
             <button key={v} type="button" className={filtro === v ? 'activo' : ''} aria-pressed={filtro === v} onClick={() => { setFiltro(v); setPagina(1); }}>{t}</button>
           ))}
         </div>
@@ -450,9 +490,10 @@ export function PasoVistaPrevia(p: Props) {
               {visibles.map(({ fila, estado, problemas }) => {
                 const ficha = fichaDesdeFila(p.tabla.columnas, fila.valores);
                 const fotos = p.asignaciones[fila.clave] ?? [];
+                const quitado = quitadosSet.has(fila.clave);
                 return (
-                  <tr key={fila.clave} className={estado === 'error' ? 'con-error' : ''}>
-                    <td><Estado estado={estado} /></td>
+                  <tr key={fila.clave} className={quitado ? 'quitado' : estado === 'error' ? 'con-error' : ''}>
+                    <td><Estado estado={estado} quitado={quitado} /></td>
                     <td>{fotos[0] ? <Miniatura nombre={fotos[0]} blob={p.imagenes[fotos[0]]} imagenId={p.guardadas[fotos[0]]} tamano={40} /> : <span className="mx-celda-vacia">—</span>}</td>
                     <td>{ficha.sku || '—'}</td>
                     <td className="mx-td-nombre">{ficha.nombre}</td>
@@ -461,10 +502,17 @@ export function PasoVistaPrevia(p: Props) {
                     <td>{ficha.precio}</td>
                     <td>{leer(fila, 'stock') || '—'}</td>
                     <td className="mx-td-compat">{ficha.compatibilidad}</td>
-                    <td className="mx-td-motivo"><ListaProblemas problemas={problemas} campos={p.campos} /></td>
+                    <td className="mx-td-motivo">{quitado ? <span className="mx-celda-vacia">No se publicará: lo quitaste de esta carga.</span> : <ListaProblemas problemas={problemas} campos={p.campos} />}</td>
                     <td className="mx-td-acciones">
-                      <button type="button" className="mx-icono-btn" onClick={() => setEnTienda(fila.clave)} aria-label={`Ver ${ficha.nombre} como en tu tienda`} title="Ver como en tu tienda"><Eye size={16} /></button>
-                      <button type="button" className="mx-icono-btn" onClick={() => p.onCorregir(fila.clave)} aria-label={`Corregir ${ficha.nombre} en la tabla`} title="Corregir en la tabla"><Pencil size={16} /></button>
+                      {quitado ? (
+                        <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => p.onVolverAIncluir(fila.clave)} aria-label={`Volver a incluir ${ficha.nombre}`}><Undo2 size={15} /> Volver a incluir</button>
+                      ) : (
+                        <>
+                          <button type="button" className="mx-icono-btn" onClick={() => setEnTienda(fila.clave)} aria-label={`Ver ${ficha.nombre} como en tu tienda`} title="Ver como en tu tienda"><Eye size={16} /></button>
+                          <button type="button" className="mx-icono-btn" onClick={() => p.onCorregir(fila.clave)} aria-label={`Corregir ${ficha.nombre} en la tabla`} title="Corregir en la tabla"><Pencil size={16} /></button>
+                          <button type="button" className="mx-icono-btn mx-icono-peligro" onClick={() => setAQuitar(fila)} aria-label={`Quitar ${ficha.nombre} de la carga`} title="Quitar de la carga"><Trash2 size={16} /></button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 );
@@ -477,13 +525,14 @@ export function PasoVistaPrevia(p: Props) {
           {visibles.map(({ fila, estado, problemas }) => {
             const ficha = fichaDesdeFila(p.tabla.columnas, fila.valores);
             const fotos = p.asignaciones[fila.clave] ?? [];
+            const quitado = quitadosSet.has(fila.clave);
             return (
-              <article key={fila.clave} className={`inventory-grid-card mx-card ${estado}`}>
+              <article key={fila.clave} className={`inventory-grid-card mx-card ${quitado ? 'quitado' : estado}`}>
                 <div className="inventory-grid-image mx-card-imagen">
                   {fotos[0]
                     ? <Miniatura nombre={fotos[0]} blob={p.imagenes[fotos[0]]} imagenId={p.guardadas[fotos[0]]} tamano={220} />
                     : <span className="mx-tienda-sinfoto"><ImageOff size={30} /> Sin foto</span>}
-                  <span className={`mx-card-estado ${estado}`}>{ETIQUETA_ESTADO[estado]}</span>
+                  <span className={`mx-card-estado ${quitado ? 'quitado' : estado}`}>{quitado ? ETIQUETA_QUITADO : ETIQUETA_ESTADO[estado]}</span>
                 </div>
                 <div className="inventory-grid-content">
                   <span className="grid-sku">SKU {ficha.sku || '—'}</span>
@@ -492,7 +541,7 @@ export function PasoVistaPrevia(p: Props) {
                     <span>{leer(fila, 'stock') ? `${leer(fila, 'stock')} unidades` : 'Sin stock'}</span>
                     <strong>{ficha.precio}</strong>
                   </div>
-                  {estado !== 'ok' && (
+                  {estado !== 'ok' && !quitado && (
                     <button type="button" className={`mx-card-corregir ${estado}`} onClick={() => setEnTienda(fila.clave)}>
                       <AlertTriangle size={13} />
                       <span>
@@ -502,11 +551,18 @@ export function PasoVistaPrevia(p: Props) {
                     </button>
                   )}
                 </div>
-                <footer className="inventory-grid-actions">
-                  <button type="button" className="grid-action" onClick={() => setEnTienda(fila.clave)} title="Ver cómo se verá en tu tienda" aria-label={`Ver ${ficha.nombre} como en tu tienda`}><Eye size={16} /></button>
-                  <button type="button" className="grid-action" onClick={() => setFotosDe(fila.clave)} title="Elegir fotos" aria-label={`Fotos de ${ficha.nombre}`}><Images size={16} /></button>
-                  <button type="button" className="grid-action" onClick={() => p.onCorregir(fila.clave)} title="Corregir en la tabla" aria-label={`Corregir ${ficha.nombre}`}><Pencil size={16} /></button>
-                </footer>
+                {quitado ? (
+                  <footer className="inventory-grid-actions mx-card-acciones-quitado">
+                    <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => p.onVolverAIncluir(fila.clave)} aria-label={`Volver a incluir ${ficha.nombre}`}><Undo2 size={15} /> Volver a incluir</button>
+                  </footer>
+                ) : (
+                  <footer className="inventory-grid-actions">
+                    <button type="button" className="grid-action" onClick={() => setEnTienda(fila.clave)} title="Ver cómo se verá en tu tienda" aria-label={`Ver ${ficha.nombre} como en tu tienda`}><Eye size={16} /></button>
+                    <button type="button" className="grid-action" onClick={() => setFotosDe(fila.clave)} title="Elegir fotos" aria-label={`Fotos de ${ficha.nombre}`}><Images size={16} /></button>
+                    <button type="button" className="grid-action" onClick={() => p.onCorregir(fila.clave)} title="Corregir en la tabla" aria-label={`Corregir ${ficha.nombre}`}><Pencil size={16} /></button>
+                    <button type="button" className="grid-action grid-action-danger" onClick={() => setAQuitar(fila)} title="Quitar de la carga" aria-label={`Quitar ${ficha.nombre} de la carga`}><Trash2 size={16} /></button>
+                  </footer>
+                )}
               </article>
             );
           })}
@@ -523,12 +579,15 @@ export function PasoVistaPrevia(p: Props) {
 
       <footer className="mx-pie">
         <button type="button" className="btn btn-secondary mx-btn" onClick={p.onAtras}><ArrowLeft size={16} /> Atrás</button>
+        {/* Si no se puede publicar, se dice por qué al lado del botón: un botón apagado sin
+            explicación deja al vendedor sin saber cómo seguir. */}
+        {!puedePublicar && <span className="mx-pie-motivo" role="status">{motivoNoPublica}</span>}
         <button
           type="button"
           className="btn btn-primary btn-primary-blue mx-btn mx-btn-publicar"
           onClick={() => setConfirmar(true)}
           disabled={!puedePublicar}
-          title={!puedePublicar ? (p.revision.estado === 'lista' ? 'No hay repuestos que se puedan publicar' : 'Primero revisamos tu inventario') : undefined}
+          title={!puedePublicar ? motivoNoPublica : undefined}
         >
           <Rocket size={17} /> Publicar {plural(publicables, 'repuesto', 'repuestos')}
         </button>
@@ -554,8 +613,32 @@ export function PasoVistaPrevia(p: Props) {
           <ul className="mx-lista-confirmar">
             <li><CheckCircle2 size={16} /> Se publicarán <b>{plural(publicables, 'repuesto', 'repuestos')}</b> ({plural(conFotos, 'con foto', 'con foto')}).</li>
             {cuenta.error > 0 && <li><XCircle size={16} /> <b>{plural(cuenta.error, 'repuesto no se publicará', 'repuestos no se publicarán')}</b> porque tienen algo por corregir. Podrás cargarlos después.</li>}
+            {quitadas.length > 0 && <li><Trash2 size={16} /> <b>{plural(quitadas.length, 'repuesto que quitaste', 'repuestos que quitaste')}</b> no se {quitadas.length === 1 ? 'publicará' : 'publicarán'}.</li>}
             <li><ShieldCheck size={16} /> Aparecerán en la web y en la app de RepuesTop. Después puedes editarlos desde tu Inventario.</li>
           </ul>
+        </Modal>
+      )}
+
+      {aQuitar && fichaAQuitar && (
+        <Modal
+          titulo="¿Quitar este repuesto de la carga?"
+          icono={<Trash2 size={18} />}
+          tono="peligro"
+          onCerrar={() => setAQuitar(null)}
+          acciones={(
+            <>
+              <button type="button" className="btn btn-secondary mx-btn" onClick={() => setAQuitar(null)}>No, dejarlo</button>
+              <button type="button" className="btn btn-secondary mx-btn mx-btn-peligro" onClick={() => { p.onQuitar(aQuitar.clave); setAQuitar(null); }}>
+                <Trash2 size={15} /> Sí, quitarlo
+              </button>
+            </>
+          )}
+        >
+          <p>
+            <b>{fichaAQuitar.nombre || 'Este repuesto'}</b>
+            {fichaAQuitar.sku ? ` (código ${fichaAQuitar.sku})` : ''} no se publicará con esta carga.
+          </p>
+          <p>Tu Excel no cambia. Si te arrepientes, lo vuelves a incluir desde <b>«Quitados»</b>, arriba de la lista.</p>
         </Modal>
       )}
 

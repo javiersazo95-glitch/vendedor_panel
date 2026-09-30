@@ -10,8 +10,8 @@ vi.mock('../utils/session', async (original) => ({
 import { CargaInventario } from './CargaInventario';
 
 /**
- * Fase 8 del plan de auditoría de carga: una sola entrada, "¿Qué tienes?", con los cuatro caminos.
- * Antes eran cuatro nombres distintos y había que descubrir pestañas dentro de otras pantallas.
+ * Fase 8 del plan de auditoría de carga: una sola entrada, "¿Qué tienes?". Desde la carga con Excel
+ * unificada son tres caminos: el Excel propio y la plantilla de RepuesTop entran por el mismo.
  */
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ content: [], totalPages: 0, currentPage: 0 }) })));
@@ -31,12 +31,14 @@ const abrir = (extra: Partial<React.ComponentProps<typeof CargaInventario>> = {}
 };
 
 describe('Cargar inventario: ¿Qué tienes?', () => {
-  it('muestra los cuatro caminos', () => {
+  it('muestra tres caminos: un repuesto, el Excel (propio o la plantilla) y precios y stock', () => {
     abrir();
     expect(screen.getByText('¿Qué tienes?')).toBeInTheDocument();
-    for (const titulo of ['Un repuesto', 'Mi propio Excel', 'La plantilla de RepuesTop', 'Sólo cambiar precios y stock']) {
+    for (const titulo of ['Un repuesto', 'Cargar mi inventario con Excel', 'Sólo cambiar precios y stock']) {
       expect(screen.getByRole('button', { name: new RegExp(titulo) })).toBeInTheDocument();
     }
+    expect(screen.queryByRole('button', { name: /^Mi propio Excel/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^La plantilla de RepuesTop/ })).not.toBeInTheDocument();
   });
 
   it('"Un repuesto" abre el formulario 1 a 1', () => {
@@ -45,38 +47,38 @@ describe('Cargar inventario: ¿Qué tienes?', () => {
     expect(onAbrirUnoAUno).toHaveBeenCalled();
   });
 
-  it('"Mi propio Excel" abre el asistente de 4 pasos para subir el archivo del vendedor', async () => {
+  it('"Cargar mi inventario con Excel" pregunta si tiene su Excel o quiere la plantilla, y la deja descargar', async () => {
     abrir();
-    fireEvent.click(screen.getByRole('button', { name: /Mi propio Excel/ }));
-    expect(await screen.findByText('Carga tu inventario desde tu propio Excel')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Cargar mi inventario con Excel/ }));
+    expect(await screen.findByText('¿Tienes tu propio Excel o prefieres la plantilla de RepuesTop?')).toBeInTheDocument();
     expect(screen.getByText('Tu Excel de inventario')).toBeInTheDocument();
     expect(screen.getByText('Fotos de tus repuestos')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Descargar la plantilla/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Descargar la plantilla/ })).toBeInTheDocument();
   });
 
-  it('con una carga guardada ofrece "Retomar desde el punto guardado" en la pregunta', async () => {
-    const estado = {
-      v: 1, paso: 3, archivo: { nombre: 'lista-octubre.xlsx', sha256: 'x', hojaIndex: 0, filaEncabezados: 0, recortado: false, filas: 120 },
+  it('con una carga de cada tipo guardada ofrece retomar cualquiera de las dos', async () => {
+    const estado = (paso: number, nombre: string) => ({
+      v: 1, paso, archivo: { nombre, sha256: 'x', hojaIndex: 0, filaEncabezados: 0, recortado: false, filas: 120 },
       mapping: { oficial: {}, extras: {}, valueMap: {} }, opcionalesVacios: [], fotos: { asignaciones: {}, origen: null, totalDisponibles: 0 },
       vistaPaso4: 'tarjetas', publicacion: null,
-    };
-    vi.mocked(fetch).mockImplementation(async (url) => (String(url).includes('borrador-carga')
-      ? { ok: true, status: 200, json: async () => ({ estadoJson: JSON.stringify(estado), paso: 3, version: 2, tieneArchivo: true, imagenes: [], updatedAt: '2026-09-29T18:05:00Z' }) }
+    });
+    const guardadas = [
+      { tipo: 'PLANTILLA', estadoJson: JSON.stringify(estado(3, 'plantilla-llena.xlsx')), paso: 3, version: 1, tieneArchivo: true, imagenes: [], updatedAt: '2026-09-30T10:00:00Z' },
+      { tipo: 'MI_EXCEL', estadoJson: JSON.stringify(estado(3, 'lista-octubre.xlsx')), paso: 3, version: 2, tieneArchivo: true, imagenes: [], updatedAt: '2026-09-29T18:05:00Z' },
+    ];
+    vi.mocked(fetch).mockImplementation(async (url) => (String(url).includes('borrador-carga/todos')
+      ? { ok: true, status: 200, json: async () => guardadas }
       : { ok: true, status: 200, json: async () => ({ content: [] }) }) as Response);
     abrir();
-    expect(await screen.findByText(/Tienes una carga de "Mi propio Excel" guardada/)).toBeInTheDocument();
-    expect(screen.getByText(/lista-octubre\.xlsx/)).toBeInTheDocument();
-    expect(screen.getByText(/ibas en el paso 3: Completa/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Retomar desde el punto guardado/ })).toBeInTheDocument();
-  });
-
-  it('"La plantilla de RepuesTop" ofrece descargarla y se puede volver a la pregunta', () => {
-    abrir();
-    fireEvent.click(screen.getByRole('button', { name: /La plantilla de RepuesTop/ }));
-    expect(screen.getByRole('button', { name: /Descargar la plantilla/ })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Elegir otra forma de cargar/ }));
-    expect(screen.getByText('¿Qué tienes?')).toBeInTheDocument();
+    const plantilla = await screen.findByRole('region', { name: 'Carga sin terminar: Plantilla de RepuesTop' });
+    expect(plantilla).toHaveTextContent('plantilla-llena.xlsx');
+    // En la plantilla la etapa interna 3 es el paso 2 de 3.
+    expect(plantilla).toHaveTextContent('Ibas en el paso 2 de 3: Corrige');
+    const propio = screen.getByRole('region', { name: 'Carga sin terminar: Tu propio Excel' });
+    expect(propio).toHaveTextContent('lista-octubre.xlsx');
+    expect(propio).toHaveTextContent('Ibas en el paso 3 de 4: Completa');
+    expect(screen.getAllByRole('button', { name: /Continuar donde quedé/ })).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: /Tienes 2 cargas sin terminar/ })).toBeInTheDocument();
   });
 
   it('"Sólo cambiar precios y stock" abre ese modo', () => {

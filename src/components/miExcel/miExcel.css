@@ -83,6 +83,75 @@
 .mx-alerta.error { background: var(--danger-bg); color: #9f1239; }
 .mx-alerta.aviso { background: var(--mx-amarillo); color: var(--mx-amarillo-texto); }
 .mx-alerta.info { background: rgba(27, 100, 218, 0.07); color: #1e3a8a; }
+.mx-alerta.ok { background: var(--success-bg); color: var(--mx-ok); }
+
+/* Carga con Excel unificada: "¿tu Excel o la plantilla?", el tipo detectado y las cargas guardadas. */
+.mx-que-excel { margin-bottom: 1rem; }
+.mx-que-excel-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; }
+.mx-que-excel-opcion { display: flex; gap: 0.75rem; align-items: flex-start; }
+.mx-que-excel-opcion > svg { flex-shrink: 0; color: hsl(var(--primary)); margin-top: 2px; }
+.mx-que-excel-opcion > div { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; }
+.mx-que-excel-opcion span { color: var(--text-secondary); font-size: 0.88rem; }
+.mx-tipo-carga { display: inline-block; margin-left: 0.6rem; padding: 0.1rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; background: rgba(27, 100, 218, 0.1); color: #1e3a8a; }
+
+/* Carga sin terminar (TarjetaCargaGuardada): en "¿Qué tienes?" y en la ventana de retomar. */
+.mx-guardada {
+  display: flex; flex-direction: column; gap: 0.9rem; padding: 1.1rem 1.2rem;
+  border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-card); color: var(--text-primary);
+}
+.mx-guardada.compacta {
+  flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.85rem 1.1rem;
+  border-color: hsl(var(--primary) / 0.28); background: hsl(var(--primary) / 0.05);
+}
+.mx-guardada-icono {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 48px; height: 48px;
+  border-radius: 12px; background: hsl(var(--primary) / 0.1); color: hsl(var(--primary));
+}
+.mx-guardada-fila { display: flex; align-items: flex-start; gap: 0.9rem; flex: 1; min-width: 0; }
+.mx-guardada-cuerpo { display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-width: 0; }
+.mx-guardada.compacta .mx-guardada-fila { align-items: center; min-width: 260px; }
+.mx-guardada-tipo {
+  align-self: flex-start; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 800;
+  letter-spacing: 0.02em; text-transform: uppercase; background: hsl(var(--primary) / 0.1); color: hsl(var(--primary));
+}
+.mx-guardada-archivo { font-size: 1.02rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx-guardada-meta { color: var(--text-secondary); font-size: 0.88rem; }
+.mx-guardada-progreso { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.65rem; margin-top: 0.35rem; font-size: 0.88rem; color: var(--text-secondary); }
+.mx-guardada-progreso b { color: var(--text-primary); }
+.mx-guardada-progreso ol { display: flex; align-items: center; gap: 0; margin: 0; padding: 0; list-style: none; }
+.mx-guardada-progreso li {
+  display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%;
+  font-size: 0.72rem; font-weight: 800; background: var(--bg-app); color: var(--text-muted); border: 1px solid var(--border-color);
+}
+.mx-guardada-progreso li + li { margin-left: 18px; position: relative; }
+.mx-guardada-progreso li + li::before { content: ''; position: absolute; right: 100%; top: 50%; width: 18px; height: 2px; margin-top: -1px; background: #cbd5e1; }
+.mx-guardada-progreso li.listo { background: hsl(var(--success)); color: #fff; border-color: transparent; }
+.mx-guardada-progreso li.listo + li::before, .mx-guardada-progreso li.listo + li.listo::before { background: hsl(var(--success)); }
+.mx-guardada-progreso li.actual { background: hsl(var(--primary)); color: #fff; border-color: transparent; box-shadow: 0 0 0 3px hsl(var(--primary) / 0.18); }
+.mx-guardada-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.mx-guardada.compacta .mx-guardada-acciones { margin-left: auto; }
+.mx-guardada-acciones .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; min-height: 46px; padding: 0 1.25rem; font-weight: 700; }
+.mx-guardada:not(.compacta) .mx-guardada-acciones { justify-content: space-between; padding-top: 0.85rem; border-top: 1px solid var(--border-color); }
+
+@media (max-width: 640px) {
+  .mx-guardada.compacta .mx-guardada-fila { align-items: flex-start; min-width: 0; }
+  .mx-guardada-icono { width: 40px; height: 40px; }
+  .mx-guardada.compacta .mx-guardada-acciones { width: 100%; margin-left: 0; }
+  .mx-guardada.compacta .mx-guardada-acciones .btn { width: 100%; }
+}
+
+/* Ventana "Tienes una carga sin terminar". */
+.mx-retomar-intro { font-size: 1rem; color: var(--text-secondary); }
+.mx-retomar-opciones { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0.85rem; }
+.mx-retomar-principal { width: 100%; min-height: 52px; font-size: 1.02rem !important; display: inline-flex !important; align-items: center; justify-content: center; gap: 0.5rem; }
+.mx-retomar-secundarias { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; }
+.mx-boton-texto {
+  display: inline-flex; align-items: center; gap: 0.4rem; min-height: 40px; padding: 0 0.6rem; border: 0; border-radius: 8px;
+  background: none; color: var(--text-secondary); font: inherit; font-size: 0.92rem; font-weight: 700; cursor: pointer;
+}
+.mx-boton-texto:hover { background: var(--bg-app); color: var(--text-primary); }
+.mx-boton-texto.peligro:hover { background: var(--danger-bg); color: #be123c; }
+.mx-retomar-ayuda { margin: 0; color: var(--text-muted); font-size: 0.82rem; }
 .mx-alerta span { flex: 1; min-width: 220px; }
 
 .mx-nota { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--text-secondary); font-size: 0.82rem; margin: 0.35rem 0 0; }
@@ -92,7 +161,9 @@
 .mx-letra-chica { display: flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-muted); margin: 0; }
 .mx-error-texto { color: var(--mx-mal); font-size: 0.82rem; margin: 0.3rem 0 0; }
 
-.mx-pie { display: flex; justify-content: space-between; gap: 0.75rem; padding-top: 0.25rem; flex-wrap: wrap; }
+.mx-pie { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding-top: 0.25rem; flex-wrap: wrap; }
+/* Por qué el botón para seguir está apagado, a su lado. */
+.mx-pie-motivo { flex: 1; min-width: 200px; text-align: right; color: var(--text-secondary); font-size: 0.9rem; font-weight: 600; }
 .mx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 42px; font-size: 0.9rem; }
 .mx-btn-chico { min-height: 32px; padding: 0.3rem 0.7rem; font-size: 0.8rem; }
 .mx-btn-peligro { color: #be123c !important; border-color: rgba(190, 18, 60, 0.3) !important; }
@@ -175,7 +246,7 @@
 .mx-hoja { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; padding: 0.6rem 0.9rem; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); cursor: pointer; font: inherit; }
 .mx-hoja span { font-size: 0.78rem; color: var(--text-muted); }
 .mx-hoja.sel { border-color: hsl(var(--primary)); box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12); }
-.mx-tabla-cruda-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 10px; }
+.mx-tabla-cruda-wrap { overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--border-color); border-radius: 10px; }
 .mx-tabla-cruda { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
 .mx-tabla-cruda th, .mx-tabla-cruda td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border-color); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .mx-tabla-cruda thead th { background: #f8fafc; color: var(--text-muted); font-weight: 700; }
@@ -236,7 +307,7 @@
 .mx-muestra.roja { background: #fff; border: 2px solid var(--mx-mal); }
 .mx-deshacer { justify-content: space-between; }
 
-.mx-tabla-wrap { overflow: auto; max-height: calc(100vh - 260px); min-height: 280px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); }
+.mx-tabla-wrap { overflow: auto; overscroll-behavior-x: contain; max-height: calc(100vh - 260px); min-height: 280px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); }
 .mx-tabla { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 0.84rem; }
 .mx-tabla th, .mx-tabla td { border-bottom: 1px solid var(--border-color); border-right: 1px solid var(--border-color); padding: 0; text-align: left; vertical-align: middle; background: var(--bg-card); }
 .mx-tabla thead th { position: sticky; top: 0; z-index: 3; background: #f8fafc; padding: 0.5rem 0.6rem; font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; vertical-align: top; }
@@ -307,13 +378,15 @@
 .mx-estado.ok { background: var(--success-bg); color: var(--mx-ok); }
 .mx-estado.aviso { background: var(--mx-amarillo); color: var(--mx-amarillo-texto); }
 .mx-estado.error { background: var(--danger-bg); color: #9f1239; }
+.mx-estado.quitado { background: var(--bg-app); color: var(--text-secondary); }
 .mx-tabla-lista td { padding: 0.45rem 0.6rem; white-space: nowrap; }
 .mx-tabla-lista .mx-td-nombre { max-width: 280px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .mx-tabla-lista .mx-td-compat { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
 .mx-tabla-lista .mx-td-motivo { white-space: normal; min-width: 240px; max-width: 360px; color: var(--text-secondary); font-size: 0.8rem; }
-.mx-tabla-lista .mx-td-acciones { display: flex; gap: 0.3rem; border-right: 0; }
+.mx-tabla-lista .mx-td-acciones { display: flex; flex-wrap: nowrap; align-items: center; gap: 0.3rem; border-right: 0; white-space: nowrap; }
 .mx-tabla-lista tr.con-error td { background: #fff7f8; }
-.mx-grilla .inventory-grid-actions { grid-template-columns: repeat(3, 1fr); }
+/* Ver, fotos, corregir y quitar: los cuatro en una sola fila. */
+.mx-grilla .inventory-grid-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .mx-card.error { border-color: rgba(190, 18, 60, 0.35); }
 .mx-card-imagen { display: flex; align-items: center; justify-content: center; }
 .mx-card-imagen .mx-miniatura { width: 100% !important; height: 100% !important; border-radius: 0; }
@@ -321,6 +394,13 @@
 .mx-card-estado.ok { color: var(--mx-ok); }
 .mx-card-estado.aviso { color: var(--mx-amarillo-texto); }
 .mx-card-estado.error { color: #be123c; }
+.mx-card-estado.quitado { color: var(--text-secondary); }
+/* Lo quitado de la carga se ve apagado: no se publica, pero se puede volver a incluir. */
+.mx-card.quitado { border-style: dashed; }
+.mx-card.quitado .mx-card-imagen, .mx-card.quitado .inventory-grid-content { opacity: 0.55; }
+.mx-card-acciones-quitado { grid-template-columns: 1fr; }
+.mx-tabla-lista tr.quitado td:not(.mx-td-acciones):not(:first-child) { opacity: 0.55; }
+.mx-icono-peligro:hover { color: #be123c; border-color: rgba(190, 18, 60, 0.35); }
 .mx-tienda-sinfoto { display: inline-flex; flex-direction: column; align-items: center; gap: 0.3rem; color: var(--text-muted); font-size: 0.8rem; }
 
 .mx-tienda { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 1.5rem; margin-top: 0.75rem; }
@@ -435,7 +515,7 @@
   background: var(--bg-card); box-shadow: var(--shadow-sm);
 }
 .mx-desplazar .mx-btn { flex-shrink: 0; }
-.mx-barra-h { flex: 1; overflow-x: auto; overflow-y: hidden; height: 16px; }
+.mx-barra-h { flex: 1; overflow-x: auto; overflow-y: hidden; height: 16px; overscroll-behavior-x: contain; }
 .mx-barra-h::-webkit-scrollbar { height: 12px; }
 .mx-barra-h::-webkit-scrollbar-thumb { background: hsl(var(--primary) / 0.45); border-radius: 999px; }
 .mx-barra-h::-webkit-scrollbar-track { background: #eef2f7; border-radius: 999px; }
@@ -443,13 +523,20 @@
 
 .mx-tabla-marco { position: relative; min-width: 0; }
 .mx-tabla-marco .mx-tabla-wrap { max-height: calc(100vh - 150px); }
-/* Una sola barra horizontal: la de arriba. La tabla se mueve a lo ancho con ella, con las flechas,
-   con la rueda hacia el lado o Shift + rueda (ver alGirarRueda), pero no dibuja su propia barra abajo. */
-.mx-tabla-marco .mx-tabla-wrap { overflow-x: hidden; overflow-y: auto; }
-/* H49 (prueba del 30-sep): al moverse a lo ancho quedaba una columna a medias bajo Fila y Fotos, y
-   se leía como un espacio vacío. La tabla se detiene siempre al comienzo de una columna. */
-.mx-tabla-marco .mx-tabla-wrap { scroll-snap-type: x mandatory; scroll-padding-left: var(--mx-fijas, 171px); }
-.mx-tabla thead th[data-col] { scroll-snap-align: start; }
+/* Una sola barra horizontal: la de arriba. La tabla se desplaza a lo ancho de forma nativa -así el
+   trackpad (Mac y Windows), su inercia y Shift + rueda funcionan como en cualquier página-, pero su
+   propia barra de abajo no se dibuja. Antes era overflow-x: hidden y se movía a mano con cada evento
+   de la rueda: los pasitos del trackpad chocaban con el ajuste a columna y la tabla no avanzaba.
+   overscroll-behavior-x evita que deslizar hacia el lado en el borde haga "atrás" en el navegador. */
+.mx-tabla-marco .mx-tabla-wrap { overflow-x: auto; overflow-y: auto; overscroll-behavior-x: contain; }
+.mx-tabla-marco .mx-tabla-wrap::-webkit-scrollbar { width: 10px; height: 0; }
+.mx-tabla-marco .mx-tabla-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+.mx-tabla-marco .mx-tabla-wrap::-webkit-scrollbar-track { background: transparent; }
+/* H49 (prueba del 30-sep): una columna a medias bajo Fila y Fotos se leía como un espacio vacío.
+   Ya no se ajusta sola al comienzo de una columna (scroll-snap): con el trackpad peleaba con la
+   inercia del gesto y la tabla temblaba. Las flechas sí llevan al comienzo de una columna, y el
+   borde de las columnas fijas tiene sombra, así se ve que la tabla sigue por debajo. */
+.mx-tabla-marco.con-izquierda .mx-tabla .mx-col-fotos { box-shadow: 6px 0 8px -6px rgba(15, 23, 42, 0.35); }
 .mx-desplazar .mx-icono-btn:disabled { opacity: 0.35; cursor: default; }
 .mx-tabla-marco .mx-tabla-wrap:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Degradé en el borde: dice sin palabras que la tabla sigue hacia ese lado. */

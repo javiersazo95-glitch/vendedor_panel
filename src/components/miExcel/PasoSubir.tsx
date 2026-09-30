@@ -1,15 +1,20 @@
 /**
- * Etapa 1 · Sube tu archivo. Dos cosas, lado a lado: el Excel del vendedor (obligatorio) y la
- * carpeta o ZIP con las fotos de sus repuestos (opcional). Con el Excel leído, el vendedor
- * confirma la hoja y la fila donde están los títulos de sus columnas.
+ * Etapa 1 · Sube tu archivo, compartida por las dos cargas con Excel. Primero, "¿tu propio Excel
+ * o la plantilla de RepuesTop?" (con la plantilla para descargar). Después, dos cosas lado a lado:
+ * el Excel (obligatorio) y la carpeta o ZIP con las fotos (opcional). Al leer el Excel el panel
+ * dice qué es: con su propio Excel confirma la hoja y la fila de los títulos; con la plantilla no
+ * hay nada que confirmar.
  */
 import React, { useRef, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, FileArchive, FileSpreadsheet, FolderOpen,
-  ImagePlus, Info, ShieldCheck, X,
+  AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, Download, FileArchive, FileSpreadsheet, FolderOpen,
+  ImagePlus, Info, Loader2, ShieldCheck, Wand2, X,
 } from 'lucide-react';
 import type { HojaUsuario } from '../../utils/plantillaMapping';
 import { columnLetter } from '../../utils/plantillaMapping';
+import type { TipoCarga } from '../../utils/miExcelBorrador';
+import { descargarPlantilla } from '../../utils/cargaExcelApi';
+import { getStoredSession } from '../../utils/session';
 import { plural } from './textos';
 
 /** Filas crudas que se muestran para confirmar dónde están los títulos. */
@@ -42,8 +47,64 @@ interface Props {
   onZip: (file: File) => void;
   onQuitarFotos: () => void;
 
+  /** Qué resultó ser el archivo, una vez leído. */
+  tipo: TipoCarga | null;
+  versionPlantilla: string | null;
+  /** La fila de ejemplo de la plantilla, si el vendedor la dejó: no se carga. */
+  filasEjemploQuitadas: number;
+
   onCancelar: () => void;
   onSiguiente: () => void;
+}
+
+/** "¿Tu propio Excel o la plantilla?": sin archivo todavía, las dos entradas y la descarga. */
+function QueExcelTienes() {
+  const [descargando, setDescargando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [descargada, setDescargada] = useState(false);
+  const descargar = async () => {
+    const s = getStoredSession();
+    if (!s?.sellerId || !s?.token) { setError('Tu sesión expiró. Vuelve a iniciar sesión.'); return; }
+    setDescargando(true);
+    setError(null);
+    try {
+      await descargarPlantilla(s.sellerId, s.token);
+      setDescargada(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo descargar la plantilla.');
+    } finally {
+      setDescargando(false);
+    }
+  };
+  return (
+    <section className="mx-que-excel" aria-label="¿Tienes tu propio Excel o prefieres la plantilla de RepuesTop?">
+      <h4 className="mx-subtitulo">¿Tienes tu propio Excel o prefieres la plantilla de RepuesTop?</h4>
+      <div className="mx-que-excel-opciones">
+        <div className="mx-tarjeta mx-que-excel-opcion">
+          <Wand2 size={24} />
+          <div>
+            <strong>Tengo mi Excel</strong>
+            <span>Súbelo abajo tal como lo usas hoy. Te ayudamos a relacionar tus columnas con las de RepuesTop.</span>
+          </div>
+        </div>
+        <div className="mx-tarjeta mx-que-excel-opcion">
+          <FileSpreadsheet size={24} />
+          <div>
+            <strong>Prefiero la plantilla de RepuesTop</strong>
+            <span>
+              Trae listas para elegir categoría, marca, modelo, años y motor, sólo con lo que existe en RepuesTop.
+              Llénala y súbela abajo: la reconocemos sola y no hay columnas que relacionar.
+            </span>
+            <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={() => void descargar()} disabled={descargando}>
+              {descargando ? <Loader2 size={15} className="mx-girando" /> : <Download size={15} />} Descargar la plantilla
+            </button>
+            {descargada && <span className="mx-nota"><CheckCircle2 size={14} /> Descargada. Revisa tu carpeta de descargas.</span>}
+            {error && <span className="mx-error-texto">{error}</span>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export function PasoSubir(p: Props) {
@@ -59,6 +120,12 @@ export function PasoSubir(p: Props) {
   const sinFilas = !!p.archivo && p.columnas > 0 && p.filas === 0;
   const demasiadas = p.filas > LIMITE_FILAS_CARGA;
   const puedeSeguir = !!p.archivo && !sinTitulos && !sinFilas && !p.leyendo;
+  /** Por qué todavía no se puede seguir, en palabras del vendedor (se muestra junto al botón). */
+  const motivoNoSigue = p.leyendo ? 'Leyendo tu archivo…'
+    : !p.archivo ? 'Sube tu Excel para seguir.'
+      : sinTitulos ? 'Elige la fila donde están los títulos de tus columnas.'
+        : sinFilas ? (p.tipo === 'plantilla' ? 'La plantilla no tiene repuestos: llena una fila por repuesto.' : 'Debajo de los títulos no hay repuestos: elige otra fila u otra hoja.')
+          : null;
 
   const soltar = (e: React.DragEvent) => {
     e.preventDefault();
@@ -72,11 +139,13 @@ export function PasoSubir(p: Props) {
       <div className="mx-explica">
         <Info size={18} />
         <p>
-          Sube tu Excel <b>tal como lo usas hoy</b>, sin cambiarle nada. Si tienes las fotos de tus
-          repuestos en una carpeta, súbela también: las asignamos solas a cada repuesto por su código.
-          Nada se publica hasta el último paso.
+          Sube <b>tu propio Excel tal como lo usas hoy</b> o la <b>plantilla de RepuesTop</b> ya llena: reconocemos
+          cuál es. Si tienes las fotos de tus repuestos en una carpeta, súbela también: las asignamos solas a cada
+          repuesto por su código. Nada se publica hasta el último paso.
         </p>
       </div>
+
+      {!p.archivo && <QueExcelTienes />}
 
       <div className="mx-subir-grid">
         {/* ---------------------------- El Excel ---------------------------- */}
@@ -85,7 +154,7 @@ export function PasoSubir(p: Props) {
             <span className="mx-num">1</span>
             <div>
               <h4>Tu Excel de inventario</h4>
-              <p>Obligatorio · .xlsx, .xls o .csv</p>
+              <p>Obligatorio · tu Excel o la plantilla · .xlsx, .xls o .csv</p>
             </div>
           </header>
           {p.archivo ? (
@@ -128,6 +197,22 @@ export function PasoSubir(p: Props) {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) p.onArchivo(f); e.target.value = ''; }}
           />
           {p.error && <div className="mx-alerta error"><AlertTriangle size={16} /> {p.error}</div>}
+          {p.archivo && p.tipo === 'plantilla' && (
+            <div className="mx-alerta ok" role="status">
+              <CheckCircle2 size={16} />
+              <span>
+                <b>Es la plantilla de RepuesTop</b>{p.versionPlantilla ? ` (versión ${p.versionPlantilla})` : ''}: sus columnas ya son las
+                nuestras, así que no hay nada que relacionar. En el siguiente paso corriges lo que falte.
+                {p.filasEjemploQuitadas > 0 && <> La fila de ejemplo (SKU-001) no se carga.</>}
+              </span>
+            </div>
+          )}
+          {p.archivo && p.tipo === 'mi-excel' && (
+            <div className="mx-alerta info" role="status">
+              <Wand2 size={16} />
+              <span><b>Es tu propio Excel.</b> En el paso 2 te ayudamos a relacionar tus columnas con las de RepuesTop.</span>
+            </div>
+          )}
         </section>
 
         {/* ---------------------------- Las fotos ---------------------------- */}
@@ -200,14 +285,30 @@ export function PasoSubir(p: Props) {
             <ImagePlus size={15} />
             <span>
               <b>Consejo:</b> nombra cada foto con el código del repuesto (ej. <code>ABC123.jpg</code>,{' '}
-              <code>ABC123_2.jpg</code>) y la asignamos sola. Si no, la eliges en el paso 3.
+              <code>ABC123_2.jpg</code>) y la asignamos sola. Si no, la eliges en el paso {p.tipo === 'plantilla' ? 2 : 3}.
             </span>
           </p>
         </section>
       </div>
 
       {/* ------------------- Hoja y fila de títulos ------------------- */}
-      {p.archivo && p.hojas.length > 0 && (
+      {/* La plantilla no necesita confirmar hoja ni títulos: son siempre los mismos. */}
+      {p.archivo && p.tipo === 'plantilla' && (sinFilas || demasiadas) && (
+        <section className="mx-tarjeta">
+          {sinFilas && <div className="mx-alerta aviso"><AlertTriangle size={16} /> La plantilla no tiene repuestos: llena una fila por repuesto debajo de los títulos.</div>}
+          {demasiadas && (
+            <div className="mx-alerta aviso">
+              <AlertTriangle size={16} />
+              <span>
+                Tu plantilla tiene {plural(p.filas, 'fila', 'filas')}. RepuesTop recibe hasta {LIMITE_FILAS_CARGA.toLocaleString('es-CL')} por
+                carga: te conviene dividirla en dos y cargarlas por separado.
+              </span>
+            </div>
+          )}
+        </section>
+      )}
+
+      {p.archivo && p.tipo !== 'plantilla' && p.hojas.length > 0 && (
         <section className="mx-tarjeta">
           {p.hojas.length > 1 && (
             <div className="mx-bloque">
@@ -285,8 +386,9 @@ export function PasoSubir(p: Props) {
         <button type="button" className="btn btn-secondary mx-btn" onClick={p.onCancelar}>
           <ArrowLeft size={16} /> Volver
         </button>
-        <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={p.onSiguiente} disabled={!puedeSeguir}>
-          Siguiente: relacionar columnas <ArrowRight size={16} />
+        {motivoNoSigue && <span className="mx-pie-motivo" role="status">{motivoNoSigue}</span>}
+        <button type="button" className="btn btn-primary btn-primary-blue mx-btn" onClick={p.onSiguiente} disabled={!puedeSeguir} title={motivoNoSigue ?? undefined}>
+          {p.tipo === 'plantilla' ? 'Siguiente: corregir' : 'Siguiente: relacionar columnas'} <ArrowRight size={16} />
         </button>
       </footer>
     </div>

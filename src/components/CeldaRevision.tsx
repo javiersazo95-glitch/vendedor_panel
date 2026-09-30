@@ -9,6 +9,7 @@
  */
 import { useState } from 'react';
 
+import { etiquetaValor } from '../utils/plantillaMapping';
 import {
   limiteDeColumna,
   validarValorFijo,
@@ -45,10 +46,17 @@ interface Props {
   etiqueta: string;
   /** La celda pide atención: está vacía, tiene un problema, o el valor lo pusimos nosotros. */
   destacada: boolean;
+  /**
+   * El dato sólo puede ser uno de la lista de RepuesTop: siempre se elige de una lista (con
+   * "Dejar en blanco"), nunca se escribe, aunque la lista venga vacía.
+   */
+  soloLista?: boolean;
+  /** Por qué la lista viene vacía ("Primero elige la categoría"), para decirlo dentro de ella. */
+  sinOpciones?: string | null;
 }
 
 export const CeldaRevision = ({
-  valor, columna, opciones, sugerencias = [], onCambio, etiqueta, destacada,
+  valor, columna, opciones, sugerencias = [], onCambio, etiqueta, destacada, soloLista = false, sinOpciones = null,
 }: Props) => {
   const [borrador, setBorrador] = useState(valor);
   // Si el valor cambia por fuera —otra corrección, otro interruptor del paso 2— el
@@ -62,7 +70,7 @@ export const CeldaRevision = ({
 
   const clases = `form-control mapper-celda-edit ${destacada ? 'destacada' : ''}`;
 
-  if (opciones.length > 0) {
+  if (opciones.length > 0 || soloLista) {
     // Los parecidos van en su propio grupo, arriba, y el catálogo entero debajo. Una lista
     // corta con un "ver todas" obligaba a abrir el desplegable dos veces —una para pedirlo
     // y otra para elegir—: así el que sabe lo que busca baja, y el que no, elige arriba.
@@ -82,25 +90,27 @@ export const CeldaRevision = ({
         aria-label={etiqueta}
         onChange={(e) => onCambio(e.target.value)}
       >
-        <option value="">— sin dato —</option>
+        <option value="">Dejar en blanco</option>
+        {opciones.length === 0 && sinOpciones && <option value="__sin_opciones__" disabled>{sinOpciones}</option>}
         {/* El contexto va en el título del grupo y no en el texto de la opción: la celda
-            cerrada muestra la opción elegida, y un texto largo ahí se ve cortado. */}
+            cerrada muestra la opción elegida, y un texto largo ahí se ve cortado. Con una lista
+            cerrada, lo que escribió y no está en ella se muestra pero ya no se puede elegir. */}
         {propio && (
-          <optgroup label="Tal como lo escribiste">
-            <option value={propio}>{propio}</option>
+          <optgroup label={soloLista ? 'Tu dato (no está en la lista de RepuesTop)' : 'Tal como lo escribiste'}>
+            <option value={propio} disabled={soloLista}>{propio}</option>
           </optgroup>
         )}
         {sugerencias.length > 0 ? (
           <>
             <optgroup label="Se parece a">
-              {sugerencias.map((o) => <option key={o} value={o}>{o}</option>)}
+              {sugerencias.map((o) => <option key={o} value={o}>{etiquetaValor(o)}</option>)}
             </optgroup>
             <optgroup label="Todas">
-              {resto.map((o) => <option key={o} value={o}>{o}</option>)}
+              {resto.map((o) => <option key={o} value={o}>{etiquetaValor(o)}</option>)}
             </optgroup>
           </>
         ) : (
-          resto.map((o) => <option key={o} value={o}>{o}</option>)
+          resto.map((o) => <option key={o} value={o}>{etiquetaValor(o)}</option>)
         )}
       </select>
     );

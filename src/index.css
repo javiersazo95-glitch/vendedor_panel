@@ -844,7 +844,7 @@ h1, h2, h3, h4, h5, h6 {
 .mapper-sheet.sel b { color: #4338ca; }
 
 /* Vista previa de las filas crudas, para elegir donde estan los titulos. */
-.mapper-preview-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 12px; }
+.mapper-preview-wrap { overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--border-color); border-radius: 12px; }
 
 /* Cabecera de la tabla de revisión: el título a la izquierda, el botón de pantalla completa
    a la derecha. */
@@ -2072,6 +2072,8 @@ h1, h2, h3, h4, h5, h6 {
 /* Premium High Density Inventory Table */
 .table-container {
   overflow-x: auto;
+  /* Deslizar hacia el lado con el trackpad mueve la tabla, no hace "atrás" en el navegador. */
+  overscroll-behavior-x: contain;
   border-radius: 16px;
   background: transparent;
 }
@@ -4826,6 +4828,17 @@ h1, h2, h3, h4, h5, h6 {
   gap: 1rem;
 }
 
+/* Carga con Excel unificada: tres caminos, a todo el ancho y de igual alto. */
+.carga-inventario-opciones.tres {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .carga-inventario-opciones.tres {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 1200px) {
   .carga-inventario-opciones {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4835,6 +4848,35 @@ h1, h2, h3, h4, h5, h6 {
 @media (max-width: 640px) {
   .carga-inventario-opciones {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Cargas con Excel sin terminar, arriba de la pregunta (TarjetaCargaGuardada, compacta). */
+.carga-guardadas {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0 0 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.carga-seccion-titulo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.carga-seccion-titulo svg {
+  color: hsl(var(--primary));
+}
+
+@media (min-width: 641px) {
+  .carga-guardadas .mx-guardada-acciones .btn {
+    min-width: 220px;
   }
 }
 
@@ -4932,6 +4974,8 @@ h1, h2, h3, h4, h5, h6 {
 
 .carga-inventario-opcion {
   display: flex;
+  flex-wrap: wrap;
+  align-content: space-between;
   align-items: flex-start;
   gap: 1rem;
   min-height: 120px;
@@ -4967,8 +5011,38 @@ h1, h2, h3, h4, h5, h6 {
 
 .carga-inventario-texto {
   display: flex;
+  flex: 1;
+  min-width: 0;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+/* Para qué sirve cada camino, abajo de la tarjeta, con la flecha de "entrar". */
+.carga-inventario-pie {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 0.85rem;
+  border-top: 1px solid #eef2f7;
+  color: #2563eb;
+}
+
+.carga-inventario-para {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.carga-inventario-opcion:hover .carga-inventario-pie svg {
+  transform: translateX(3px);
+}
+
+.carga-inventario-pie svg {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
 .carga-inventario-texto strong {
@@ -5027,7 +5101,7 @@ h1, h2, h3, h4, h5, h6 {
 .historial-buscador { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0 0.7rem; min-height: 40px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-card); color: var(--text-muted); }
 .historial-buscador input { border: 0; outline: none; background: transparent; font: inherit; font-size: 0.88rem; color: var(--text-primary); min-width: 200px; }
 .historial-boton { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.88rem; }
-.historial-tabla-wrap { overflow: auto; max-height: 52vh; border: 1px solid var(--border-color); border-radius: 12px; }
+.historial-tabla-wrap { overflow: auto; overscroll-behavior-x: contain; max-height: 52vh; border: 1px solid var(--border-color); border-radius: 12px; }
 .historial-tabla { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.88rem; }
 .historial-tabla th { position: sticky; top: 0; z-index: 1; background: #f8fafc; color: var(--text-secondary); font-size: 0.78rem; font-weight: 800; text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
 .historial-tabla td { padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
