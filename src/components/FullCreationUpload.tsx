@@ -78,6 +78,8 @@ const POLL_INTERVAL_MS = 2000;
 const JOB_ESTADOS_EN_CURSO = new Set(['PENDIENTE', 'PROCESANDO']);
 /** Fase 8: una carga grande no se espera para siempre; pasado esto se manda al historial. */
 const POLL_TOPE_MS = 30 * 60 * 1000;
+/** Tras varios fallos seguidos al consultar el avance, no se espera más que esto entre intentos. */
+const POLL_ESPERA_MAXIMA_MS = 30 * 1000;
 const NO_PREGUNTAR_FOTOS_KEY = 'repuestop_no_preguntar_fotos';
 
 class CargaSigueProcesandoError extends Error {
@@ -94,7 +96,7 @@ const leerNoPreguntarFotos = () => {
   }
 };
 
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const getIsoTimestampString = (date = new Date()): string => {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -539,16 +541,41 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
     // (Fase 8) y devuelve 202 con el jobId de inmediato; acá se hace polling hasta
     // que el estado deje de ser PENDIENTE/PROCESANDO. Fase 8: con un tope, para no dejar al
     // vendedor mirando una barra para siempre si el procesamiento se demora.
+    //
+    // La carga sigue en el servidor aunque una consulta falle: un 429, un 5xx o un corte de red
+    // no la cortan, se vuelve a preguntar con una espera cada vez más larga. Sólo la sesión
+    // vencida (401/403) o el tope dejan de esperar.
     const limite = Date.now() + POLL_TOPE_MS;
+    let fallosSeguidos = 0;
+    const esperarTrasFallo = async () => {
+      fallosSeguidos += 1;
+      setPollingStatus('No pudimos ver el avance. Tu carga sigue en proceso; volvemos a mirar en un momento...');
+      await wait(Math.min(POLL_INTERVAL_MS * 2 ** fallosSeguidos, POLL_ESPERA_MAXIMA_MS));
+    };
     while (true) {
       if (Date.now() > limite) throw new CargaSigueProcesandoError();
-      const response = await apiFetch(
-        `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/excel/cargas/${encId(jobId)}`,
-        { headers: { 'Authorization': `Bearer ${token}` } }
-      );
-      if (!response.ok) {
+      let response: Response;
+      try {
+        response = await conReintento429(
+          () => apiFetch(
+            `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario/excel/cargas/${encId(jobId)}`,
+            { headers: { 'Authorization': `Bearer ${token}` } }
+          ),
+          { esperar: wait },
+        );
+      } catch (err) {
+        if (err instanceof SessionExpiredError) throw err;
+        await esperarTrasFallo();
+        continue;
+      }
+      if (response.status === 401 || response.status === 403) {
         throw new Error(await readErrorMessage(response, 'No se pudo consultar el avance de la carga.'));
       }
+      if (!response.ok) {
+        await esperarTrasFallo();
+        continue;
+      }
+      fallosSeguidos = 0;
       const data: CargaExcelResponse = await response.json();
       if (!data.estado || !JOB_ESTADOS_EN_CURSO.has(data.estado)) {
         return data;

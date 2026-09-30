@@ -141,3 +141,49 @@ describe('Publicar con la plantilla de RepuesTop', () => {
     expect(crearUrl).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Validación previa al push: una carga grande se publica en segundo plano y el panel pregunta
+ * por su avance. Antes, un solo 429 o un corte de red en esas consultas daba la carga por
+ * fallida aunque en el servidor siguiera y terminara bien.
+ */
+describe('Esperar una carga grande', () => {
+  const enCurso = respuesta({ estado: 'PROCESANDO', jobId: 9, filasProcesadas: 0, filas: [] });
+
+  const conAvance = (avance: Array<() => Response | Promise<Response>>) => {
+    vi.mocked(fetch).mockImplementation(async (url) => {
+      const texto = String(url);
+      if (texto.includes('/excel/validar')) return { ok: true, status: 200, json: async () => respuesta() } as Response;
+      if (texto.includes('/excel/cargar')) return { ok: true, status: 202, json: async () => enCurso } as Response;
+      if (texto.includes('/excel/cargas/9')) return (avance.shift() ?? avance[avance.length - 1])();
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    });
+  };
+  const completada = () => new Response(JSON.stringify(respuesta({ estado: 'COMPLETADA', jobId: 9 })), { status: 200 });
+
+  it('un 429 con Retry-After espera y sigue: la carga termina bien', async () => {
+    conAvance([
+      () => new Response('', { status: 429, headers: { 'Retry-After': '1' } }),
+      completada,
+    ]);
+    await subirYRevisar();
+    await screen.findByText('Se van a publicar 2 repuestos');
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, publicar' }));
+
+    expect(await screen.findByText('¡Listo! Publicamos 2 repuestos', {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(llamadas('/excel/cargas/9')).toHaveLength(2);
+  });
+
+  it('un corte de red al consultar el avance no da la carga por perdida', async () => {
+    conAvance([
+      () => Promise.reject(new TypeError('Failed to fetch')),
+      completada,
+    ]);
+    await subirYRevisar();
+    await screen.findByText('Se van a publicar 2 repuestos');
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, publicar' }));
+
+    expect(await screen.findByText('¡Listo! Publicamos 2 repuestos', {}, { timeout: 8000 })).toBeInTheDocument();
+    expect(llamadas('/excel/cargas/9')).toHaveLength(2);
+  }, 12000);
+});
