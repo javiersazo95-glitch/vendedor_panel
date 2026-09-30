@@ -254,3 +254,42 @@ describe('ManualUpload: las fotos publicadas se conservan al editar', () => {
     expect(screen.getByText('Agregar fotos (0/4)')).toBeInTheDocument();
   });
 });
+
+/**
+ * Prueba en vivo previa al push: al cerrar la edición sin tocar nada siempre preguntaba
+ * "¿Descartar cambios no guardados?", porque las dos fotos del formulario tenían las mismas
+ * claves en distinto orden y se comparaban como texto.
+ */
+describe('ManualUpload: cerrar la edición sin cambios', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  const abrir = async (onClose: () => void) => {
+    vi.stubGlobal('fetch', responder(CATALOGO));
+    render(<ManualUpload isOpen onClose={onClose} onSave={async () => {}} editProduct={guardado({ esUniversal: true, vehiculoCatalogoIds: [], compatibilityGroupsJson: undefined })} />);
+    await screen.findByDisplayValue('19990');
+  };
+
+  it('sin tocar nada cierra sin preguntar', async () => {
+    const onClose = vi.fn();
+    await abrir(onClose);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByText(/Descartar cambios no guardados/)).not.toBeInTheDocument();
+  });
+
+  it('con un cambio sí pregunta antes de cerrar', async () => {
+    const onClose = vi.fn();
+    await abrir(onClose);
+
+    fireEvent.change(screen.getByDisplayValue('19990'), { target: { value: '24990' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText(/Descartar cambios no guardados/)).toBeInTheDocument();
+  });
+});

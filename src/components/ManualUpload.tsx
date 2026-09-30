@@ -341,13 +341,25 @@ type SnapshotFields = {
  * pedía "¿Descartar cambios?" aunque no se hubiera tocado nada.
  */
 function snapshotOf(fields: SnapshotFields): string {
+  // Campo por campo y siempre en el mismo orden: se compara el texto, y con `...fields` el orden
+  // dependía de cómo se armó el objeto (el de edición y el actual no coincidían), así que al
+  // cerrar sin tocar nada siempre preguntaba "¿Descartar cambios no guardados?".
   return JSON.stringify({
-    ...fields,
     sku: fields.sku.trim(),
     oem: fields.oem.trim(),
     name: fields.name.trim(),
+    category: fields.category,
+    subcategory: fields.subcategory,
     partBrand: fields.partBrand.trim(),
+    pricingMode: fields.pricingMode,
+    price: fields.price,
+    stock: fields.stock,
+    requiresChassis: fields.requiresChassis,
+    condition: fields.condition,
     description: fields.description.trim(),
+    isUniversal: fields.isUniversal,
+    filesCount: fields.filesCount,
+    publishedCount: fields.publishedCount,
     compatibilities: fields.compatibilities.map((card) => ({
       b: card.vehicleBrand,
       m: card.vehicleModel,
