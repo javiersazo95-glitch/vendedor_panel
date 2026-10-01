@@ -42,9 +42,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * login en menos de un segundo sin saber por que (y el correo le decia que entrara al panel).
  */
 export class CuentaSuspendidaError extends Error {
-  constructor(message: string, readonly suspendidaHasta: string | null, readonly puedeApelar: boolean) {
+  readonly suspendidaHasta: string | null;
+  readonly puedeApelar: boolean;
+
+  constructor(message: string, suspendidaHasta: string | null, puedeApelar: boolean) {
     super(message);
     this.name = 'CuentaSuspendidaError';
+    this.suspendidaHasta = suspendidaHasta;
+    this.puedeApelar = puedeApelar;
   }
 }
 
