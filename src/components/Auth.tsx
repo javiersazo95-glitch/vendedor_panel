@@ -41,7 +41,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * `sellerBlocked`. El panel guardaba la sesion, el primer 403 la borraba y el vendedor volvia al
  * login en menos de un segundo sin saber por que (y el correo le decia que entrara al panel).
  */
-export class CuentaSuspendidaError extends Error {
+class CuentaSuspendidaError extends Error {
   readonly suspendidaHasta: string | null;
   readonly puedeApelar: boolean;
 

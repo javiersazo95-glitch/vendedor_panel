@@ -5,7 +5,8 @@ import { useFocusTrap } from '../utils/useFocusTrap';
 import { RepuestopCoin } from './RepuestopCoin';
 import { RechargeModal } from './RechargeModal';
 import { WalletHistoryModal } from './WalletHistoryModal';
-import { CoinDropAnimation, prefiereMenosMovimiento } from './CoinDropAnimation';
+import { CoinDropAnimation } from './CoinDropAnimation';
+import { prefiereMenosMovimiento } from '../utils/movimiento';
 
 /**
  * Monedero de Monedas RepuesTop del panel, homologado con el de la app y el market web.

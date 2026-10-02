@@ -81,9 +81,3 @@ export function CoinDropAnimation({
   </div>;
 }
 
-/** Quien pidió menos movimiento en su sistema se salta la lluvia. */
-export function prefiereMenosMovimiento(): boolean {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
