@@ -6,6 +6,7 @@ import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../uti
 import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount, FLOW_RATE_BASE } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { claveCatalogo, mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
+import { formatearEtiquetaMotor, sonMotoresEquivalentes } from '../utils/catalogoVersiones';
 
 function sanitizeCodeInput(value: string): string {
   return value
@@ -31,6 +32,12 @@ interface ManualUploadProps {
 type CatalogOption = {
   id: number;
   nombre: string;
+  motor?: string;
+};
+
+type MotorOption = {
+  id: string;
+  etiqueta: string;
 };
 
 type PickerOption = string | { label: string; value: string };
@@ -41,6 +48,8 @@ type CompatibilityCard = {
   vehicleModel: string;
   vehicleYear: number;
   vehicleYearTo: number;
+  motor?: string;
+  motorOptions?: MotorOption[];
   vehicleVersionIds: string[];
   oem: string;
   modelOptions: string[];
@@ -220,6 +229,8 @@ function createCompatibilityCard(product?: Product | null): CompatibilityCard {
     vehicleModel: product?.vehicleModel || '',
     vehicleYear: product?.vehicleYear || 0,
     vehicleYearTo: product?.vehicleYearTo || product?.vehicleYear || 0,
+    motor: product?.vehicleVersion || '',
+    motorOptions: [],
     vehicleVersionIds: [],
     oem: product?.oem || '',
     modelOptions: [],
@@ -952,10 +963,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     Promise.all(
       compatibilities.map(async (card) => {
         if (card.savedWithoutDetail) {
-          return { id: card.id, modelOptions: card.modelOptions, versionOptions: card.versionOptions };
+          return { id: card.id, modelOptions: card.modelOptions, versionOptions: card.versionOptions, motorOptions: card.motorOptions || [] };
         }
         if (!card.vehicleBrand) {
-          return { id: card.id, modelOptions: [], versionOptions: [] };
+          return { id: card.id, modelOptions: [], versionOptions: [], motorOptions: [] };
         }
 
         // Fase 5: la marca guardada puede venir escrita como antes ("KIA MOTORS", "MERCEDES BENZ").
@@ -969,7 +980,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
         const selectedModels = splitValues(card.vehicleModel);
         if (selectedModels.length === 0) {
-          return { id: card.id, modelOptions: models, versionOptions: [] };
+          return { id: card.id, modelOptions: models, versionOptions: [], motorOptions: [] };
         }
 
         const versionGroups = await Promise.all(
@@ -981,7 +992,35 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           new Map(versionGroups.flat().map((version) => [String(version.id), version])).values(),
         );
 
-        return { id: card.id, modelOptions: models, versionOptions };
+        const motorGroups = await Promise.all(
+          selectedModels.map(async (model) => {
+            const params = new URLSearchParams({ marca: marcaCatalogo, modelo: model });
+            if (card.vehicleYear) params.set('anioDesde', String(card.vehicleYear));
+            if (card.vehicleYearTo) params.set('anioHasta', String(card.vehicleYearTo));
+            try {
+              const res = await apiFetch(`${API_BASE_URL}/api/v1/catalogos/inventario/motores?${params.toString()}`);
+              if (!res.ok) return [];
+              return (await res.json()) as MotorOption[];
+            } catch {
+              return [];
+            }
+          }),
+        );
+        let motorOptions = Array.from(
+          new Map(motorGroups.flat().map((m) => [m.id, m])).values(),
+        );
+        if (motorOptions.length === 0 && versionOptions.length > 0) {
+          const distinctMotors = Array.from(
+            new Set(
+              versionOptions
+                .map((v) => v.motor)
+                .filter((m): m is string => Boolean(m && String(m).trim())),
+            ),
+          );
+          motorOptions = distinctMotors.map((m) => ({ id: m, etiqueta: formatearEtiquetaMotor(m) }));
+        }
+
+        return { id: card.id, modelOptions: models, versionOptions, motorOptions };
       }),
     ).then((results) => {
       if (!active) return;
@@ -1003,6 +1042,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
             ...card,
             modelOptions: result.modelOptions,
             versionOptions: [...result.versionOptions, ...kept, ...missing],
+            motorOptions: result.motorOptions || [],
           };
         }),
       );
@@ -1161,10 +1201,13 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           next.vehicleVersionIds = [];
           next.modelOptions = [];
           next.versionOptions = [];
+          next.motor = '';
+          next.motorOptions = [];
         }
         if (fields.vehicleModel !== undefined || fields.vehicleYear !== undefined || fields.vehicleYearTo !== undefined) {
           next.vehicleVersionIds = [];
           next.versionOptions = [];
+          next.motor = '';
           next.savedWithoutDetail = false;
         }
         if (fields.vehicleYearTo !== undefined || fields.vehicleBrand !== undefined) {
@@ -1241,6 +1284,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
             model: card.vehicleModel,
             yearFrom: String(card.vehicleYear),
             yearTo: String(card.vehicleYearTo),
+            motor: card.motor || '',
             oemReference: sanitizeCodeInput(card.oem),
             versionLabels: selectedVersionLabels,
           };
@@ -1260,7 +1304,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       // Sin detalle del catálogo no hay versiones que leer: el motor queda el que ya tenía.
       const savedMotor = editProduct?.vehicleVersion || '';
       const primaryMotor = !primaryCompatibility.savedWithoutDetail
-        ? joinValues(primaryVersionLabels)
+        ? (primaryCompatibility.motor || joinValues(primaryVersionLabels))
         : splitValues(savedMotor).some(isSavedVehicleLabel)
         ? joinValues(withoutSavedLabels(splitValues(savedMotor)))
         : savedMotor;
@@ -1767,11 +1811,31 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       </div>
 
                       <div className="form-group">
+                        <label className="form-label">Motor (Cilindrada) {OPTIONAL}</label>
+                        <select
+                          className="form-control focus-accent"
+                          value={card.motor || ''}
+                          maxLength={40}
+                          onChange={(e) => updateCompatibility(card.id, { motor: e.target.value })}
+                          disabled={!card.vehicleModel}
+                        >
+                          <option value="">Todos los motores / No especificado</option>
+                          {card.motorOptions?.map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                              {opt.etiqueta}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="form-group">
                         <label className="form-label">Versiones disponibles {REQUIRED}</label>
                         <MultiOptionPicker
                           values={card.vehicleVersionIds}
                           onChange={(values) => updateCompatibility(card.id, { vehicleVersionIds: values })}
-                          options={card.versionOptions.map((version) => ({ label: version.nombre, value: String(version.id) }))}
+                          options={card.versionOptions
+                            .filter((version) => !card.motor || !version.motor || version.motor === card.motor || sonMotoresEquivalentes(version.motor, card.motor))
+                            .map((version) => ({ label: version.nombre, value: String(version.id) }))}
                           placeholder="Selecciona versiones"
                           emptyText={
                             card.vehicleModel
