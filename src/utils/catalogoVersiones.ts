@@ -106,8 +106,69 @@ export function motoresPermitidos(versiones: VersionCatalogo[], anioDesde?: stri
   return [...motores].sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
 }
 
-/** Busca un motor escrito a mano entre los del catálogo (ignora mayúsculas y espacios). */
+/** Extrae litros aproximados de una cadena de motor ("1.4", "1.400", "1400 cc", "1.4L") */
+export function parsearLitrosMotor(texto: string): number | null {
+  if (!texto || !texto.trim()) return null;
+  const t = texto.trim();
+  // 1. Con "L" o "litros": "1.4L", "1.4 L"
+  const mLitros = t.match(/\b([0-9]{1,2}(?:[.,][0-9]{1,3})?)\s*(?:l|litros?)\b/i);
+  if (mLitros) {
+    const v = parseFloat(mLitros[1].replace(',', '.'));
+    return Number.isNaN(v) ? null : Math.round((v >= 100 ? v / 1000 : v) * 10) / 10;
+  }
+  // 2. Con "cc": "1400 cc", "1.400 cc"
+  const mCc = t.match(/\b([5-9][0-9]{2}|[1-9][0-9]{3})\s*(?:cc|c\.c\.)\b/i);
+  if (mCc) {
+    const cc = parseFloat(mCc[1]);
+    return Number.isNaN(cc) ? null : Math.round((cc / 1000) * 10) / 10;
+  }
+  // 3. Decimales "1.4", "1.400", "3.5", "3.500"
+  const mDec = t.match(/\b([0-9]{1,2})[.,]([0-9]{1,3})\b/);
+  if (mDec) {
+    const entero = mDec[1];
+    const dec = mDec[2];
+    if (dec.length === 3) {
+      const cc = parseFloat(entero + dec);
+      return Number.isNaN(cc) ? null : Math.round((cc / 1000) * 10) / 10;
+    }
+    const v = parseFloat(`${entero}.${dec}`);
+    return Number.isNaN(v) ? null : Math.round(v * 10) / 10;
+  }
+  // 4. Entero directo de cc: 1400, 1600, 2000
+  const digits = t.replace(/[^0-9]/g, '');
+  if (digits.length >= 3 && digits.length <= 4) {
+    const cc = parseInt(digits, 10);
+    if (cc >= 600 && cc <= 8000) {
+      return Math.round((cc / 1000) * 10) / 10;
+    }
+  }
+  return null;
+}
+
+/** Comprueba si dos descripciones de motor corresponden a la misma cilindrada vehicular */
+export function sonMotoresEquivalentes(motor1: string, motor2: string): boolean {
+  if (!motor1 || !motor2) return false;
+  if (normalizarParaComparar(motor1) === normalizarParaComparar(motor2)) return true;
+  const l1 = parsearLitrosMotor(motor1);
+  const l2 = parsearLitrosMotor(motor2);
+  if (l1 !== null && l2 !== null) {
+    return Math.abs(l1 - l2) < 0.05;
+  }
+  return false;
+}
+
+/** Formatea una cilindrada de forma amigable para etiquetas y desplegables (ej. "1.4L (1400 cc)") */
+export function formatearEtiquetaMotor(motor: string): string {
+  const litros = parsearLitrosMotor(motor);
+  if (litros === null) return motor;
+  const ccAprox = Math.round(litros * 1000);
+  return `${litros.toFixed(1)}L (${ccAprox} cc)`;
+}
+
+/** Busca un motor escrito a mano entre los del catálogo (ignora mayúsculas, espacios y variaciones de formato como 1.4 vs 1.400). */
 export function motorDelCatalogo(motor: string, motores: string[]): string | null {
   const n = normalizarParaComparar(motor);
-  return motores.find((m) => normalizarParaComparar(m) === n) ?? null;
+  const exacto = motores.find((m) => normalizarParaComparar(m) === n);
+  if (exacto) return exacto;
+  return motores.find((m) => sonMotoresEquivalentes(motor, m)) ?? null;
 }

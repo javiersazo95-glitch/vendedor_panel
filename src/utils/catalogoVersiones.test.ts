@@ -28,6 +28,15 @@ describe('Años y motores del catálogo', () => {
     expect(motoresPermitidos(yaris, '2016', '2018')).toEqual(['1.5 DUAL VVT-i']);
     expect(motorDelCatalogo('1.5 dual vvt-i', motoresPermitidos(yaris))).toBe('1.5 DUAL VVT-i');
   });
+
+  it('resuelve equivalencias de motor canónicas como 1.4 vs 1.400 y cc', () => {
+    const motores = ['1.400', '1.500'];
+    expect(motorDelCatalogo('1.4', motores)).toBe('1.400');
+    expect(motorDelCatalogo('1.400', motores)).toBe('1.400');
+    expect(motorDelCatalogo('1400 cc', motores)).toBe('1.400');
+    expect(motorDelCatalogo('1.4L', motores)).toBe('1.400');
+    expect(motorDelCatalogo('1.6', motores)).toBeNull();
+  });
 });
 
 describe('Lo que el catálogo no acepta, marcado antes de publicar', () => {
