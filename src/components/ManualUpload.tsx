@@ -1815,7 +1815,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                         <select
                           className="form-control focus-accent"
                           value={card.motor || ''}
-                          maxLength={40}
                           onChange={(e) => updateCompatibility(card.id, { motor: e.target.value })}
                           disabled={!card.vehicleModel}
                         >
