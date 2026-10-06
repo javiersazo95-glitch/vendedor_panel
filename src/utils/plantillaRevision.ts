@@ -142,6 +142,11 @@ export function revisarAoA(
       return nm && n.startsWith(`${nm} `);
     });
   };
+  // "Mazda 3", "Mazda 2", "MAZDA5": en el catálogo el modelo se llama así, con la marca adelante.
+  // Sin esto, elegirlo del propio desplegable daba "trae la marca dentro del modelo".
+  const modelosOficiales = new Set(
+    Object.values(modelosPorMarca).flat().map((m) => normalizarParaComparar(m)),
+  );
   const subcategoriasPorCategoria = catalogos?.subcategoriasPorCategoria ?? {};
   // Una sugerencia sólo se nombra si existe; el mensaje ya sirve sin ella.
   // Fase 5: marcas que también son el modelo de otras ("Corsa" es una marca de motos y el
@@ -289,7 +294,7 @@ export function revisarAoA(
       agregar('compatibilidad_modelo', 'error',
         `"${modelo}" parece traer varios autos en una sola celda: así no se publica. `
         + 'Vuelve atrás y activa la separación por vehículo, o deja un auto por fila.');
-    } else if (modelo && empiezaPorMarcaDeVehiculo(modelo)) {
+    } else if (modelo && empiezaPorMarcaDeVehiculo(modelo) && !modelosOficiales.has(normalizarParaComparar(modelo))) {
       // "Toyota Corolla" en la celda del modelo: la marca quedó dentro del modelo, que es
       // lo que pasa cuando la aplicación viene de corrido y no se separó.
       agregar('compatibilidad_modelo', 'error',

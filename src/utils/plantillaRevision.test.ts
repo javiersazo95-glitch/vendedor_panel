@@ -298,6 +298,25 @@ describe('Fase 3: vehículo o universal, años posibles y lo que ya no pasa en v
     expect(r.filas[0].problemas[0].mensaje).toMatch(/trae la marca dentro del modelo/);
   });
 
+  it('un modelo oficial que lleva la marca en el nombre ("Mazda 3") no es error', () => {
+    const r = revisarAoA(
+      [columnas, filaBase({ compatibilidad_marca: 'Mazda', compatibilidad_modelo: 'Mazda 3' })],
+      PLANTILLA_CAMPOS,
+      { catalogos: CATALOGOS, modelosPorMarca: { mazda: ['Mazda 3', 'CX-5'] } },
+    );
+    const problema = r.filas[0].problemas.find((p) => p.columna === 'compatibilidad_modelo');
+    expect(problema).toBeUndefined();
+
+    // La regla sigue para lo que no es un modelo del catálogo.
+    const cx5 = revisarAoA(
+      [columnas, filaBase({ compatibilidad_marca: 'Mazda', compatibilidad_modelo: 'Mazda CX-5' })],
+      PLANTILLA_CAMPOS,
+      { catalogos: CATALOGOS, modelosPorMarca: { mazda: ['Mazda 3', 'CX-5'] } },
+    );
+    expect(cx5.filas[0].problemas.find((p) => p.columna === 'compatibilidad_modelo')?.mensaje)
+      .toMatch(/trae la marca dentro del modelo/);
+  });
+
   it('varios autos en la celda del modelo ya no es aviso: se retiene', () => {
     const r = revisar([filaBase({ compatibilidad_modelo: 'Corolla 2014-2018 / Yaris 2015-2019' })]);
     expect(r.conError).toBe(1);
