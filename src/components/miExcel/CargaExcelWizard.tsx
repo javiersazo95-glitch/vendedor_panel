@@ -74,6 +74,8 @@ import { PasoVistaPrevia, type RevisionServidor } from './PasoVistaPrevia';
 import { TarjetaCargaGuardada } from './TarjetaCargaGuardada';
 
 interface Props {
+  /** Tienda Fundadora: la calculadora de precio de la vista previa usa su tarifa (5% + IVA). */
+  fundador?: boolean;
   onVolver: () => void;
   onClose: () => void;
   onUploadSuccess: () => void;
@@ -113,6 +115,7 @@ function haceCuanto(iso: string | null, ahora: number): string {
 
 export function CargaExcelWizard({
   onVolver, onClose, onUploadSuccess, onBusyChange, onRegistrarGuardia, onAnchoCompletoChange, retomar: retomarTipo = null,
+  fundador = false,
 }: Props) {
   const { esquema, fallo: listasCaidas, reintentar: reintentarListas } = useEsquemaPlantilla(true);
   const { mapeos, guardar: guardarMapeo } = useMapeosGuardados(true);
@@ -1231,6 +1234,7 @@ export function CargaExcelWizard({
 
       {paso === 4 && tabla && mapping && (
         <PasoVistaPrevia
+          fundador={fundador}
           tabla={tabla}
           campos={campos}
           mapping={mapping}

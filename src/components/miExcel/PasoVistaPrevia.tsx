@@ -1,14 +1,15 @@
 /**
  * Etapa 4 · Vista previa y publica. Muestra cada repuesto como va a quedar publicado, en dos
  * vistas: lista (tabla) y cuadrícula (tarjetas, como el menú Inventario). Desde una tarjeta, el ojo
- * abre "Así se verá en tu tienda" -la ficha que ve el comprador- y ahí mismo se puede corregir cada
- * dato. Antes de publicar se revisa el archivo con el servidor, para que el vendedor sepa exactamente
+ * y el lápiz abren "Así se verá en tu tienda" -la ficha que ve el comprador- y ahí mismo se puede
+ * corregir cada dato (con la calculadora de lo que recibe el vendedor junto al precio); desde la ficha
+ * se puede volver a la fila en la tabla del paso 3. Antes de publicar se revisa el archivo con el servidor, para que el vendedor sepa exactamente
  * qué se va a publicar y qué no. La papelera quita un repuesto de esta carga (no se publica); desde
  * "Quitados" se vuelve a incluir.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  AlertTriangle, ArrowLeft, CheckCircle2, Eye, Info, Grid2X2, ImageOff, Images, List, Loader2, Pencil,
+  AlertTriangle, ArrowLeft, CheckCircle2, Eye, Info, Grid2X2, ImageOff, Images, List, Loader2, Pencil, Table2,
   RefreshCw, Rocket, ShieldCheck, Trash2, Undo2, XCircle,
 } from 'lucide-react';
 import { etiquetaValor, type CampoMeta, type EsquemaPlantilla, type Mapping } from '../../utils/plantillaMapping';
@@ -22,7 +23,9 @@ import {
 import { COLUMNAS_DE_VERSION, type VersionCatalogo } from '../../utils/catalogoVersiones';
 import { SelectVehiculo } from './SelectVehiculo';
 import type { FilaResultado } from '../../utils/cargaExcelApi';
-import { validarValorFijo, limiteDeColumna } from '../../utils/plantillaNormalizacion';
+import { validarValorFijo, limiteDeColumna, normalizarNumero } from '../../utils/plantillaNormalizacion';
+import { CalculadoraPrecio } from './CalculadoraPrecio';
+import { liquidoDe } from '../../utils/pricing';
 import { Miniatura, Modal } from './comunes';
 import { plural } from './textos';
 import { SelectorFotos } from './SelectorFotos';
@@ -69,6 +72,8 @@ interface Props {
   onParches: (clave: string, valores: Record<string, string>) => void;
   versionesDe: VersionesDe;
   pedirVersiones: (marca: string, modelo: string) => void;
+  /** Tienda Fundadora: la calculadora de precio usa su tarifa (5% + IVA). */
+  fundador?: boolean;
 }
 
 type EstadoFila = 'ok' | 'aviso' | 'error';
@@ -166,8 +171,10 @@ function Estado({ estado, quitado = false }: { estado: EstadoFila; quitado?: boo
 /** Un dato de la ficha que se corrige ahí mismo. */
 function DatoEditable({
   columna, etiqueta, valor, opciones, onGuardar, children, problema, editando, onEditar, onDejarDeEditar, vehiculo, onGuardarVarios,
-  soloLista = false, sinOpciones = null,
+  soloLista = false, sinOpciones = null, ayuda,
 }: {
+  /** Ayuda bajo el campo mientras se edita, calculada con lo que se está escribiendo (la calculadora del precio). */
+  ayuda?: (borrador: string) => ReactNode;
   /** Dato de catálogo: se elige de la lista (o se deja en blanco), nunca se escribe. */
   soloLista?: boolean;
   /** Por qué la lista viene vacía. */
@@ -254,6 +261,7 @@ function DatoEditable({
         <input className={`form-control ${error ? 'con-error' : ''}`} value={borrador} onChange={(e) => setBorrador(e.target.value)} aria-label={etiqueta} autoFocus maxLength={limiteDeColumna(columna).maxLength} onKeyDown={(e) => { if (e.key === 'Enter') guardar(); }} />
       )}
       {error && <span className="mx-error-texto">{error}</span>}
+      {ayuda?.(borrador)}
       <span className="mx-botonera">
         <button type="button" className="btn btn-primary btn-primary-blue mx-btn mx-btn-chico" onClick={guardar} disabled={!!error}>Guardar</button>
         <button type="button" className="btn btn-secondary mx-btn mx-btn-chico" onClick={onDejarDeEditar}>Cancelar</button>
@@ -265,8 +273,11 @@ function DatoEditable({
 /** "Así se verá en tu tienda": la ficha que ve el comprador, con cada dato corregible. */
 function VistaTienda({
   fila, tabla, campos, esquema, modelos, fotos, imagenes, guardadas, estado, onParche, onCambiarFotos, onCerrar, nombreTienda,
-  versiones, onParches, cambiosSinConfirmar, onConfirmarCambios,
+  versiones, onParches, cambiosSinConfirmar, onConfirmarCambios, fundador = false, onCorregirEnTabla,
 }: {
+  fundador?: boolean;
+  /** Cierra la ficha y lleva a la fila en la tabla del paso 3. */
+  onCorregirEnTabla: () => void;
   /** Hay cambios en la carga que todavía no se revisaron con RepuesTop. */
   cambiosSinConfirmar: boolean;
   /** Cierra la ficha y confirma los cambios (los revisa con RepuesTop). */
@@ -293,8 +304,9 @@ function VistaTienda({
   const contexto: ContextoDeFila = {
     categoria: leer('categoria'), marcaVehiculo: leer('compatibilidad_marca'), anioDesde: leer('anio_desde'), universal,
   };
-  const editable = (col: string, hijo: ReactNode) => (
+  const editable = (col: string, hijo: ReactNode, ayuda?: (borrador: string) => ReactNode) => (
     <DatoEditable
+      ayuda={ayuda}
       columna={col}
       etiqueta={campos.find((c) => c.key === col)?.label ?? col}
       valor={leer(col)}
@@ -320,6 +332,15 @@ function VistaTienda({
     'descripcion', 'sku_proveedor', 'referencia_oem']);
   const otrosConProblema = [...new Set(estado.problemas.map((x) => x.columna).filter((c): c is string => !!c && !MOSTRADOS.has(c)))];
   const principal = fotos[Math.min(fotoActiva, Math.max(0, fotos.length - 1))];
+  // La calculadora va con el precio que se muestra; si es "sólo cotizar" no hay precio que calcular.
+  const muestraPrecio = (leer('tipo_precio') || 'MOSTRAR_PRECIO').toUpperCase() !== 'SOLO_COTIZAR';
+  const calculadora = (valor: string, conAplicar: boolean) => (muestraPrecio ? (
+    <CalculadoraPrecio
+      precio={normalizarNumero(valor).numero ?? 0}
+      fundador={fundador}
+      onAplicarSugerido={conAplicar ? (sugerido) => onParche('precio', String(sugerido)) : undefined}
+    />
+  ) : null);
 
   return (
     <Modal
@@ -340,6 +361,10 @@ function VistaTienda({
       <p className="mx-ayuda">
         Esta es la publicación que verán los compradores. Toca el lápiz <Pencil size={12} /> junto a cualquier dato para corregirlo
         y luego <b>Guardar</b>. Cuando termines, toca <b>Confirmar cambios</b> (abajo) para revisarlos con RepuesTop antes de publicar.
+        {' '}
+        <button type="button" className="mx-enlace" onClick={onCorregirEnTabla}>
+          <Table2 size={13} /> Corregir en la tabla
+        </button>
       </p>
       {estado.estado !== 'ok' && (
         <div className={`mx-corregir ${estado.estado}`} role="alert">
@@ -388,7 +413,8 @@ function VistaTienda({
             {editable('subcategoria', <span className="mx-chip alt">{ficha.subcategoria || 'Sin subcategoría'}</span>)}
             {editable('condicion', <span className="mx-chip cond">{ficha.condicion}</span>)}
           </div>
-          <div className="mx-tienda-precio">{editable('precio', ficha.precio)}</div>
+          <div className="mx-tienda-precio">{editable('precio', ficha.precio, (borrador) => calculadora(borrador, false))}</div>
+          {editando !== 'precio' && calculadora(leer('precio'), true)}
           <p className="mx-tienda-linea">Tipo de precio: {editable('tipo_precio', etiquetaValor(leer('tipo_precio') || 'MOSTRAR_PRECIO'))}</p>
           <p className="mx-tienda-linea">{editable('stock', ficha.stock ? `${ficha.stock} disponibles` : 'Sin stock')}</p>
           <section className="mx-tienda-bloque">
@@ -469,6 +495,11 @@ export function PasoVistaPrevia(p: Props) {
   const visibles = filtradas.slice((actual - 1) * tam, actual * tam);
   const indice = new Map(p.tabla.columnas.map((c, i) => [c, i]));
   const leer = (fila: FilaTabla, c: string) => String(fila.valores[indice.get(c) ?? -1] ?? '').trim();
+  const fundador = p.fundador === true;
+  /** Precio a mostrar de la fila; null si es "sólo cotizar" o no es un número. */
+  const precioDe = (fila: FilaTabla): number | null => (
+    (leer(fila, 'tipo_precio') || 'MOSTRAR_PRECIO').toUpperCase() === 'SOLO_COTIZAR' ? null : normalizarNumero(leer(fila, 'precio')).numero
+  );
   const puedePublicar = p.revision.estado === 'lista' && publicables > 0;
   const hayCambiosSinConfirmar = p.revision.estado === 'desactualizada';
   const cambios = useMemo(
@@ -621,7 +652,10 @@ export function PasoVistaPrevia(p: Props) {
                     <td className="mx-td-nombre">{ficha.nombre}</td>
                     <td>{[ficha.categoria, ficha.subcategoria].filter(Boolean).join(' › ') || '—'}</td>
                     <td>{ficha.marca || '—'}</td>
-                    <td>{ficha.precio}</td>
+                    <td>
+                      {ficha.precio}
+                      {liquidoDe(precioDe(fila), fundador) && <span className="mx-recibes">Recibes {liquidoDe(precioDe(fila), fundador)}</span>}
+                    </td>
                     <td>{leer(fila, 'stock') || '—'}</td>
                     <td className="mx-td-compat">{ficha.compatibilidad}</td>
                     <td className="mx-td-motivo">{quitado ? <span className="mx-celda-vacia">No se publicará: lo quitaste de esta carga.</span> : <ListaProblemas problemas={problemas} campos={p.campos} />}</td>
@@ -631,7 +665,7 @@ export function PasoVistaPrevia(p: Props) {
                       ) : (
                         <>
                           <button type="button" className="mx-icono-btn" onClick={() => setEnTienda(fila.clave)} aria-label={`Ver ${ficha.nombre} como en tu tienda`} title="Ver como en tu tienda"><Eye size={16} /></button>
-                          <button type="button" className="mx-icono-btn" onClick={() => p.onCorregir(fila.clave)} aria-label={`Corregir ${ficha.nombre} en la tabla`} title="Corregir en la tabla"><Pencil size={16} /></button>
+                          <button type="button" className="mx-icono-btn" onClick={() => setEnTienda(fila.clave)} aria-label={`Editar ${ficha.nombre}`} title="Editar"><Pencil size={16} /></button>
                           <button type="button" className="mx-icono-btn mx-icono-peligro" onClick={() => setAQuitar(fila)} aria-label={`Quitar ${ficha.nombre} de la carga`} title="Quitar de la carga"><Trash2 size={16} /></button>
                         </>
                       )}
@@ -663,6 +697,9 @@ export function PasoVistaPrevia(p: Props) {
                     <span>{leer(fila, 'stock') ? `${leer(fila, 'stock')} unidades` : 'Sin stock'}</span>
                     <strong>{ficha.precio}</strong>
                   </div>
+                  {liquidoDe(precioDe(fila), fundador) && (
+                    <span className="mx-recibes">Recibes {liquidoDe(precioDe(fila), fundador)} líquido</span>
+                  )}
                   {estado !== 'ok' && !quitado && (
                     <button type="button" className={`mx-card-corregir ${estado}`} onClick={() => setEnTienda(fila.clave)}>
                       <AlertTriangle size={13} />
@@ -681,7 +718,7 @@ export function PasoVistaPrevia(p: Props) {
                   <footer className="inventory-grid-actions">
                     <button type="button" className="grid-action" onClick={() => setEnTienda(fila.clave)} title="Ver cómo se verá en tu tienda" aria-label={`Ver ${ficha.nombre} como en tu tienda`}><Eye size={16} /></button>
                     <button type="button" className="grid-action" onClick={() => setFotosDe(fila.clave)} title="Elegir fotos" aria-label={`Fotos de ${ficha.nombre}`}><Images size={16} /></button>
-                    <button type="button" className="grid-action" onClick={() => p.onCorregir(fila.clave)} title="Corregir en la tabla" aria-label={`Corregir ${ficha.nombre}`}><Pencil size={16} /></button>
+                    <button type="button" className="grid-action" onClick={() => setEnTienda(fila.clave)} title="Editar" aria-label={`Editar ${ficha.nombre}`}><Pencil size={16} /></button>
                     <button type="button" className="grid-action grid-action-danger" onClick={() => setAQuitar(fila)} title="Quitar de la carga" aria-label={`Quitar ${ficha.nombre} de la carga`}><Trash2 size={16} /></button>
                   </footer>
                 )}
@@ -823,6 +860,8 @@ export function PasoVistaPrevia(p: Props) {
           cambiosSinConfirmar={hayCambiosSinConfirmar}
           onConfirmarCambios={() => { setEnTienda(null); confirmarCambios(); }}
           nombreTienda={p.nombreTienda}
+          fundador={fundador}
+          onCorregirEnTabla={() => { const clave = filaTienda.fila.clave; setEnTienda(null); p.onCorregir(clave); }}
         />
       )}
       {filaFotos && (

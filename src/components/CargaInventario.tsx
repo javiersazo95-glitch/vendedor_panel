@@ -55,6 +55,8 @@ interface CargaInventarioProps {
   onRegistrarGuardia?: RegistrarGuardia;
   /** La etapa 3 de "Mi propio Excel" usa todo el ancho: el menú lateral se oculta. */
   onAnchoCompletoChange?: (activo: boolean) => void;
+  /** Tienda Fundadora: la calculadora de precio de la vista previa usa su tarifa. */
+  founder?: boolean;
 }
 
 interface CargaReciente {
@@ -237,6 +239,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   onBusyChange,
   onRegistrarGuardia,
   onAnchoCompletoChange,
+  founder = false,
 }) => {
   const [camino, setCamino] = useState<Camino | null>(null);
   const [retomar, setRetomar] = useState<TipoCarga | null>(null);
@@ -265,6 +268,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
         onRegistrarGuardia={onRegistrarGuardia}
         onAnchoCompletoChange={onAnchoCompletoChange}
         retomar={retomar}
+        fundador={founder}
       />
     );
   }

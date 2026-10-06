@@ -305,8 +305,11 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     expect(within(ficha).getAllByText('Falta la marca del repuesto.').length).toBeGreaterThan(0);
     fireEvent.click(within(ficha).getByRole('button', { name: 'Cerrar' }));
 
-    // "Corregir en la tabla" lleva a la fila, la explica arriba y abre la celda del dato con problema.
-    fireEvent.click(screen.getByRole('button', { name: 'Corregir Disco freno' }));
+    // El lápiz de la tarjeta abre la misma ficha para editar (6-oct); desde ahí, "Corregir en la tabla"
+    // lleva a la fila, la explica arriba y abre la celda del dato con problema.
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Disco freno' }));
+    const fichaEditar = await screen.findByRole('dialog', { name: 'Así se verá en tu tienda' });
+    fireEvent.click(within(fichaEditar).getByRole('button', { name: /Corregir en la tabla/ }));
     const banner = (await screen.findByText(/Corrigiendo la fila 3/)).closest('section') as HTMLElement;
     expect(within(banner).getByText(/No se publicará/)).toBeInTheDocument();
     expect(within(banner).getByRole('button', { name: 'Columna «Marca del repuesto»' })).toBeInTheDocument();
@@ -397,6 +400,36 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     await screen.findByText(/Revisamos tu inventario:/);
     expect(screen.getByRole('button', { name: /Publicar 1 repuesto$/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Quitados (1)' })).toBeInTheDocument();
+  });
+
+  it('junto al precio muestra lo que recibe la tienda, como la carga uno a uno, y se recalcula al editarlo (6-oct)', async () => {
+    montar({ retomar: 'mi-excel' });
+    fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
+    await screen.findByText(/Revisamos tu inventario:/);
+
+    // $24.990 con la comisión estándar (8% + IVA) y Flow (2,89% + IVA): recibe $21.752.
+    expect(screen.getAllByText(/Recibes \$21\.752/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver Pastilla freno como en tu tienda/ }));
+    const ficha = await screen.findByRole('dialog', { name: 'Así se verá en tu tienda' });
+    expect(within(ficha).getByText('Recibirás en tu cuenta (Líquido):')).toBeInTheDocument();
+    expect(within(ficha).getByText('$21.752')).toBeInTheDocument();
+
+    // Mientras se escribe el precio nuevo, la calculadora usa ese valor.
+    fireEvent.click(within(ficha).getByRole('button', { name: 'Cambiar Precio' }));
+    fireEvent.change(within(ficha).getByLabelText('Precio'), { target: { value: '30000' } });
+    expect(within(ficha).getByText('$26.112')).toBeInTheDocument();
+  });
+
+  it('a una tienda Fundadora la calculadora le aplica su tarifa de 5% + IVA', async () => {
+    montar({ retomar: 'mi-excel', fundador: true });
+    fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
+    await screen.findByText(/Revisamos tu inventario:/);
+
+    expect(screen.getAllByText(/Recibes \$22\.643/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /Ver Pastilla freno como en tu tienda/ }));
+    const ficha = await screen.findByRole('dialog', { name: 'Así se verá en tu tienda' });
+    expect(within(ficha).getByText(/Beneficio Fundador/)).toBeInTheDocument();
   });
 
   it('un cambio en la ficha queda "sin confirmar": se explica, se confirma, y Publicar pide confirmarlo antes', async () => {

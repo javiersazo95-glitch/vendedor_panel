@@ -653,3 +653,22 @@ li.aviso .mx-foco-campo { color: var(--mx-amarillo-texto); border-color: #fcd34d
 /* H51: stock bajo (1 a 9) en naranja; el 0 ya sale en rojo porque no se publica. */
 .mx-tabla td.mx-stock-bajo { background: #fff1e6; box-shadow: inset 0 0 0 2px #fb923c; }
 .mx-tabla td.mx-stock-bajo .mx-celda-motivo { color: #c2410c; }
+
+/* Paso 4 (6-oct): lo que recibe el vendedor junto al precio y el acceso a la tabla desde la ficha. */
+.mx-recibes { display: block; margin-top: 0.15rem; color: #15803d; font-size: 0.78rem; font-weight: 600; }
+.mx-card .mx-recibes { margin-top: -0.2rem; }
+.mx-enlace {
+  display: inline-flex; align-items: center; gap: 0.25rem; padding: 0; border: none; background: none;
+  color: #0066ff; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline;
+}
+.mx-calculadora { margin: 0.5rem 0 0.75rem; max-width: 460px; }
+.mx-dato-editando .mx-calculadora { margin: 0.5rem 0; }
+.mx-calculadora-detalle { width: 100%; background: none; border: none; padding: 0; cursor: pointer; font: inherit; text-align: left; }
+.mx-calculadora-detalle > span:first-child { color: #0066ff; font-weight: 600; }
+.mx-calculadora-total { display: flex; align-items: center; gap: 4px; }
+.mx-calculadora-nota { font-size: 0.78rem; color: #64748b; }
+.mx-calculadora-desglose {
+  margin-top: 0.5rem; padding: 0.5rem 0.6rem; background-color: rgba(100, 116, 139, 0.08); border-radius: 6px;
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.mx-calculadora-sub { padding-left: 0.75rem; font-size: 0.78rem; opacity: 0.85; }

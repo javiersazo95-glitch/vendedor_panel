@@ -67,3 +67,9 @@ export function calculateSuggestedPrice(desiredAmount: number, founder: boolean 
   }
   return low;
 }
+
+/** "Recibes $X" de la vista previa de la carga con Excel: el líquido de ese precio; null sin precio. */
+export function liquidoDe(precio: number | null, founder: boolean = false): string | null {
+  if (precio === null || !(precio > 0)) return null;
+  return `$${calculateSellerEarnings(precio, founder).toLocaleString('es-CL')}`;
+}

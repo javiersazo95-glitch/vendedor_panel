@@ -482,6 +482,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             onAbrirUnoAUno={() => { setEditingProduct(null); setIsManualOpen(true); }}
             vista={cargaVista}
             onVerHistorial={() => { setCargaVista('historial'); setCargaKey((k) => k + 1); }}
+            founder={founder}
             embedded
             onBusyChange={setCargaOcupada}
             onRegistrarGuardia={registrarGuardia}
