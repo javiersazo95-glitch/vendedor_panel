@@ -155,6 +155,30 @@ describe('ManualUpload: sin callejones y sin perder vehículos (Fase 7)', () => 
     expect(payload.vehiculoCatalogoIds).toEqual([10, 11]);
   });
 
+  it('al editar, la tarjeta conserva los años declarados y no los ensancha a los de sus versiones (H-P2)', async () => {
+    vi.stubGlobal('fetch', responder({
+      ...CATALOGO,
+      'vehiculo-catalogos': [{ id: 10, marca: 'Toyota', modelo: 'Corolla', anioDesde: 2014, anioHasta: 2019, version: '1.8 GLI' },
+        { id: 11, marca: 'Toyota', modelo: 'Corolla', anioDesde: 2018, anioHasta: 2025, version: '1.8 XEI' }],
+      versiones: [{ id: 10, nombre: '1.8 GLI' }, { id: 11, nombre: '1.8 XEI' }],
+    }));
+    const onSave = vi.fn(async () => {});
+    // Así lo guarda la carga masiva por Excel: anioDesde/anioHasta.
+    render(<ManualUpload isOpen onClose={() => {}} onSave={onSave} editProduct={guardado({
+      compatibilityGroupsJson: JSON.stringify([{ vehiculoCatalogoIds: [10, 11], marca: 'Toyota', modelo: 'Corolla', anioDesde: 2015, anioHasta: 2019 }]),
+    })} />);
+
+    await screen.findByText('Vehículo 1');
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('versiones'))).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const [payload] = onSave.mock.calls[0] as unknown as [Product];
+    const [grupo] = JSON.parse(payload.compatibilityGroupsJson!);
+    expect(grupo).toMatchObject({ yearFrom: '2015', yearTo: '2019' });
+    expect(payload.vehiculoCatalogoIds).toEqual([10, 11]);
+  });
+
   it('activar universal no borra los vehículos: los oculta, avisa y vuelven al desactivarlo', async () => {
     vi.stubGlobal('fetch', responder({
       ...CATALOGO,

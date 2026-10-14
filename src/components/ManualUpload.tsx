@@ -75,6 +75,9 @@ type SavedGroup = {
   model?: unknown;
   yearFrom?: unknown;
   yearTo?: unknown;
+  /** Así guarda los años la carga masiva (Excel); el formulario usa yearFrom/yearTo. */
+  anioDesde?: unknown;
+  anioHasta?: unknown;
   oemReference?: unknown;
   versionLabels?: unknown;
 };
@@ -292,6 +295,7 @@ function cardForSavedGroup(group: SavedGroup, details: VehicleCatalogDetail[], p
     return {
       ...createCompatibilityCard(product),
       oem: '',
+      ...savedYears(group),
       vehicleVersionIds: ids.map(String),
       versionOptions: ids.map((id) => ({ id, nombre: savedVehicleLabel(id) })),
       savedWithoutDetail: true,
@@ -299,7 +303,7 @@ function cardForSavedGroup(group: SavedGroup, details: VehicleCatalogDetail[], p
       savedGroup: 'compatBrand' in group || 'model' in group ? group : null,
     };
   }
-  const card = { ...createCompatibilityCardFromDetails(details, product), oem: '' };
+  const card = { ...createCompatibilityCardFromDetails(details, product), oem: '', ...savedYears(group) };
   const found = new Set(details.map((detail) => detail.id));
   const missing = ids.filter((id) => !found.has(id));
   if (missing.length === 0) return card;
@@ -308,6 +312,24 @@ function cardForSavedGroup(group: SavedGroup, details: VehicleCatalogDetail[], p
     vehicleVersionIds: [...card.vehicleVersionIds, ...missing.map(String)],
     versionOptions: [...card.versionOptions, ...missing.map((id) => ({ id, nombre: savedVehicleLabel(id) }))],
   };
+}
+
+const yearOf = (value: unknown) => {
+  const year = Number(textOf(value).trim());
+  return Number.isInteger(year) && year >= 1900 && year <= 2100 ? year : null;
+};
+
+/**
+ * H-P2 (prueba en dev, 14-oct): los años que declaró la tienda para la tarjeta. Antes la tarjeta se
+ * armaba con el mínimo y el máximo de sus versiones del catálogo, y editar cualquier cosa (el
+ * precio) ensanchaba en silencio un "Yaris 2015-2019" a "2014-2025". Sin años guardados (grupos
+ * antiguos) siguen valiendo los del catálogo.
+ */
+function savedYears(group: SavedGroup): Partial<Pick<CompatibilityCard, 'vehicleYear' | 'vehicleYearTo'>> {
+  const from = yearOf(group.yearFrom) ?? yearOf(group.anioDesde);
+  if (from === null) return {};
+  const to = yearOf(group.yearTo) ?? yearOf(group.anioHasta);
+  return { vehicleYear: from, vehicleYearTo: to !== null && to >= from ? to : from };
 }
 
 function createCompatibilityCardFromDetails(details: VehicleCatalogDetail[], product: Product): CompatibilityCard {
