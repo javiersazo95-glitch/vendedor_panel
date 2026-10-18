@@ -72,7 +72,7 @@ interface Props {
   onParches: (clave: string, valores: Record<string, string>) => void;
   versionesDe: VersionesDe;
   pedirVersiones: (marca: string, modelo: string) => void;
-  /** Tienda Fundadora: la calculadora de precio usa su tarifa (5% + IVA). */
+  /** Tienda Fundadora: la calculadora de precio usa su tarifa (0% en marcha blanca). */
   fundador?: boolean;
 }
 

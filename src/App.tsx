@@ -8,8 +8,8 @@ import { EVENTO_SESION_VENCIDA, clearSession, getStoredSession, saveSession, tom
 function App() {
   const [session, setSession] = useState<UserSession | null>(() => getStoredSession());
 
-  const handleLogin = (email: string, role: string, token: string, sellerId: string, founder: boolean) => {
-    const user: UserSession = { email, role, token, sellerId, founder };
+  const handleLogin = (email: string, role: string, token: string, sellerId: string, founder: boolean, founderUntil: string | null) => {
+    const user: UserSession = { email, role, token, sellerId, founder, founderUntil };
     setSession(user);
     saveSession(user);
   };
@@ -56,7 +56,7 @@ function App() {
     <>
       {session ? (
         <>
-          <Dashboard userEmail={session.email} userRole={session.role} founder={session.founder === true} onLogout={handleLogout} />
+          <Dashboard userEmail={session.email} userRole={session.role} founder={session.founder === true} founderUntil={session.founderUntil ?? null} onLogout={handleLogout} />
           {/* key: si cambia el vendedor en la misma pestaña, se vuelve a consultar su contrato. */}
           <AdhesionContractModal key={session.sellerId} onLogout={handleLogout} />
         </>

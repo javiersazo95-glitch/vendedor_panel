@@ -16,15 +16,18 @@ import { ordenarInventario, type OrdenInventario } from '../utils/inventoryOrder
 import type { GuardiaSalida } from '../utils/guardiaSalida';
 import { DialogoGuardarCambios } from './DialogoGuardarCambios';
 import { BotonSoporte } from './soporte/BotonSoporte';
+import { founderBenefitLabel, founderDaysLeft, founderTooltip } from '../utils/founderBenefit';
 
 interface DashboardProps {
   userEmail: string;
   userRole: string;
   founder: boolean;
+  /** Fin de la marcha blanca Fundador (ISO-8601); null si el backend no la informa. */
+  founderUntil: string | null;
   onLogout: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, founder, onLogout }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, founder, founderUntil, onLogout }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +49,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   /** Mientras se revisa, publica o suben fotos, el menú no deja salir (se perdería el avance). */
   const [cargaOcupada, setCargaOcupada] = useState(false);
   const [inventoryView, setInventoryView] = useState<'table' | 'grid'>('table');
+  /** Ultima semana de marcha blanca Fundador: el badge sube un poco el tono. */
+  const founderEnding = useMemo(() => {
+    if (!founder) return false;
+    const { daysLeft, endsAt, isExpired } = founderDaysLeft(founderUntil);
+    return endsAt !== null && !isExpired && daysLeft <= 7;
+  }, [founder, founderUntil]);
   /**
    * La pantalla con trabajo sin guardar ("Mi propio Excel") registra acá su guardia: antes de
    * cambiar de vista se le pregunta si hay cambios pendientes y, si los hay, se avisa.
@@ -395,7 +404,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
               <div className="user-info">
                 <span className="user-name">{userEmail}</span>
                 <span className="user-role">{userRole}</span>
-                {founder ? <span className="founder-badge-web"><Crown size={13} className="founder-crown-icon" /> Fundador <button type="button" className="founder-info" aria-label="Información sobre Vendedor Fundador"><Info size={13} /><span className="founder-tooltip">Eres de las primeras tiendas de RepuesTop: durante tus primeros 3 meses tu comisión RepuesTop es fija en 5% + IVA; el costo de Flow se deduce en la liquidación.</span></button></span> : null}
+                {founder ? (
+                  // Marcha blanca Fundador: 0 % de tarifa de servicio por 2 meses. El contador de dias es
+                  // sutil, y en la ultima semana (`is-ending`) sube un poco el tono para que no sorprenda.
+                  <span className={`founder-badge-web${founderEnding ? ' is-ending' : ''}`}>
+                    <Crown size={13} className="founder-crown-icon" /> Fundador · {founderBenefitLabel(founderUntil)}
+                    <button type="button" className="founder-info" aria-label="Información sobre Vendedor Fundador">
+                      <Info size={13} /><span className="founder-tooltip">{founderTooltip(founderUntil)}</span>
+                    </button>
+                  </span>
+                ) : null}
               </div>
             </div>
           </div>

@@ -1,9 +1,14 @@
 export const FLOW_RATE_BASE = 0.0289;
 const FLOW_IVA = 0.19;
 const FLOW_RATE_WITH_IVA = FLOW_RATE_BASE * (1 + FLOW_IVA);
-const FOUNDER_APP_RATE = 0.05;
-// Comision estandar parejo para tiendas verificadas (8 % + IVA, sin tramos ni tope; 2026-09-24).
-const STANDARD_APP_RATE = 0.08;
+// Vendedor Fundador (2026-10-18): tarifa de servicio RepuesTop 0 % durante la marcha blanca de
+// 2 meses desde la aprobacion (primeras 100 tiendas). Solo paga la pasarela Flow.
+const FOUNDER_APP_RATE = 0;
+export const FOUNDER_FREE_MONTHS = 2;
+// Comision estandar parejo para tiendas verificadas (7 % + IVA, sin tramos ni tope; 2026-10-18,
+// antes 8 %). Es la que rige al terminar la marcha blanca.
+const STANDARD_APP_RATE = 0.07;
+export const STANDARD_RATE_LABEL = '7%';
 // Si es false, el porcentaje es neto y el IVA (19%) se cobra adicional al vendedor (% + IVA)
 const COMMISSION_IVA_INCLUDED = false;
 

@@ -74,7 +74,7 @@ import { PasoVistaPrevia, type RevisionServidor } from './PasoVistaPrevia';
 import { TarjetaCargaGuardada } from './TarjetaCargaGuardada';
 
 interface Props {
-  /** Tienda Fundadora: la calculadora de precio de la vista previa usa su tarifa (5% + IVA). */
+  /** Tienda Fundadora: la calculadora de precio de la vista previa usa su tarifa (0% en marcha blanca). */
   fundador?: boolean;
   onVolver: () => void;
   onClose: () => void;

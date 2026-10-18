@@ -407,29 +407,30 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
     await screen.findByText(/Revisamos tu inventario:/);
 
-    // $24.990 con la comisión estándar (8% + IVA) y Flow (2,89% + IVA): recibe $21.752.
-    expect(screen.getAllByText(/Recibes \$21\.752/).length).toBeGreaterThan(0);
+    // $24.990 con la tarifa estándar (7% + IVA) y Flow (2,89% + IVA): recibe $22.050.
+    expect(screen.getAllByText(/Recibes \$22\.050/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: /Ver Pastilla freno como en tu tienda/ }));
     const ficha = await screen.findByRole('dialog', { name: 'Así se verá en tu tienda' });
     expect(within(ficha).getByText('Recibirás en tu cuenta (Líquido):')).toBeInTheDocument();
-    expect(within(ficha).getByText('$21.752')).toBeInTheDocument();
+    expect(within(ficha).getByText('$22.050')).toBeInTheDocument();
 
     // Mientras se escribe el precio nuevo, la calculadora usa ese valor.
     fireEvent.click(within(ficha).getByRole('button', { name: 'Cambiar Precio' }));
     fireEvent.change(within(ficha).getByLabelText('Precio'), { target: { value: '30000' } });
-    expect(within(ficha).getByText('$26.112')).toBeInTheDocument();
+    expect(within(ficha).getByText('$26.469')).toBeInTheDocument();
   });
 
-  it('a una tienda Fundadora la calculadora le aplica su tarifa de 5% + IVA', async () => {
+  it('a una tienda Fundadora en marcha blanca la calculadora solo le descuenta Flow (0% de tarifa)', async () => {
     montar({ retomar: 'mi-excel', fundador: true });
     fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
     await screen.findByText(/Revisamos tu inventario:/);
 
-    expect(screen.getAllByText(/Recibes \$22\.643/).length).toBeGreaterThan(0);
+    // $24.990 - Flow $859 (2,89% + IVA) = $24.131.
+    expect(screen.getAllByText(/Recibes \$24\.131/).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: /Ver Pastilla freno como en tu tienda/ }));
     const ficha = await screen.findByRole('dialog', { name: 'Así se verá en tu tienda' });
-    expect(within(ficha).getByText(/Beneficio Fundador/)).toBeInTheDocument();
+    expect(within(ficha).getByText(/Marcha blanca Fundador/)).toBeInTheDocument();
   });
 
   it('un cambio en la ficha queda "sin confirmar": se explica, se confirma, y Publicar pide confirmarlo antes', async () => {

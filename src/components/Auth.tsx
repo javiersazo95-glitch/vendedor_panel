@@ -29,7 +29,8 @@ async function fetchWithTimeout(input: string, init: RequestInit): Promise<Respo
 }
 
 interface AuthProps {
-  onLogin: (email: string, role: string, token: string, sellerId: string, founder: boolean) => void;
+  /** `founderUntil`: fin de la marcha blanca Fundador (ISO-8601) o null si el backend no la trae. */
+  onLogin: (email: string, role: string, token: string, sellerId: string, founder: boolean, founderUntil: string | null) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,7 +110,14 @@ async function procesarRespuestaLogin(response: Response, onLogin: AuthProps['on
     );
   }
 
-  onLogin(data.usuario.email, 'Vendedor', data.token, String(data.sellerId), data.founder === true);
+  onLogin(
+    data.usuario.email,
+    'Vendedor',
+    data.token,
+    String(data.sellerId),
+    data.founder === true,
+    typeof data.founderUntil === 'string' ? data.founderUntil : null,
+  );
 }
 
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {

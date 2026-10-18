@@ -4,6 +4,8 @@ export interface UserSession {
   token: string;
   sellerId: string;
   founder?: boolean;
+  /** Fin de la marcha blanca Fundador (ISO-8601). null si el backend no la informa. */
+  founderUntil?: string | null;
 }
 
 const SESSION_KEY = 'repuestop_session';
@@ -22,6 +24,7 @@ function isValidUserSession(value: unknown): value is UserSession {
     typeof value.token === 'string' &&
     typeof value.sellerId === 'string' &&
     (value.founder === undefined || typeof value.founder === 'boolean') &&
+    (value.founderUntil === undefined || value.founderUntil === null || typeof value.founderUntil === 'string') &&
     value.email.length > 0 &&
     value.token.length > 0 &&
     value.sellerId.length > 0

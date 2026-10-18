@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import {
-  calculateSellerEarnings, calculateSuggestedPrice, FLOW_RATE_BASE, pricingFeeBreakdown, serviceFeeAmount,
+  calculateSellerEarnings, calculateSuggestedPrice, FLOW_RATE_BASE, pricingFeeBreakdown, serviceFeeAmount, STANDARD_RATE_LABEL,
 } from '../../utils/pricing';
 
 const FLOW_RATE_LABEL = `${(FLOW_RATE_BASE * 100).toFixed(2).replace('.', ',')}%`;
@@ -29,7 +29,7 @@ export function CalculadoraPrecio({ precio, fundador, onAplicarSugerido }: {
 
   return (
     <div className="manual-pricing-helper mx-calculadora" aria-label="Cuánto recibes por este precio">
-      {fundador && <div className="manual-pricing-row"><strong>Beneficio Fundador: tarifa RepuesTop fija de 5% + IVA</strong></div>}
+      {fundador && <div className="manual-pricing-row"><strong>Marcha blanca Fundador: 0% de tarifa de servicio RepuesTop; solo pagas Flow. Después: {STANDARD_RATE_LABEL} + IVA.</strong></div>}
       <button
         type="button"
         onClick={() => setConDetalle((v) => !v)}
@@ -52,13 +52,23 @@ export function CalculadoraPrecio({ precio, fundador, onAplicarSugerido }: {
       </div>
       {conDetalle && (
         <div className="mx-calculadora-desglose">
-          <div className="manual-pricing-row">
-            <span>Comisión RepuesTop ({Math.round(desglose.rate * 100)}% + IVA):</span>
-            <strong className="manual-pricing-fee">-${formatCLP(desglose.repuestopWithIva)}</strong>
-          </div>
-          <div className="manual-pricing-row mx-calculadora-sub">
-            <span>↳ Neto comisión: ${formatCLP(desglose.repuestopNet)} | IVA (19%): ${formatCLP(desglose.repuestopIva)}</span>
-          </div>
+          {/* Con 0 % (marcha blanca Fundador) la fila dice por que es $0 y no se desglosa un IVA de $0. */}
+          {desglose.rate === 0 ? (
+            <div className="manual-pricing-row">
+              <span>Tarifa de servicio RepuesTop (0% · marcha blanca):</span>
+              <strong className="manual-pricing-fee">$0</strong>
+            </div>
+          ) : (
+            <>
+              <div className="manual-pricing-row">
+                <span>Tarifa de servicio RepuesTop ({Math.round(desglose.rate * 100)}% + IVA):</span>
+                <strong className="manual-pricing-fee">-${formatCLP(desglose.repuestopWithIva)}</strong>
+              </div>
+              <div className="manual-pricing-row mx-calculadora-sub">
+                <span>↳ Neto tarifa: ${formatCLP(desglose.repuestopNet)} | IVA (19%): ${formatCLP(desglose.repuestopIva)}</span>
+              </div>
+            </>
+          )}
           <div className="manual-pricing-row">
             <span>Procesamiento Flow ({FLOW_RATE_LABEL} + IVA):</span>
             <strong className="manual-pricing-fee">-${formatCLP(desglose.flowWithIva)}</strong>

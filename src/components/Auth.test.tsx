@@ -87,12 +87,13 @@ describe('Auth: tienda suspendida (H61)', () => {
       usuario: { email: 'vendedor@repuestop.cl' },
       sellerBlocked: false,
       founder: true,
+      founderUntil: '2026-12-18T00:00:00Z',
     }));
     const onLogin = renderAuth();
 
     ingresar();
 
-    await waitFor(() => expect(onLogin).toHaveBeenCalledWith('vendedor@repuestop.cl', 'Vendedor', 'jwt-activo', '6', true));
+    await waitFor(() => expect(onLogin).toHaveBeenCalledWith('vendedor@repuestop.cl', 'Vendedor', 'jwt-activo', '6', true, '2026-12-18T00:00:00Z'));
     expect(screen.queryByTestId('aviso-tienda-suspendida')).not.toBeInTheDocument();
     expect(revocarSesionVencida).not.toHaveBeenCalled();
   });
