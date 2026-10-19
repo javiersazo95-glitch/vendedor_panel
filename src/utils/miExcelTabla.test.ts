@@ -133,7 +133,9 @@ describe('Qué dato exacto impide publicar', () => {
   });
 
   it('marca el dato que objetó el servidor y deja de marcarlo apenas el vendedor lo cambia', () => {
-    const { mapping, tabla } = preparar((m) => aplicarATodasVacias(aplicarATodasVacias(m, 'categoria', 'Frenos'), 'marca_repuesto', 'Bosch'));
+    // La garantía (2.4.0, obligatoria) se completa para todas: aquí se mira sólo lo del servidor.
+    const completar = (m: Mapping) => aplicarATodasVacias(aplicarATodasVacias(aplicarATodasVacias(m, 'categoria', 'Frenos'), 'marca_repuesto', 'Bosch'), 'garantia', '1 año');
+    const { mapping, tabla } = preparar(completar);
     const t = tabla();
     const fila = t.filas[0];
     const servidor = {
@@ -145,7 +147,7 @@ describe('Qué dato exacto impide publicar', () => {
     expect(problemasDeFila(fila, t.columnas, campos, servidor).filter((x) => x.columna !== 'stock')).toEqual([
       { columna: 'marca_repuesto', severidad: 'error', mensaje: 'La marca del repuesto "Bosch" está bloqueada.' },
     ]);
-    const corregida = tabla([], aplicarParche(aplicarATodasVacias(aplicarATodasVacias(mapping, 'categoria', 'Frenos'), 'marca_repuesto', 'Bosch'), fila.clave, 'marca_repuesto', 'Mann')).filas[0];
+    const corregida = tabla([], aplicarParche(completar(mapping), fila.clave, 'marca_repuesto', 'Mann')).filas[0];
     // Ya no queda nada que impida publicar: sólo el aviso de que "Mann" no está en este catálogo de prueba.
     expect(problemasDeFila(corregida, t.columnas, campos, servidor).filter((x) => x.severidad === 'error')).toEqual([]);
   });

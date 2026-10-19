@@ -37,6 +37,8 @@ import {
 } from '../utils/plantillaMapping';
 import { fichaDesdeFila, revisarAoA, type FilaRevisada } from '../utils/plantillaRevision';
 import { CeldaRevision } from './CeldaRevision';
+import { ListaSugerencias } from './miExcel/ListaSugerencias';
+import { sugerenciasDeTextoLibre } from '../utils/garantia';
 import {
   agruparCambios,
   limiteDeColumna,
@@ -2104,7 +2106,9 @@ export const PlantillaMapper: React.FC<PlantillaMapperProps> = ({
                                       aria-label={`Valor fijo para ${campo.label}`}
                                       aria-invalid={error ? true : undefined}
                                       onChange={(e) => setDefault(campo.key, e.target.value)}
+                                      list={sugerenciasDeTextoLibre(campo.key).length > 0 ? `mapper-sugerencias-${campo.key}` : undefined}
                                     />
+                                    <ListaSugerencias id={`mapper-sugerencias-${campo.key}`} opciones={sugerenciasDeTextoLibre(campo.key)} />
                                     {error && <span className="mapper-campo-error">{error}</span>}
                                   </>
                                 );

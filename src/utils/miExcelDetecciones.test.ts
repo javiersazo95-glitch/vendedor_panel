@@ -55,7 +55,9 @@ describe('las listas de las columnas de catálogo', () => {
     for (const c of ['categoria', 'subcategoria', 'marca_repuesto', 'compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'motor', 'requiere_chasis']) {
       expect(COLUMNAS_DE_CATALOGO.has(c)).toBe(true);
     }
-    for (const c of ['nombre_publicado', 'precio', 'stock', 'sku_proveedor', 'descripcion']) expect(COLUMNAS_DE_CATALOGO.has(c)).toBe(false);
+    // La garantía admite texto libre: se sugieren opciones, pero no es una lista cerrada.
+    for (const c of ['nombre_publicado', 'precio', 'stock', 'sku_proveedor', 'descripcion', 'garantia']) expect(COLUMNAS_DE_CATALOGO.has(c)).toBe(false);
+    expect(opcionesDeCelda('garantia', fila, esquema, campos, modelos)).toEqual([]);
   });
 
   it('la subcategoría sale de la categoría de la fila, aunque esté escrita en minúsculas', () => {

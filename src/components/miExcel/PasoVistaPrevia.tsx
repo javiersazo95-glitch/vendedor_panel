@@ -7,7 +7,7 @@
  * qué se va a publicar y qué no. La papelera quita un repuesto de esta carga (no se publica); desde
  * "Quitados" se vuelve a incluir.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, ArrowLeft, CheckCircle2, Eye, Info, Grid2X2, ImageOff, Images, List, Loader2, Pencil, Table2,
   RefreshCw, Rocket, ShieldCheck, Trash2, Undo2, XCircle,
@@ -29,6 +29,8 @@ import { liquidoDe } from '../../utils/pricing';
 import { Miniatura, Modal } from './comunes';
 import { plural } from './textos';
 import { SelectorFotos } from './SelectorFotos';
+import { ListaSugerencias } from './ListaSugerencias';
+import { sugerenciasDeTextoLibre } from '../../utils/garantia';
 
 export type EstadoRevision = 'sin-revisar' | 'revisando' | 'lista' | 'desactualizada' | 'error';
 
@@ -195,6 +197,9 @@ function DatoEditable({
     setValorPrevio(valor);
     setBorrador(valor);
   }
+  // Texto libre con opciones sugeridas (la garantía): se elige de la lista o se escribe.
+  const listaId = useId();
+  const sugeridas = sugerenciasDeTextoLibre(columna);
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (editando) ref.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
@@ -258,7 +263,10 @@ function DatoEditable({
       ) : columna === 'descripcion' ? (
         <textarea className="form-control" rows={4} value={borrador} onChange={(e) => setBorrador(e.target.value)} aria-label={etiqueta} autoFocus maxLength={limiteDeColumna(columna).maxLength} />
       ) : (
-        <input className={`form-control ${error ? 'con-error' : ''}`} value={borrador} onChange={(e) => setBorrador(e.target.value)} aria-label={etiqueta} autoFocus maxLength={limiteDeColumna(columna).maxLength} onKeyDown={(e) => { if (e.key === 'Enter') guardar(); }} />
+        <>
+          <input className={`form-control ${error ? 'con-error' : ''}`} value={borrador} onChange={(e) => setBorrador(e.target.value)} aria-label={etiqueta} autoFocus maxLength={limiteDeColumna(columna).maxLength} onKeyDown={(e) => { if (e.key === 'Enter') guardar(); }} list={sugeridas.length > 0 ? listaId : undefined} placeholder={sugeridas.length > 0 ? 'Elige o escribe' : undefined} />
+          <ListaSugerencias id={listaId} opciones={sugeridas} />
+        </>
       )}
       {error && <span className="mx-error-texto">{error}</span>}
       {ayuda?.(borrador)}
@@ -329,7 +337,7 @@ function VistaTienda({
   /** Datos con problema que la ficha del comprador no muestra: igual se tienen que poder corregir. */
   const MOSTRADOS = new Set(['nombre_publicado', 'marca_repuesto', 'categoria', 'subcategoria', 'condicion', 'precio', 'tipo_precio',
     'stock', 'compatibilidad_general', 'compatibilidad_marca', 'compatibilidad_modelo', 'anio_desde', 'anio_hasta', 'motor',
-    'descripcion', 'sku_proveedor', 'referencia_oem']);
+    'descripcion', 'sku_proveedor', 'referencia_oem', 'garantia']);
   const otrosConProblema = [...new Set(estado.problemas.map((x) => x.columna).filter((c): c is string => !!c && !MOSTRADOS.has(c)))];
   const principal = fotos[Math.min(fotoActiva, Math.max(0, fotos.length - 1))];
   // La calculadora va con el precio que se muestra; si es "sólo cotizar" no hay precio que calcular.
@@ -417,6 +425,7 @@ function VistaTienda({
           {editando !== 'precio' && calculadora(leer('precio'), true)}
           <p className="mx-tienda-linea">Tipo de precio: {editable('tipo_precio', etiquetaValor(leer('tipo_precio') || 'MOSTRAR_PRECIO'))}</p>
           <p className="mx-tienda-linea">{editable('stock', ficha.stock ? `${ficha.stock} disponibles` : 'Sin stock')}</p>
+          <p className="mx-tienda-linea">Garantía: {editable('garantia', ficha.garantia || 'Sin garantía indicada')}</p>
           <section className="mx-tienda-bloque">
             <h4>Compatibilidad</h4>
             <p>{ficha.compatibilidad}</p>

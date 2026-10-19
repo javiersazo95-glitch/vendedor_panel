@@ -7,6 +7,7 @@ import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, 
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { claveCatalogo, mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
 import { formatearEtiquetaMotor, sonMotoresEquivalentes } from '../utils/catalogoVersiones';
+import { GARANTIA_MAX, GARANTIA_OPCIONES, esGarantiaPredefinida, normalizarGarantia } from '../utils/garantia';
 
 function sanitizeCodeInput(value: string): string {
   return value
@@ -366,6 +367,7 @@ type SnapshotFields = {
   stock: number;
   requiresChassis: string;
   condition: string;
+  warranty: string;
   description: string;
   isUniversal: boolean;
   compatibilities: CompatibilityCard[];
@@ -395,6 +397,7 @@ function snapshotOf(fields: SnapshotFields): string {
     stock: fields.stock,
     requiresChassis: fields.requiresChassis,
     condition: fields.condition,
+    warranty: normalizarGarantia(fields.warranty),
     description: fields.description.trim(),
     isUniversal: fields.isUniversal,
     filesCount: fields.filesCount,
@@ -452,6 +455,67 @@ const FLOW_RATE_LABEL = `${(FLOW_RATE_BASE * 100).toFixed(2).replace('.', ',')}%
  * no se crean "Bosch" y "BOSCH" como dos marcas. `allowOther={false}` deja sólo la lista, para
  * catálogos cerrados como la categoría, donde un valor escrito a mano no se puede publicar.
  */
+/**
+ * Garantia: desplegable con las opciones comunes (en su orden, sin ordenar alfabeticamente) y
+ * "Otra (escribirla)" para un texto propio. Lo guardado que no es una opcion se abre como "Otra".
+ */
+function WarrantySelect({
+  id,
+  value,
+  onChange,
+  required,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+}) {
+  const [isOther, setIsOther] = useState(false);
+  const showOther = isOther || (Boolean(value) && !esGarantiaPredefinida(value));
+
+  return (
+    <>
+      <select
+        id={id}
+        className="form-control focus-primary"
+        value={showOther ? OTHER_VALUE : normalizarGarantia(value)}
+        onChange={(e) => {
+          if (e.target.value === OTHER_VALUE) {
+            setIsOther(true);
+            onChange('');
+            return;
+          }
+          setIsOther(false);
+          onChange(e.target.value);
+        }}
+        required={required && !showOther}
+      >
+        <option value="">Selecciona la garantía</option>
+        {GARANTIA_OPCIONES.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+        <option value={OTHER_VALUE}>Otra (escribirla)</option>
+      </select>
+      {showOther && (
+        <input
+          type="text"
+          className="form-control focus-primary"
+          aria-label="Escribe la garantía"
+          placeholder="Ej. 18 meses o 50.000 km"
+          value={value}
+          maxLength={GARANTIA_MAX}
+          onChange={(e) => onChange(e.target.value)}
+          required={required}
+          style={{ marginTop: '0.5rem' }}
+          autoFocus={isOther}
+        />
+      )}
+    </>
+  );
+}
+
 function SelectOrInput({
   value,
   onChange,
@@ -757,6 +821,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [stock, setStock] = useState<number>(1);
   const [requiresChassis, setRequiresChassis] = useState<'false' | 'true'>('false');
   const [condition, setCondition] = useState<'ORIGINAL' | 'ALTERNATIVO'>('ORIGINAL');
+  const [warranty, setWarranty] = useState('');
   const [description, setDescription] = useState('');
   const [image, setImage] = useState('');
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
@@ -783,9 +848,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
   const computeSnapshot = useCallback(() => snapshotOf({
     sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis,
-    condition, description, isUniversal, compatibilities, filesCount: imageFiles.length,
+    condition, warranty, description, isUniversal, compatibilities, filesCount: imageFiles.length,
     publishedCount: imagePreviews.filter((preview) => !preview.startsWith('blob:')).length,
-  }), [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, description, isUniversal, compatibilities, imageFiles.length, imagePreviews]);
+  }), [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, warranty, description, isUniversal, compatibilities, imageFiles.length, imagePreviews]);
 
   const resetToEmpty = useCallback(() => {
     const defaultCard = [createCompatibilityCard()];
@@ -802,6 +867,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setRequiresChassis('false');
     setIsUniversal(false);
     setCondition('ORIGINAL');
+    setWarranty('');
     setDescription('');
     setImage('');
     setImagePreviews([]);
@@ -813,7 +879,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setError(null);
     initialSnapshotRef.current = snapshotOf({
       sku: '', oem: '', name: '', category: '', subcategory: '', partBrand: '', pricingMode: 'show_price',
-      price: 0, stock: 1, requiresChassis: 'false', condition: 'ORIGINAL', description: '', isUniversal: false,
+      price: 0, stock: 1, requiresChassis: 'false', condition: 'ORIGINAL', warranty: '', description: '', isUniversal: false,
       compatibilities: defaultCard, filesCount: 0, publishedCount: 0,
     });
   }, []);
@@ -849,6 +915,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         stock: editProduct.stock || 0,
         requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
         condition: editProduct.condition || 'ORIGINAL',
+        warranty: editProduct.warranty || '',
         description: editProduct.description || '',
         isUniversal: editProduct.esUniversal === true,
         filesCount: 0,
@@ -889,6 +956,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       setRequiresChassis(base.requiresChassis as 'false' | 'true');
       setIsUniversal(base.isUniversal);
       setCondition(base.condition);
+      setWarranty(base.warranty);
       setDescription(base.description);
       setImage(published[0] || '');
       // Fase 7: todas las fotos publicadas, no sólo la primera.
@@ -1158,7 +1226,11 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           ? missingInCard(card).map((item) => (compatibilities.length > 1 ? `${item} (vehículo ${index + 1})` : item))
           : [],
       ),
-    5: description.trim().length < MIN_DESCRIPTION ? [`descripción (mínimo ${MIN_DESCRIPTION} letras)`] : [],
+    5: [
+      description.trim().length < MIN_DESCRIPTION && `descripción (mínimo ${MIN_DESCRIPTION} letras)`,
+      // La garantia es obligatoria al crear; un producto antiguo se puede editar sin ella.
+      !editProduct && !normalizarGarantia(warranty) && 'garantía',
+    ].filter((item): item is string => Boolean(item)),
   };
 
   const markVisited = (section: number) => (e: React.FocusEvent<HTMLDivElement>) => {
@@ -1357,6 +1429,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         stock: Number(stock),
         requiresChassis: requiresChassis === 'true',
         condition,
+        warranty: normalizarGarantia(warranty) || undefined,
         description: description.trim(),
         image: finalImage,
         vehiculoCatalogoIds: isUniversal ? [] : allCatalogIds,
@@ -2013,7 +2086,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               onBlur={markVisited(5)}
             >
               <div className="form-section-header success manual-section-header-status">
-                <div><span>5.</span> Descripción y calidad</div>
+                <div><span>5.</span> Descripción, calidad y garantía</div>
                 <SectionStatus missing={missingBySection[5]} visited={visitedSections.has(5)} />
               </div>
               {missingNote(5)}
@@ -2055,6 +2128,11 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       Alternativo
                     </button>
                   </div>
+                </div>
+
+                <div className="form-group form-section-grid-full">
+                  <label className="form-label" htmlFor="manual-warranty">Garantía {!editProduct && REQUIRED}</label>
+                  <WarrantySelect id="manual-warranty" value={warranty} onChange={setWarranty} required={!editProduct} />
                 </div>
               </div>
             </div>

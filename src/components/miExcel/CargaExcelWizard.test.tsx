@@ -255,7 +255,7 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     archivo: { nombre: 'mi-inventario.csv', sha256: 'x', hojaIndex: 0, filaEncabezados: 0, recortado: false, filas: 2 },
     mapping: {
       oficial: { sku_proveedor: '0', nombre_publicado: '1', precio: '2', stock: '3' }, extras: {}, valueMap: {},
-      defaults: { compatibilidad_general: 'SI', categoria: 'Frenos', marca_repuesto: 'Bosch' },
+      defaults: { compatibilidad_general: 'SI', categoria: 'Frenos', marca_repuesto: 'Bosch', garantia: '1 año' },
     },
     opcionalesVacios: [], fotos: { asignaciones: { 0: ['pf-1.jpg'] }, origen: null, totalDisponibles: 0 },
     vistaPaso4: 'tarjetas', publicacion: null,

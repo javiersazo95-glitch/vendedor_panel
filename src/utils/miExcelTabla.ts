@@ -298,6 +298,7 @@ const ALIAS_COLUMNA: Record<string, string[]> = {
   referencia_oem: ['oem', 'referencia oem'],
   compatibilidad_general: ['universal', 'compatibilidad general', 'compatibilidad universal'],
   requiere_chasis: ['chasis'],
+  garantia: ['garantia'],
 };
 
 const normalizarTexto = (texto: string) => ` ${texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '')

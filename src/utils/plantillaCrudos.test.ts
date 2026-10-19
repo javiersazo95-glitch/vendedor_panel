@@ -48,6 +48,11 @@ const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
   if (!traeVehiculo && !(mapping.defaults?.compatibilidad_general ?? '').trim()) {
     mapping.defaults = { ...(mapping.defaults ?? {}), compatibilidad_general: 'SI' };
   }
+  // Garantía (2.4.0): los casos crudos son listas de mostrador anteriores a ella y ninguno la
+  // trae. El vendedor la completa en el paso 3; acá se simula con un valor para toda la carga.
+  if (!mapping.oficial.garantia && !(mapping.defaults?.garantia ?? '').trim()) {
+    mapping.defaults = { ...(mapping.defaults ?? {}), garantia: '6 meses (garantía legal)' };
+  }
   const { aoa: oficial, filasOrigen, porCompletar } = buildOfficialAoADetallado(
     rows, cols, mapping, PLANTILLA_CAMPOS, CATALOGOS,
   );
@@ -58,7 +63,8 @@ const leerComoElPanel = (id: string, banderas: Partial<Mapping> = {}) => {
     mapping,
     oficial,
     /** Obligatorios del contrato del backend que el archivo no trae. */
-    faltanObligatorios: ESQUEMA_FALLBACK.columnasObligatorias.filter((k) => !mapping.oficial[k]),
+    // Sin la garantía, que ningún caso crudo trae (ver arriba).
+    faltanObligatorios: ESQUEMA_FALLBACK.columnasObligatorias.filter((k) => k !== 'garantia' && !mapping.oficial[k]),
     /** Lo que el paso 2 exige llenar antes de dejar avanzar. */
     faltanEnElPaso2: PLANTILLA_CAMPOS
       .filter((c) => requiereValorEnPanel(c, mapping) && !mapping.oficial[c.key]

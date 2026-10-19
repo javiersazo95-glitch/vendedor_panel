@@ -181,6 +181,7 @@ export async function subirFotosAProductos({
         formData.append('descripcion', producto.descripcion ?? '');
         formData.append('condicion', producto.condicion ?? 'ORIGINAL');
         formData.append('requiereChasis', String(producto.requiereChasis === true));
+        if (producto.garantia) formData.append('garantia', producto.garantia);
         formData.append('compatibilityGroupsJson', producto.compatibilityGroupsJson ?? '');
         // En un solo campo: uno por id pasaba el tope de 50 partes de Tomcat (413) con autos de
         // muchas versiones (prueba en local del 30-sep: 5 de 7 fotos perdidas).

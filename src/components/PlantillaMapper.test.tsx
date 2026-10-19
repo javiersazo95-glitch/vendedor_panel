@@ -62,9 +62,16 @@ const clic = (nombre: RegExp) => fireEvent.click(screen.getByRole('button', { na
  * Fase 4: sin columna de vehículo el paso 2 no deja seguir hasta elegir una salida. Los
  * archivos de estos tests que no traen auto son listas universales.
  */
+/** Garantía (2.4.0, obligatoria): el archivo que no la trae le da un valor fijo en el paso 2. */
+const garantiaFijaSiHaceFalta = () => {
+  const garantia = screen.queryByLabelText('Valor fijo para Garantía');
+  if (garantia) fireEvent.change(garantia, { target: { value: '6 meses (garantía legal)' } });
+};
+
 const universalSiHaceFalta = () => {
   const salida = screen.queryByRole('button', { name: /Sirven para todos los vehículos/ });
   if (salida) fireEvent.click(salida);
+  garantiaFijaSiHaceFalta();
 };
 
 /** Sube el archivo y avanza del paso 1 (hoja y títulos) al paso 2 (relacionar). */
@@ -217,8 +224,8 @@ describe('PlantillaMapper', () => {
 
     // Paso 2: relación de columnas con autodetección.
     expect(await screen.findByRole('heading', { name: /Relaciona tus columnas con las de RepuesTop/ })).toBeInTheDocument();
-    // "Garantia" no calza con ningún dato oficial: cae en las columnas sin asignar.
-    expect(screen.getByText(/Columnas de tu Excel sin asignar/)).toBeInTheDocument();
+    // "Garantia" se relaciona sola con la garantía de RepuesTop (2.4.0): ya no queda sin asignar.
+    expect(screen.getByLabelText('Garantía')).toHaveDisplayValue('Garantia');
     // El archivo no trae categoría, que es obligatoria: el paso queda bloqueado hasta
     // que se elija una columna o se dé un valor para todas las filas.
     expect(screen.getByRole('button', { name: /Siguiente/ })).toBeDisabled();
@@ -244,8 +251,9 @@ describe('PlantillaMapper', () => {
     expect(aoa[1][idx('sku_proveedor')]).toBe('A-1');
     expect(aoa[1][idx('nombre_publicado')]).toBe('Filtro de aceite');
     expect(aoa[1][idx('marca_repuesto')]).toBe('Bosch');
-    // "Garantia" sin asignar -> por defecto va a la descripción.
-    expect(String(aoa[1][idx('descripcion')])).toContain('Garantia: 12 meses');
+    // La garantía del vendedor va a su columna, tal cual.
+    expect(aoa[1][idx('garantia')]).toBe('12 meses');
+    expect(String(aoa[1][idx('descripcion')])).not.toContain('Garantia');
   });
 
   it('recuerda el mapeo para un Excel con las mismas columnas', async () => {
@@ -486,6 +494,7 @@ describe('PlantillaMapper', () => {
 
     // Segunda salida: seguir y marcar fila por fila.
     fireEvent.click(screen.getByRole('button', { name: /Algunos sí y otros no/ }));
+    garantiaFijaSiHaceFalta();
     await waitFor(() => expect(screen.getByRole('button', { name: /Siguiente/ })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }));
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
@@ -514,6 +523,7 @@ describe('PlantillaMapper', () => {
       'Codigo,Titulo,Marca,Categoria,Precio,Cantidad,Marca auto,Modelo auto,Desde,Hasta',
       'A-1,Pastilla,Brembo,Frenos,4990,10,Toyota,Corola,2014,2018',
     ].join('\n'));
+    garantiaFijaSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
 
@@ -586,7 +596,7 @@ describe('PlantillaMapper', () => {
         extras: {},
         valueMap: {},
         // La decisión del vehículo también viene guardada con el mapeo (Fase 4).
-        defaults: { categoria: 'Filtros', marca_repuesto: 'Bosch', stock: '1', compatibilidad_general: 'SI' },
+        defaults: { categoria: 'Filtros', marca_repuesto: 'Bosch', stock: '1', compatibilidad_general: 'SI', garantia: '1 año' },
       },
     };
     render(

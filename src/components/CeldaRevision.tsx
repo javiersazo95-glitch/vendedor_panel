@@ -7,9 +7,11 @@
  * normal hasta que se usa, para que la tabla se siga leyendo de un vistazo y no como una
  * planilla.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
+import { sugerenciasDeTextoLibre } from '../utils/garantia';
 import { etiquetaValor } from '../utils/plantillaMapping';
+import { ListaSugerencias } from './miExcel/ListaSugerencias';
 import {
   limiteDeColumna,
   validarValorFijo,
@@ -63,6 +65,7 @@ export const CeldaRevision = ({
   // borrador se pone al día en el mismo render, sin efecto de por medio.
   const [valorPrevio, setValorPrevio] = useState(valor);
   const [editando, setEditando] = useState(false);
+  const listaId = useId();
   if (valorPrevio !== valor) {
     setValorPrevio(valor);
     setBorrador(valor);
@@ -118,6 +121,8 @@ export const CeldaRevision = ({
 
   const { maxLength, tipo } = limiteDeColumna(columna);
   const error = validarValorFijo(columna, borrador);
+  // Texto libre con opciones sugeridas (la garantía): se elige de la lista o se escribe.
+  const sugeridas = sugerenciasDeTextoLibre(columna);
 
   // El texto que ya está bien se muestra como texto y se vuelve campo al usarlo. Dentro de
   // un input, un nombre largo se ve cortado y la tabla deja de servir para lo que es: mirar
@@ -151,6 +156,8 @@ export const CeldaRevision = ({
         value={borrador}
         aria-label={etiqueta}
         aria-invalid={error ? true : undefined}
+        list={sugeridas.length > 0 ? listaId : undefined}
+        placeholder={sugeridas.length > 0 ? 'Elige o escribe' : undefined}
         autoFocus={editando}
         // En una columna que el backend lee como número, las letras no llegan a escribirse.
         // Avisar después de tipearlas es peor que no dejarlas entrar, y el punto y la coma
@@ -169,6 +176,7 @@ export const CeldaRevision = ({
           if (e.key === 'Escape') setBorrador(valor);
         }}
       />
+      <ListaSugerencias id={listaId} opciones={sugeridas} />
       {error && <span className="mapper-celda-error">{error}</span>}
     </>
   );

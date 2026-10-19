@@ -228,6 +228,8 @@ const LIMITES: Record<string, LimiteColumna> = {
   stock: { maxLength: 9, tipo: 'entero' },
   anio_desde: { maxLength: 4, tipo: 'anio' },
   anio_hasta: { maxLength: 4, tipo: 'anio' },
+  // Mismo tope que rt_proveedor_producto.garantia (VARCHAR 80).
+  garantia: { maxLength: 80, tipo: 'texto' },
 };
 
 const LIMITE_POR_DEFECTO: LimiteColumna = { maxLength: 120, tipo: 'texto' };

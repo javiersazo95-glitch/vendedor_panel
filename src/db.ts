@@ -35,6 +35,8 @@ export interface Product {
   existingPhotos?: string[];
   pricingMode?: 'show_price' | 'quote_only';
   condition?: 'ORIGINAL' | 'ALTERNATIVO';
+  /** Garantia que ofrece el vendedor ("1 año", ...). Obligatoria al crear desde el formulario. */
+  warranty?: string;
   requiresChassis?: boolean;
   vehicleYearTo?: number;
   // Compatibilidad universal: el repuesto se publica sin compatibilidad vehicular y
@@ -168,6 +170,7 @@ interface ProductDto {
   imageUrls?: string[];
   pricingMode?: string;
   condicion?: string;
+  garantia?: string | null;
   requiereChasis?: boolean;
   esUniversal?: boolean;
   vehiculoCatalogoIds?: number[];
@@ -207,6 +210,7 @@ function mapDtoToProduct(dto: ProductDto): Product {
     images: dto.imageUrls ?? [],
     pricingMode: dto.pricingMode === 'QUOTE_ONLY' ? 'quote_only' : 'show_price',
     condition: dto.condicion === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL',
+    warranty: dto.garantia?.trim() || undefined,
     requiresChassis: dto.requiereChasis === true,
     esUniversal: dto.esUniversal === true,
     vehicleYearTo: dto.anioHasta || dto.anioDesde || 0,
@@ -355,6 +359,7 @@ export async function addProduct(
   formData.append('stock', String(product.stock));
   formData.append('descripcion', product.description || '');
   formData.append('condicion', product.condition || 'ORIGINAL');
+  if (product.warranty) formData.append('garantia', product.warranty);
   formData.append('requiereChasis', String(product.requiresChassis === true));
   formData.append('activo', 'true');
   const imagenesComprimidas = await comprimirImagenes(
@@ -419,6 +424,7 @@ export async function updateProduct(
     formData.append('stock', String(product.stock));
     formData.append('descripcion', product.description || '');
     formData.append('condicion', product.condition || 'ORIGINAL');
+    if (product.warranty) formData.append('garantia', product.warranty);
     formData.append('requiereChasis', String(product.requiresChassis === true));
     formData.append('activo', String(product.activo !== false));
     if (existingPhotos !== undefined) {
@@ -460,6 +466,7 @@ export async function updateProduct(
       stock: product.stock,
       descripcion: product.description || '',
       condicion: product.condition || 'ORIGINAL',
+      garantia: product.warranty || undefined,
       requiereChasis: product.requiresChassis === true,
       vehiculoCatalogoIds: product.esUniversal ? [] : (product.vehiculoCatalogoIds || []),
       compatibilityGroupsJson: product.esUniversal ? '' : (product.compatibilityGroupsJson || ''),

@@ -48,6 +48,8 @@ export const PLANTILLA_COLUMNAS = [
   'motor',
   'descripcion',
   'requiere_chasis',
+  // 2.4.0: garantia del producto, obligatoria como al publicar uno a uno.
+  'garantia',
 ] as const;
 
 /**
@@ -87,9 +89,9 @@ export interface EsquemaPlantilla {
  * y no de la base de datos (tipo de precio, condición) sí se copian.
  */
 export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
-  version: '2.3.0',
+  version: '2.4.0',
   columnas: [...PLANTILLA_COLUMNAS],
-  columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor', 'stock'],
+  columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor', 'stock', 'garantia'],
   hojaCompatibilidadesColumnas: [
     'sku_proveedor',
     'compatibilidad_marca',
@@ -241,6 +243,15 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     // 'estado' queda al final: en una lista de mostrador puede ser el stock, pero la plantilla
     // dev lo usa para la condicion. Un valor que no sea ORIGINAL/ALTERNATIVO ya se retiene.
     synonyms: ['condicion repuesto', 'tipo repuesto', 'original alternativo', 'original o alternativo', 'calidad', 'estado'],
+  },
+  garantia: {
+    label: 'Garantía',
+    seccion: 'precio_condicion',
+    descripcion: 'La garantía que ofreces por el repuesto. Elige una de la lista o escribe la tuya (hasta 80 caracteres).',
+    ejemplo: '6 meses (garantía legal) · 1 año · 2 años · 3 años · Garantía del fabricante',
+    // Sin enumHint a proposito: la garantia admite texto libre, y una lista cerrada obligaria
+    // a "traducir" cada valor del vendedor. Las opciones comunes se sugieren al escribir.
+    synonyms: ['garantia', 'garantia producto', 'meses garantia', 'tiempo garantia', 'periodo garantia', 'warranty'],
   },
 
   compatibilidad_general: {

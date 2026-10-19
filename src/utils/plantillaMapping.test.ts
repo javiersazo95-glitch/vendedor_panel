@@ -586,21 +586,24 @@ describe('buildOfficialAoA: limpieza de los datos del vendedor', () => {
  * ------------------------------------------------------------------------ */
 
 describe('contrato de columnas de la plantilla oficial', () => {
-  it('tiene las 18 columnas del backend, en orden', () => {
-    expect(PLANTILLA_COLUMNAS).toHaveLength(18);
+  it('tiene las 19 columnas del backend, en orden', () => {
+    expect(PLANTILLA_COLUMNAS).toHaveLength(19);
     expect(PLANTILLA_COLUMNAS[0]).toBe('nombre_publicado');
     expect(PLANTILLA_COLUMNAS[4]).toBe('sku_proveedor');
     expect(PLANTILLA_COLUMNAS[9]).toBe('condicion');
     expect(PLANTILLA_COLUMNAS[10]).toBe('compatibilidad_general');
     expect(PLANTILLA_COLUMNAS[16]).toBe('descripcion');
     expect(PLANTILLA_COLUMNAS[17]).toBe('requiere_chasis');
+    expect(PLANTILLA_COLUMNAS[18]).toBe('garantia');
   });
 
   it('el esquema de respaldo declara la misma lista y la version de la plantilla', () => {
     expect(ESQUEMA_FALLBACK.columnas).toEqual([...PLANTILLA_COLUMNAS]);
     // Fase 9: 2.2.0 agrega las listas dependientes marca -> modelo; 2.3.0, las de años y motor
-    // según el modelo (carga con Excel unificada). Mismas columnas.
-    expect(ESQUEMA_FALLBACK.version).toBe('2.3.0');
+    // según el modelo (carga con Excel unificada). Mismas columnas. 2.4.0 agrega la garantía
+    // al final, obligatoria.
+    expect(ESQUEMA_FALLBACK.version).toBe('2.4.0');
+    expect(ESQUEMA_FALLBACK.columnasObligatorias).toContain('garantia');
     expect(ESQUEMA_FALLBACK.hojaCompatibilidadesColumnas).toContain('referencia_oem');
   });
 });

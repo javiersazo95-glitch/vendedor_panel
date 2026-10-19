@@ -11,7 +11,7 @@
  * Para inventarios grandes la tabla se pagina y sólo la celda que se está editando monta su lista:
  * con miles de filas, un desplegable con el catálogo completo en cada celda congelaría el navegador.
  */
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, ChevronRight, Download, FolderOpen, ImagePlus, Info, Link2, Search, Sparkles,
   Undo2, Wand2, X,
@@ -34,6 +34,8 @@ import { MAX_IMAGES_PER_PRODUCT } from '../../utils/fotosCarga';
 import { Miniatura, Modal } from './comunes';
 import { plural } from './textos';
 import { SelectorFotos } from './SelectorFotos';
+import { ListaSugerencias } from './ListaSugerencias';
+import { sugerenciasDeTextoLibre } from '../../utils/garantia';
 
 type Filtro = 'todas' | 'faltan' | 'problemas' | 'sinfoto';
 const TAMANOS = [50, 100, 200] as const;
@@ -200,6 +202,9 @@ function CompletarColumna({
   const etiqueta = campo?.label ?? columna;
   const obligatorio = campo ? requiereValorEnPanel(campo, mapping) : false;
   const [valor, setValor] = useState('');
+  // Texto libre con opciones sugeridas (la garantía): se elige de la lista o se escribe.
+  const listaId = useId();
+  const sugeridas = sugerenciasDeTextoLibre(columna);
   const sinContexto: ContextoDeFila = { categoria: '', marcaVehiculo: '', anioDesde: '' };
   const opciones = opcionesDeCelda(columna, sinContexto, esquema, campos, modelos);
   const error = opciones.length === 0 && valor ? validarValorFijo(columna, valor, etiqueta) : null;
@@ -261,13 +266,26 @@ function CompletarColumna({
               {opciones.map((o) => <option key={o} value={o}>{etiquetaValor(o)}</option>)}
             </select>
           ) : (
-            <input
-              className={`form-control ${error ? 'con-error' : ''}`}
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              placeholder="Escribe el valor"
-              aria-label={`Valor para todas las filas vacías de ${etiqueta}`}
-            />
+            <>
+              {sugeridas.length > 0 && (
+                <div className="mx-botonera" role="group" aria-label={`Opciones comunes de ${etiqueta}`}>
+                  {sugeridas.map((o) => (
+                    <button key={o} type="button" className={`btn mx-btn mx-btn-chico ${valor === o ? 'btn-primary btn-primary-blue' : 'btn-secondary'}`} onClick={() => setValor(o)}>
+                      {o}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input
+                className={`form-control ${error ? 'con-error' : ''}`}
+                value={valor}
+                onChange={(e) => setValor(e.target.value)}
+                placeholder={sugeridas.length > 0 ? 'Elige de la lista o escribe la tuya' : 'Escribe el valor'}
+                aria-label={`Valor para todas las filas vacías de ${etiqueta}`}
+                list={sugeridas.length > 0 ? listaId : undefined}
+              />
+              <ListaSugerencias id={listaId} opciones={sugeridas} />
+            </>
           )}
           {error && <p className="mx-error-texto">{error}</p>}
           <div className="mx-botonera">

@@ -22,6 +22,7 @@
 import type { CampoMeta } from './plantillaMapping';
 import { ANIO_MAXIMO, ANIO_MINIMO, COLUMNAS_NUMERICAS, normalizarNumero } from './plantillaNormalizacion';
 import { STOCK_BAJO } from './inventoryOrder';
+import { GARANTIA_MAX, normalizarGarantia } from './garantia';
 import { MARCAS_VEHICULO_BASE } from './marcasVehiculoBase';
 import { buscarEnCatalogo, normalizarParaComparar, sugerirDelCatalogo } from './plantillaCatalogos';
 import type { EsquemaPlantilla } from './plantillaMapping';
@@ -253,6 +254,11 @@ export function revisarAoA(
       agregar('condicion', 'error', `No reconocemos "${leer('condicion')}" como condición: escribe ORIGINAL o ALTERNATIVO.`);
     }
 
+    // La garantia es texto libre (con opciones sugeridas); el backend la rechaza sobre 80.
+    if (normalizarGarantia(leer('garantia')).length > GARANTIA_MAX) {
+      agregar('garantia', 'error', `La garantía no puede superar ${GARANTIA_MAX} caracteres.`);
+    }
+
     for (const key of ['compatibilidad_general', 'requiere_chasis']) {
       const bruto = leer(key);
       const upper = bruto.toUpperCase();
@@ -380,6 +386,7 @@ export interface FichaPreview {
   precio: string;
   stock: string;
   condicion: string;
+  garantia: string;
   compatibilidad: string;
   descripcion: string;
 }
@@ -418,6 +425,7 @@ export function fichaDesdeFila(columnas: string[], valores: string[]): FichaPrev
     precio,
     stock: v('stock'),
     condicion,
+    garantia: v('garantia'),
     compatibilidad,
     descripcion: v('descripcion'),
   };

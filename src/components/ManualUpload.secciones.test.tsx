@@ -45,6 +45,7 @@ async function completarLoObligatorio() {
   escribir('0', '24990');
   fireEvent.click(screen.getByLabelText('Compatibilidad universal'));
   escribir('Describe el repuesto: para qué sirve, medidas, qué incluye...', 'Pastilla de freno delantera cerámica');
+  fireEvent.change(screen.getByLabelText(/^Garantía/), { target: { value: '1 año' } });
 }
 
 describe('1 a 1 por secciones', () => {
@@ -56,7 +57,7 @@ describe('1 a 1 por secciones', () => {
     expect(await screen.findByText('Falta: nombre, categoría, marca del repuesto, código (SKU).')).toBeInTheDocument();
     expect(screen.getByText('Falta: precio.')).toBeInTheDocument();
     expect(screen.getByText('Falta: marca del vehículo.')).toBeInTheDocument();
-    expect(screen.getByText(`Falta: descripción (mínimo 15 letras).`)).toBeInTheDocument();
+    expect(screen.getByText(`Falta: descripción (mínimo 15 letras), garantía.`)).toBeInTheDocument();
     expect(screen.getAllByText(/Faltan datos en "Información básica"/).length).toBeGreaterThan(0);
     expect(onSave).not.toHaveBeenCalled();
   });
@@ -110,7 +111,7 @@ describe('1 a 1 por secciones', () => {
 
     expect(await screen.findByText('Listo: publicaste tu repuesto')).toBeInTheDocument();
     const [payload] = onSave.mock.calls[0] as unknown as [Product];
-    expect(payload).toMatchObject({ name: 'Pastilla de freno', sku: 'PF-100', esUniversal: true, price: 24990 });
+    expect(payload).toMatchObject({ name: 'Pastilla de freno', sku: 'PF-100', esUniversal: true, price: 24990, warranty: '1 año' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Publicar otro repuesto' }));
     expect((screen.getByPlaceholderText('Ej. Pastillas de freno delanteras') as HTMLInputElement).value).toBe('');
@@ -140,5 +141,32 @@ describe('1 a 1 por secciones', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     const [payload] = onSave.mock.calls[0] as unknown as [Product];
     expect(payload.oem).toBe('04465-0K090');
+  });
+
+  it('la garantía es obligatoria al crear y "Otra" deja escribirla a mano', async () => {
+    const onSave = abrir();
+    await completarLoObligatorio();
+    fireEvent.change(screen.getByLabelText(/^Garantía/), { target: { value: '' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar repuesto' }));
+    expect(await screen.findByText('Falta: garantía.')).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText(/^Garantía/), { target: { value: '__other__' } });
+    fireEvent.change(screen.getByLabelText('Escribe la garantía'), { target: { value: '  18 meses   o 50.000 km ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar repuesto' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const [payload] = onSave.mock.calls[0] as unknown as [Product];
+    expect(payload.warranty).toBe('18 meses o 50.000 km');
+  });
+
+  it('al editar, una garantía escrita a mano se abre como "Otra" con su texto', () => {
+    render(<ManualUpload isOpen onClose={() => {}} onSave={vi.fn(async () => {})}
+      editProduct={{ id: '7', sku: 'PF-1', name: 'Pastilla', partBrand: 'Bosch', price: 1000, stock: 1,
+        category: 'Frenos', warranty: '18 meses o 50.000 km' } as unknown as Product} />);
+
+    expect((screen.getByLabelText(/^Garantía/) as HTMLSelectElement).value).toBe('__other__');
+    expect((screen.getByLabelText('Escribe la garantía') as HTMLInputElement).value).toBe('18 meses o 50.000 km');
   });
 });

@@ -26,10 +26,28 @@ const filaBase = (over: Record<string, string> = {}): string[] => {
     motor: '1.8',
     descripcion: '',
     requiere_chasis: 'NO',
+    garantia: '1 año',
     ...over,
   };
   return columnas.map((c) => valores[c] ?? '');
 };
+
+describe('revisarAoA: garantía (2.4.0)', () => {
+  it('es obligatoria: una fila sin garantía no se publica', () => {
+    const [fila] = revisar([filaBase({ garantia: '' })]).filas;
+    expect(fila.problemas).toEqual([expect.objectContaining({ columna: 'garantia', severidad: 'error', mensaje: 'Falta garantía.' })]);
+  });
+
+  it('acepta una garantía escrita a mano y rechaza una de más de 80 caracteres', () => {
+    expect(revisar([filaBase({ garantia: '18 meses o 50.000 km' })]).filas[0].problemas).toEqual([]);
+    const [larga] = revisar([filaBase({ garantia: 'x'.repeat(81) })]).filas;
+    expect(larga.problemas).toEqual([expect.objectContaining({ columna: 'garantia', severidad: 'error' })]);
+  });
+
+  it('la ficha del comprador muestra la garantía', () => {
+    expect(fichaDesdeFila(columnas, filaBase()).garantia).toBe('1 año');
+  });
+});
 
 const revisar = (filas: string[][]) => revisarAoA([columnas, ...filas], PLANTILLA_CAMPOS);
 
