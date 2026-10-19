@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { LogOut, History, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LogOut, History, UploadCloud, Database, Menu, X, Info, Crown, Grid2X2, List, CheckCircle2, PanelLeftClose, PanelLeftOpen, PlayCircle } from 'lucide-react';
+import { VideoTutorialModal } from './VideoTutorialModal';
 import type { Product } from '../db';
 import logoImg from '../assets/logo.png';
 import { getAllProducts, deleteProduct, addProduct, updateProduct, pauseProduct, resumeProduct, getProductTopSummary, getWalletBalance, getSellerProfileImage, setProductTop, type ProductTopSummary } from '../db';
@@ -29,6 +30,8 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, founder, founderUntil, onLogout }) => {
   const [products, setProducts] = useState<Product[]>([]);
+  // 19-oct: video tutorial para tiendas (menu lateral).
+  const [videoTutorialOpen, setVideoTutorialOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'inventory' | 'bulk'>('inventory');
@@ -341,6 +344,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
             <History size={18} />
             Historial de cargas
           </button>
+
+          <button
+            className="nav-item"
+            onClick={() => { setVideoTutorialOpen(true); closeSidebarOnMobile(); }}
+          >
+            <PlayCircle size={18} />
+            Video tutorial
+          </button>
           {cargaOcupada && (
             <p className="nav-ocupado" role="status">Espera a que termine la carga para cambiar de pantalla.</p>
           )}
@@ -591,6 +602,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
       )}
       {/* Soporte: en todo el panel, abajo a la derecha. */}
       <BotonSoporte />
+      <VideoTutorialModal isOpen={videoTutorialOpen} onClose={() => setVideoTutorialOpen(false)} />
       {walletOpen && <WalletModal
         balance={walletBalance}
         loading={walletLoading}
