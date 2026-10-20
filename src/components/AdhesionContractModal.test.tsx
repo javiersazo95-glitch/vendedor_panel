@@ -4,6 +4,7 @@ import { AdhesionContractModal } from './AdhesionContractModal';
 import { acceptAdhesionContract, getAdhesionContractPdf, isAdhesionContractPending } from '../db';
 
 vi.mock('../db', () => ({
+  isAdhesionContractOutdated: vi.fn(() => false),
   isAdhesionContractPending: vi.fn(),
   getAdhesionContractPdf: vi.fn(),
   acceptAdhesionContract: vi.fn(),
