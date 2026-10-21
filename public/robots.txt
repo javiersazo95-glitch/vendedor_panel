@@ -1,0 +1,3 @@
+# Sitio privado (panel con sesion): no se indexa.
+User-agent: *
+Disallow: /
