@@ -3,11 +3,13 @@ import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, Globe
 import type { Product } from '../db';
 import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from '../utils/imageHelper';
-import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount, FLOW_RATE_BASE, STANDARD_RATE_LABEL } from '../utils/pricing';
+import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, serviceFeeAmount, flowRateLabel, standardRateLabel } from '../utils/pricing';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { claveCatalogo, mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
 import { formatearEtiquetaMotor, sonMotoresEquivalentes } from '../utils/catalogoVersiones';
-import { GARANTIA_MAX, GARANTIA_OPCIONES, esGarantiaPredefinida, normalizarGarantia } from '../utils/garantia';
+import { GARANTIA_MAX, esGarantiaPredefinida, normalizarGarantia } from '../utils/garantia';
+import { MODELS_FALLBACK, PART_BRANDS_FALLBACK, VEHICLE_BRANDS_FALLBACK } from '../remoteConfig/fallbacks';
+import { useCatalogo, useLista } from '../remoteConfig/hooks';
 
 function sanitizeCodeInput(value: string): string {
   return value
@@ -130,58 +132,14 @@ function deduplicateAndSortCategories(rawCategories: string[]): string[] {
   return Array.from(map.values()).sort((a, b) => a.localeCompare(b, 'es'));
 }
 
-const PART_BRANDS_FALLBACK = [
-  'Bosch',
-  'NGK',
-  'TRW',
-  'Monroe',
-  'Varta',
-  'SKF',
-  'Gates',
-  'Febi',
-  'Mann-Filter',
-  'Brembo',
-  'Sachs',
-  'Valeo',
-  'Delphi',
-  'Denso',
-  'Hella',
-  'Continental',
-  'Goodyear',
-  'ACDelco',
-];
-
-const VEHICLE_BRANDS_FALLBACK = [
-  'Toyota',
-  'Hyundai',
-  'Kia',
-  'Nissan',
-  'Chevrolet',
-  'Ford',
-  'Honda',
-  'Mazda',
-  'Mitsubishi',
-  'Volkswagen',
-  'Mercedes-Benz',
-  'BMW',
-];
-
-const MODELS_FALLBACK: Record<string, string[]> = {
-  Toyota: ['Corolla', 'Hilux', 'RAV4', 'Yaris'],
-  Hyundai: ['Accent', 'Elantra', 'Tucson', 'Santa Fe'],
-  Kia: ['Rio', 'Sportage', 'Sorento', 'Cerato'],
-  Nissan: ['Versa', 'Sentra', 'Frontier', 'X-Trail'],
-  Chevrolet: ['Spark', 'Sail', 'Tracker', 'Colorado'],
-  Ford: ['Ranger', 'Escape', 'Explorer', 'F-150'],
-  Honda: ['Civic', 'CR-V', 'HR-V', 'Accord'],
-  Mazda: ['Mazda 2', 'Mazda 3', 'CX-5', 'BT-50'],
-  Mitsubishi: ['L200', 'Outlander', 'Montero', 'ASX'],
-  Volkswagen: ['Gol', 'Jetta', 'Tiguan', 'Amarok'],
-  'Mercedes-Benz': ['Clase C', 'Sprinter', 'GLC', 'Clase E'],
-  BMW: ['Serie 3', 'X1', 'X3', 'Serie 5'],
-};
+// Las listas de respaldo (marcas de repuesto, marcas y modelos de vehículo) viven en
+// `remoteConfig/fallbacks.ts`: son el último recurso cuando ni el catálogo ni el bootstrap del
+// Mantenedor común responden.
 
 const MAX_PHOTOS = 4;
+
+/** Sin bootstrap el 1 a 1 cae a `VEHICLE_BRANDS_FALLBACK`, como siempre; referencia estable para el hook. */
+const MARCAS_VEHICULO_SIN_BOOTSTRAP: never[] = [];
 
 const CATALOG_ERROR_MESSAGE =
   'No pudimos cargar las categorías del sistema. Revisa tu conexión y vuelve a abrir el formulario.';
@@ -211,8 +169,8 @@ async function loadVehicleCatalogDetails(ids: number[]): Promise<VehicleCatalogD
   }
 }
 
-function namesFromCatalog(options: CatalogOption[], fallback: string[]) {
-  return options.length > 0 ? options.map((option) => option.nombre) : fallback;
+function namesFromCatalog(options: CatalogOption[], fallback: readonly string[]): string[] {
+  return options.length > 0 ? options.map((option) => option.nombre) : [...fallback];
 }
 
 function splitValues(value: string) {
@@ -447,8 +405,6 @@ function formatCLP(value: number) {
   return new Intl.NumberFormat('es-CL').format(value);
 }
 
-const FLOW_RATE_LABEL = `${(FLOW_RATE_BASE * 100).toFixed(2).replace('.', ',')}%`;
-
 /**
  * Lista con "Otro" para escribir. Fase 7: lo escrito se compara con la lista sin mayúsculas,
  * tildes ni separadores, y si ya existe se usa el nombre de la lista ("bosch" -> "Bosch"): así
@@ -471,7 +427,10 @@ function WarrantySelect({
   required?: boolean;
 }) {
   const [isOther, setIsOther] = useState(false);
-  const showOther = isOther || (Boolean(value) && !esGarantiaPredefinida(value));
+  // Lista `GARANTIA_PRODUCTO` del Mantenedor común; sin bootstrap, las opciones de siempre. El valor
+  // se guarda tal cual, y "Otra" sigue existiendo porque la lista permite texto libre.
+  const opcionesGarantia = useLista('GARANTIA_PRODUCTO').map((opcion) => opcion.valor);
+  const showOther = isOther || (Boolean(value) && !esGarantiaPredefinida(value, opcionesGarantia));
 
   return (
     <>
@@ -491,7 +450,7 @@ function WarrantySelect({
         required={required && !showOther}
       >
         <option value="">Selecciona la garantía</option>
-        {GARANTIA_OPCIONES.map((option) => (
+        {opcionesGarantia.map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
@@ -820,7 +779,13 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [price, setPrice] = useState<number>(0);
   const [stock, setStock] = useState<number>(1);
   const [requiresChassis, setRequiresChassis] = useState<'false' | 'true'>('false');
+  // `CONDICION_PRODUCTO` es una lista de sistema: el Mantenedor puede ocultar o renombrar sus
+  // valores, no agregar otros, así que el tipo sigue cerrado. Sin bootstrap, Original/Alternativo.
+  const opcionesCondicion = useLista('CONDICION_PRODUCTO');
   const [condition, setCondition] = useState<'ORIGINAL' | 'ALTERNATIVO'>('ORIGINAL');
+  // Marcas de vehículo del bootstrap del Mantenedor (activas y en su orden): valen cuando el
+  // catálogo `/marcas-vehiculo` no respondió, antes de caer a la lista corta de respaldo.
+  const marcasVehiculoRemotas = useCatalogo('marcasVehiculo', MARCAS_VEHICULO_SIN_BOOTSTRAP);
   const [warranty, setWarranty] = useState('');
   const [description, setDescription] = useState('');
   const [image, setImage] = useState('');
@@ -832,7 +797,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [catalogCategoriesRaw, setCatalogCategoriesRaw] = useState<CatalogOption[]>([]);
   const [catalogSubcategories, setCatalogSubcategories] = useState<string[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [catalogPartBrands, setCatalogPartBrands] = useState<string[]>(PART_BRANDS_FALLBACK);
+  const [catalogPartBrands, setCatalogPartBrands] = useState<string[]>(() => [...PART_BRANDS_FALLBACK]);
   const [vehicleBrandCatalog, setVehicleBrandCatalog] = useState<CatalogOption[]>([]);
   const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
   const [showPricingDetails, setShowPricingDetails] = useState(false);
@@ -1064,8 +1029,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         const marcaCatalogo = selectedBrand?.nombre ?? card.vehicleBrand;
         const models = nombresUnicosOrdenados(
           selectedBrand
-            ? namesFromCatalog(await loadCatalog(`marcas-vehiculo/${selectedBrand.id}/modelos`), MODELS_FALLBACK[card.vehicleBrand] || [])
-            : MODELS_FALLBACK[card.vehicleBrand] || [],
+            ? namesFromCatalog(await loadCatalog(`marcas-vehiculo/${selectedBrand.id}/modelos`), MODELS_FALLBACK[card.vehicleBrand] ?? [])
+            : [...(MODELS_FALLBACK[card.vehicleBrand] ?? [])],
         );
 
         const selectedModels = splitValues(card.vehicleModel);
@@ -1730,7 +1695,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
               {pricingMode !== 'quote_only' && price > 0 && (
                 <div className="manual-pricing-helper">
-                  {founder && <div className="manual-pricing-row"><strong>Marcha blanca Fundador: 0% de tarifa de servicio RepuesTop; solo pagas Flow. Después: {STANDARD_RATE_LABEL} + IVA.</strong></div>}
+                  {founder && <div className="manual-pricing-row"><strong>Marcha blanca Fundador: 0% de tarifa de servicio RepuesTop; solo pagas Flow. Después: {standardRateLabel()} + IVA.</strong></div>}
 
                   <button
                     type="button"
@@ -1774,7 +1739,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                         </>
                       )}
                       <div className="manual-pricing-row">
-                        <span>Procesamiento Flow ({FLOW_RATE_LABEL} + IVA):</span>
+                        <span>Procesamiento Flow ({flowRateLabel()} + IVA):</span>
                         <strong className="manual-pricing-fee">-${formatCLP(priceBreakdown.flowWithIva)}</strong>
                       </div>
                     </div>
@@ -1864,7 +1829,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                         <label className="form-label">Marca del vehículo {REQUIRED}</label>
                         <VehicleBrandSelect
                           value={card.vehicleBrand}
-                          brands={nombresUnicosOrdenados(namesFromCatalog(vehicleBrandCatalog, VEHICLE_BRANDS_FALLBACK))}
+                          brands={nombresUnicosOrdenados(namesFromCatalog(vehicleBrandCatalog, marcasVehiculoRemotas.length > 0 ? marcasVehiculoRemotas.map((marca) => marca.nombre) : VEHICLE_BRANDS_FALLBACK))}
                           onChange={(value) => updateCompatibility(card.id, { vehicleBrand: value })}
                           onMakeUniversal={() => setIsUniversal(true)}
                         />
@@ -2113,20 +2078,19 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 <div className="form-group form-section-grid-full">
                   <label className="form-label">Calidad del producto {REQUIRED}</label>
                   <div className="manual-chip-row">
-                    <button
-                      type="button"
-                      className={`manual-chip ${condition === 'ORIGINAL' ? 'active' : ''}`}
-                      onClick={() => setCondition('ORIGINAL')}
-                    >
-                      Original
-                    </button>
-                    <button
-                      type="button"
-                      className={`manual-chip ${condition === 'ALTERNATIVO' ? 'active' : ''}`}
-                      onClick={() => setCondition('ALTERNATIVO')}
-                    >
-                      Alternativo
-                    </button>
+                    {opcionesCondicion
+                      .filter((opcion): opcion is typeof opcion & { valor: 'ORIGINAL' | 'ALTERNATIVO' } =>
+                        opcion.valor === 'ORIGINAL' || opcion.valor === 'ALTERNATIVO')
+                      .map((opcion) => (
+                        <button
+                          key={opcion.valor}
+                          type="button"
+                          className={`manual-chip ${condition === opcion.valor ? 'active' : ''}`}
+                          onClick={() => setCondition(opcion.valor)}
+                        >
+                          {opcion.etiqueta}
+                        </button>
+                      ))}
                   </div>
                 </div>
 

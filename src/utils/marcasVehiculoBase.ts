@@ -3,6 +3,9 @@
 // 261 marcas, un solo nombre por marca. Se regenera desde
 // GET /api/v1/catalogos/inventario/marcas-vehiculo; los alias del padrón ("KIA MOTORS") están en
 // nombresCatalogoVehiculo.ts.
+// Desde el Mantenedor común (2026-10-20) es también el fallback de `useCatalogo('marcasVehiculo')`
+// (ver remoteConfig/fallbacks.ts, MARCAS_VEHICULO_FALLBACK): el bootstrap trae las marcas activas y
+// ordenadas por el Mantenedor, y esta lista vale mientras no llegue.
 export const MARCAS_VEHICULO_BASE: string[] = [
     "Acadian",
     "Acura",

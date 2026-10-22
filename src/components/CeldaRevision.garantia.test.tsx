@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { CeldaRevision } from './CeldaRevision';
-import { GARANTIA_OPCIONES } from '../utils/garantia';
+import { GARANTIA_OPCIONES_FALLBACK } from '../utils/garantia';
 import { limiteDeColumna } from '../utils/plantillaNormalizacion';
 
 /** Garantía en la tabla del paso 3 (2.4.0): se elige de las opciones comunes o se escribe. */
@@ -14,7 +14,7 @@ describe('CeldaRevision: garantía', () => {
     const input = screen.getByLabelText('Garantía') as HTMLInputElement;
     const lista = document.getElementById(input.getAttribute('list') ?? '');
     expect(lista?.tagName).toBe('DATALIST');
-    expect([...(lista?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'))).toEqual([...GARANTIA_OPCIONES]);
+    expect([...(lista?.querySelectorAll('option') ?? [])].map((o) => o.getAttribute('value'))).toEqual([...GARANTIA_OPCIONES_FALLBACK]);
     expect(input.maxLength).toBe(80);
 
     fireEvent.change(input, { target: { value: '18 meses o 50.000 km' } });

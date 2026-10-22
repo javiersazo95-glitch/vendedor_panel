@@ -1,4 +1,4 @@
-import { FOUNDER_FREE_MONTHS, STANDARD_RATE_LABEL } from './pricing';
+import { FOUNDER_FREE_MONTHS, flowRateLabel, standardRateLabel } from './pricing';
 
 export interface FounderDaysLeft {
   /** Dias enteros que quedan de marcha blanca (ceil); 0 si vencio o no hay fecha. */
@@ -31,7 +31,7 @@ export function founderBenefitLabel(founderUntil: string | null | undefined, now
 
 /** Lo que viene despues de la marcha blanca, para decirlo siempre junto al beneficio. */
 export function founderAfterLabel(): string {
-  return `Después: ${STANDARD_RATE_LABEL} + IVA por venta. El costo de Flow se mantiene.`;
+  return `Después: ${standardRateLabel()} + IVA por venta. El costo de Flow se mantiene.`;
 }
 
 /** Fecha de termino en formato chileno (DD/MM/AAAA), o null si no hay. */
@@ -45,5 +45,5 @@ export function founderEndsAtLabel(founderUntil: string | null | undefined): str
 export function founderTooltip(founderUntil: string | null | undefined): string {
   const hasta = founderEndsAtLabel(founderUntil);
   const plazo = `marcha blanca de ${FOUNDER_FREE_MONTHS} meses${hasta ? ` (hasta ${hasta})` : ''}`;
-  return `0% de tarifa de servicio RepuesTop durante tu ${plazo}. Solo pagas Flow 2,89% + IVA. ${founderAfterLabel()}`;
+  return `0% de tarifa de servicio RepuesTop durante tu ${plazo}. Solo pagas Flow ${flowRateLabel()} + IVA. ${founderAfterLabel()}`;
 }

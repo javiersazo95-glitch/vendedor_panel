@@ -18,6 +18,7 @@ import type { GuardiaSalida } from '../utils/guardiaSalida';
 import { DialogoGuardarCambios } from './DialogoGuardarCambios';
 import { BotonSoporte } from './soporte/BotonSoporte';
 import { founderBenefitLabel, founderDaysLeft, founderTooltip } from '../utils/founderBenefit';
+import { useFlag } from '../remoteConfig/hooks';
 
 interface DashboardProps {
   userEmail: string;
@@ -30,6 +31,15 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, founder, founderUntil, onLogout }) => {
   const [products, setProducts] = useState<Product[]>([]);
+  // Visibilidad desde el Mantenedor común (`panel.nav.*` para el menú, `panel.*` para los extras).
+  // Sin bootstrap todo vale `true` y el panel se ve como siempre.
+  const navInventario = useFlag('panel.nav.inventario');
+  const navCargar = useFlag('panel.nav.cargar');
+  const navHistorial = useFlag('panel.nav.historial');
+  const navVideoTutorial = useFlag('panel.nav.video-tutorial');
+  const conMonedero = useFlag('panel.monedero');
+  const conProductoTop = useFlag('panel.producto-top');
+  const conSoporteChat = useFlag('panel.soporte-chat');
   // 19-oct: video tutorial para tiendas (menu lateral).
   const [videoTutorialOpen, setVideoTutorialOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -184,6 +194,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   const openWallet = () => { setWalletOpen(true); void refreshWallet(); void refreshTopSummary(); };
 
   const openTop = (product: Product) => {
+    // Producto Top apagado desde el Mantenedor: el botón de la fila no abre nada.
+    if (!conProductoTop) return;
     setTopProduct(product); setTopError(null); setTopLoading(true);
     void getProductTopSummary().then((summary) => { setTopSummary(summary); setWalletBalance(summary.saldoMonedas); })
       .catch((err: unknown) => setTopError(err instanceof Error ? err.message : 'No se pudo consultar productos Top.'))
@@ -318,40 +330,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         </div>
 
         <nav className="nav-links">
-          <button
-            className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`}
-            onClick={() => solicitarSalida(() => { setActiveView('inventory'); closeSidebarOnMobile(); })}
-            disabled={cargaOcupada}
-          >
-            <Database size={18} />
-            Inventario
-          </button>
+          {navInventario && (
+            <button
+              className={`nav-item ${activeView === 'inventory' ? 'active' : ''}`}
+              onClick={() => solicitarSalida(() => { setActiveView('inventory'); closeSidebarOnMobile(); })}
+              disabled={cargaOcupada}
+            >
+              <Database size={18} />
+              Inventario
+            </button>
+          )}
 
-          <button
-            className={`nav-item ${activeView === 'bulk' && cargaVista === 'elegir' ? 'active' : ''}`}
-            onClick={() => solicitarSalida(() => { setCargaVista('elegir'); setCargaKey((k) => k + 1); setExpressCargados(null); setActiveView('bulk'); closeSidebarOnMobile(); })}
-            disabled={cargaOcupada}
-          >
-            <UploadCloud size={18} />
-            Cargar inventario
-          </button>
+          {navCargar && (
+            <button
+              className={`nav-item ${activeView === 'bulk' && cargaVista === 'elegir' ? 'active' : ''}`}
+              onClick={() => solicitarSalida(() => { setCargaVista('elegir'); setCargaKey((k) => k + 1); setExpressCargados(null); setActiveView('bulk'); closeSidebarOnMobile(); })}
+              disabled={cargaOcupada}
+            >
+              <UploadCloud size={18} />
+              Cargar inventario
+            </button>
+          )}
 
-          <button
-            className={`nav-item ${activeView === 'bulk' && cargaVista === 'historial' ? 'active' : ''}`}
-            onClick={() => solicitarSalida(() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); closeSidebarOnMobile(); })}
-            disabled={cargaOcupada}
-          >
-            <History size={18} />
-            Historial de cargas
-          </button>
+          {navHistorial && (
+            <button
+              className={`nav-item ${activeView === 'bulk' && cargaVista === 'historial' ? 'active' : ''}`}
+              onClick={() => solicitarSalida(() => { setCargaVista('historial'); setCargaKey((k) => k + 1); setActiveView('bulk'); closeSidebarOnMobile(); })}
+              disabled={cargaOcupada}
+            >
+              <History size={18} />
+              Historial de cargas
+            </button>
+          )}
 
-          <button
-            className="nav-item"
-            onClick={() => { setVideoTutorialOpen(true); closeSidebarOnMobile(); }}
-          >
-            <PlayCircle size={18} />
-            Video tutorial
-          </button>
+          {navVideoTutorial && (
+            <button
+              className="nav-item"
+              onClick={() => { setVideoTutorialOpen(true); closeSidebarOnMobile(); }}
+            >
+              <PlayCircle size={18} />
+              Video tutorial
+            </button>
+          )}
           {cargaOcupada && (
             <p className="nav-ocupado" role="status">Espera a que termine la carga para cambiar de pantalla.</p>
           )}
@@ -402,9 +422,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
           </div>
 
           <div className="header-actions">
-            <button type="button" className="wallet-header-button" onClick={openWallet} aria-label="Abrir monedero RepuesTop">
-              <RepuestopCoin size={42} /><span>{walletLoading ? '…' : walletBalance.toLocaleString('es-CL')}</span><small>monedas</small>
-            </button>
+            {conMonedero && (
+              <button type="button" className="wallet-header-button" onClick={openWallet} aria-label="Abrir monedero RepuesTop">
+                <RepuestopCoin size={42} /><span>{walletLoading ? '…' : walletBalance.toLocaleString('es-CL')}</span><small>monedas</small>
+              </button>
+            )}
             {/* Profile Avatar Widget */}
             <div className="user-profile">
               <div className="avatar">
@@ -588,7 +610,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         editProduct={editingProduct}
         founder={founder}
       />
-      <TopModal product={topProduct} visible={!walletOpen} summary={topSummary} loading={topLoading} saving={topSaving} error={topError} onClose={() => !topSaving && setTopProduct(null)} onConfirm={handleTopConfirm} onRecharge={openWallet} />
+      {conProductoTop && (
+        <TopModal product={topProduct} visible={!walletOpen} summary={topSummary} loading={topLoading} saving={topSaving} error={topError} onClose={() => !topSaving && setTopProduct(null)} onConfirm={handleTopConfirm} onRecharge={openWallet} />
+      )}
       {salidaPendiente && (
         <DialogoGuardarCambios
           onGuardarYSalir={async () => {
@@ -601,9 +625,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         />
       )}
       {/* Soporte: en todo el panel, abajo a la derecha. */}
-      <BotonSoporte />
+      {conSoporteChat && <BotonSoporte />}
       <VideoTutorialModal isOpen={videoTutorialOpen} onClose={() => setVideoTutorialOpen(false)} />
-      {walletOpen && <WalletModal
+      {conMonedero && walletOpen && <WalletModal
         balance={walletBalance}
         loading={walletLoading}
         summary={topSummary}

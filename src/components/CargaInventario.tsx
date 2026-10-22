@@ -14,6 +14,7 @@ import { API_BASE_URL } from '../utils/imageHelper';
 import { getStoredSession } from '../utils/session';
 import { encId } from '../utils/url';
 import { NOMBRE_EXPRESS } from '../utils/expressPreciosStock';
+import { useFlag } from '../remoteConfig/hooks';
 
 /**
  * "Cargar inventario": una sola entrada con una pregunta, "¿Qué tienes?" (Fase 8 del plan de
@@ -29,14 +30,17 @@ type Camino = 'uno' | 'excel' | 'mi-excel' | 'plantilla' | 'precios';
  * "Cargar mi inventario con Excel": una sola entrada para el Excel propio y la plantilla de
  * RepuesTop; el asistente reconoce cuál es. Con VITE_CARGA_EXCEL_UNIFICADA=false vuelven las dos
  * entradas de antes ("Mi propio Excel" y "La plantilla de RepuesTop"), por si hubiera que retroceder.
+ *
+ * Desde el Mantenedor común el flag `panel.carga-excel-unificada` manda sobre la variable de
+ * build; la variable queda como fallback mientras el bootstrap no llegue.
  */
-const CARGA_EXCEL_UNIFICADA = import.meta.env.VITE_CARGA_EXCEL_UNIFICADA !== 'false';
+const CARGA_EXCEL_UNIFICADA_FALLBACK = import.meta.env.VITE_CARGA_EXCEL_UNIFICADA !== 'false';
 
 /**
  * Sin la carga unificada: el asistente de "Mi propio Excel" (4 etapas, progreso guardado). Con
- * VITE_MI_EXCEL_V2=false se vuelve al adaptador anterior.
+ * VITE_MI_EXCEL_V2=false se vuelve al adaptador anterior. Flag remoto: `panel.mi-excel-v2`.
  */
-const MI_EXCEL_V2 = import.meta.env.VITE_MI_EXCEL_V2 !== 'false';
+const MI_EXCEL_V2_FALLBACK = import.meta.env.VITE_MI_EXCEL_V2 !== 'false';
 
 interface CargaInventarioProps {
   isOpen: boolean;
@@ -225,7 +229,15 @@ const OPCIONES_SEPARADAS: Opcion[] = [
   },
 ];
 
-const OPCIONES: Opcion[] = CARGA_EXCEL_UNIFICADA ? [OPCION_UNO, OPCION_EXCEL, OPCION_PRECIOS] : OPCIONES_SEPARADAS;
+/**
+ * Los caminos que se ofrecen. `panel.carga-manual` y `panel.carga-express-precios` permiten
+ * apagar "Un repuesto" y "Sólo cambiar precios y stock" desde el Mantenedor sin desplegar.
+ */
+function opcionesDeCarga(unificada: boolean, cargaManual: boolean, cargaExpress: boolean): Opcion[] {
+  const base = unificada ? [OPCION_UNO, OPCION_EXCEL, OPCION_PRECIOS] : OPCIONES_SEPARADAS;
+  return base.filter((opcion) =>
+    (opcion.camino !== 'uno' || cargaManual) && (opcion.camino !== 'precios' || cargaExpress));
+}
 
 export const CargaInventario: React.FC<CargaInventarioProps> = ({
   isOpen,
@@ -243,6 +255,11 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
 }) => {
   const [camino, setCamino] = useState<Camino | null>(null);
   const [retomar, setRetomar] = useState<TipoCarga | null>(null);
+  const CARGA_EXCEL_UNIFICADA = useFlag('panel.carga-excel-unificada', CARGA_EXCEL_UNIFICADA_FALLBACK);
+  const MI_EXCEL_V2 = useFlag('panel.mi-excel-v2', MI_EXCEL_V2_FALLBACK);
+  const cargaManual = useFlag('panel.carga-manual');
+  const cargaExpress = useFlag('panel.carga-express-precios');
+  const OPCIONES = opcionesDeCarga(CARGA_EXCEL_UNIFICADA, cargaManual, cargaExpress);
 
   if (!isOpen) return null;
 

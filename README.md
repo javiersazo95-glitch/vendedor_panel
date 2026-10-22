@@ -19,6 +19,21 @@ VITE_GOOGLE_CLIENT_ID=<tu-client-id>    # Client ID de Google OAuth
 
 En `localhost`/`127.0.0.1`, si `VITE_API_URL` no está definido, la app usa `http://localhost:8080` por defecto. En cualquier otro entorno (staging, preview, producción), `VITE_API_URL` es obligatorio: si falta, la app falla al iniciar en vez de apuntar silenciosamente a producción.
 
+### Configuración remota (Mantenedor común)
+
+El panel lee flags de visibilidad, listas de desplegables, parámetros (comisiones) y catálogos desde
+`GET /api/v1/config/bootstrap?cliente=PANEL` (módulo `src/remoteConfig/`). Guarda la última respuesta en
+`localStorage` (`repuestop.remote-config.PANEL.v1`), la revalida con `If-None-Match`, y consulta
+`GET /api/v1/config/version` al volver a la pestaña y cada 5 minutos. Si el backend no responde o aún no
+expone el endpoint, el panel usa sus fallbacks locales (`src/remoteConfig/fallbacks.ts`, `utils/pricing.ts`)
+y se comporta como siempre.
+
+```
+VITE_REMOTE_CONFIG_FIXTURE=true   # usa src/remoteConfig/fixtures/bootstrap.panel.json en vez de la red
+```
+
+Sirve para probar un flag apagado o una lista distinta sin backend: editar el JSON y recargar.
+
 ## Comandos
 
 ```

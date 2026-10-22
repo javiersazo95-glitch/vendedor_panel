@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import {
-  calculateSellerEarnings, calculateSuggestedPrice, FLOW_RATE_BASE, pricingFeeBreakdown, serviceFeeAmount, STANDARD_RATE_LABEL,
+  calculateSellerEarnings, calculateSuggestedPrice, flowRateLabel, pricingFeeBreakdown, serviceFeeAmount, standardRateLabel,
 } from '../../utils/pricing';
+import { useRemoteConfig } from '../../remoteConfig/hooks';
 
-const FLOW_RATE_LABEL = `${(FLOW_RATE_BASE * 100).toFixed(2).replace('.', ',')}%`;
 const formatCLP = (n: number) => Math.round(n).toLocaleString('es-CL');
 
 /**
@@ -21,6 +21,8 @@ export function CalculadoraPrecio({ precio, fundador, onAplicarSugerido }: {
   onAplicarSugerido?: (precio: number) => void;
 }) {
   const [conDetalle, setConDetalle] = useState(false);
+  // Las tasas vienen del Mantenedor común: al llegar el bootstrap la calculadora se recalcula.
+  useRemoteConfig();
   if (!(precio > 0)) return null;
   const desglose = pricingFeeBreakdown(precio, fundador);
   const costos = serviceFeeAmount(precio, fundador);
@@ -29,7 +31,7 @@ export function CalculadoraPrecio({ precio, fundador, onAplicarSugerido }: {
 
   return (
     <div className="manual-pricing-helper mx-calculadora" aria-label="Cuánto recibes por este precio">
-      {fundador && <div className="manual-pricing-row"><strong>Marcha blanca Fundador: 0% de tarifa de servicio RepuesTop; solo pagas Flow. Después: {STANDARD_RATE_LABEL} + IVA.</strong></div>}
+      {fundador && <div className="manual-pricing-row"><strong>Marcha blanca Fundador: 0% de tarifa de servicio RepuesTop; solo pagas Flow. Después: {standardRateLabel()} + IVA.</strong></div>}
       <button
         type="button"
         onClick={() => setConDetalle((v) => !v)}
@@ -70,7 +72,7 @@ export function CalculadoraPrecio({ precio, fundador, onAplicarSugerido }: {
             </>
           )}
           <div className="manual-pricing-row">
-            <span>Procesamiento Flow ({FLOW_RATE_LABEL} + IVA):</span>
+            <span>Procesamiento Flow ({flowRateLabel()} + IVA):</span>
             <strong className="manual-pricing-fee">-${formatCLP(desglose.flowWithIva)}</strong>
           </div>
         </div>

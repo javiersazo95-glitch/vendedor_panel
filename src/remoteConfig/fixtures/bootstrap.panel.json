@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "cliente": "PANEL",
+  "generadoEn": "2026-10-20T12:00:00Z",
+  "parametros": {
+    "comision.tasa.alta": "0.07",
+    "comision.tasa.media": "0.07",
+    "comision.tasa.baja": "0.07",
+    "comision.limite.media": "100000",
+    "comision.limite.baja": "250000",
+    "comision.fundador.porcentaje": "0.00",
+    "comision.iva": "0.19",
+    "comision.iva.incluido": "false",
+    "pasarela.porcentaje": "0.0289",
+    "pasarela.iva": "0.19",
+    "pedido.expiracion.minutos": "30",
+    "pedido.autorecepcion.dias": "10",
+    "pedido.autorecepcion.aviso.dias": "7",
+    "pedido.autorecepcion.local.dias": "2",
+    "pedido.autofinalizacion.dias": "3",
+    "pedido.entregadeclarada.veto.horas": "48",
+    "retiro.retencion.retracto.dias": "11",
+    "legal.version-vigente": "2026-10-18",
+    "inventario.top.costo": "200",
+    "inventario.top.vigencia.dias": "30",
+    "inventario.fotos.maximo": "10",
+    "inventario.excel.limite-filas": "5000",
+    "mediacion.plazo-mediador.dias": "10"
+  },
+  "parametrosTipos": {
+    "comision.tasa.alta": "PERCENT",
+    "comision.tasa.media": "PERCENT",
+    "comision.tasa.baja": "PERCENT",
+    "comision.limite.media": "MONEY",
+    "comision.limite.baja": "MONEY",
+    "comision.fundador.porcentaje": "PERCENT",
+    "comision.iva": "PERCENT",
+    "comision.iva.incluido": "BOOLEAN",
+    "pasarela.porcentaje": "PERCENT",
+    "pasarela.iva": "PERCENT",
+    "pedido.expiracion.minutos": "NUMBER",
+    "pedido.autorecepcion.dias": "NUMBER",
+    "pedido.autorecepcion.aviso.dias": "NUMBER",
+    "pedido.autorecepcion.local.dias": "NUMBER",
+    "pedido.autofinalizacion.dias": "NUMBER",
+    "pedido.entregadeclarada.veto.horas": "NUMBER",
+    "retiro.retencion.retracto.dias": "NUMBER",
+    "legal.version-vigente": "STRING",
+    "inventario.top.costo": "NUMBER",
+    "inventario.top.vigencia.dias": "NUMBER",
+    "inventario.fotos.maximo": "NUMBER",
+    "inventario.excel.limite-filas": "NUMBER",
+    "mediacion.plazo-mediador.dias": "NUMBER"
+  },
+  "flags": {
+    "panel.carga-excel-unificada": true,
+    "panel.mi-excel-v2": true,
+    "panel.carga-manual": true,
+    "panel.carga-express-precios": true,
+    "panel.nav.inventario": true,
+    "panel.nav.cargar": true,
+    "panel.nav.historial": true,
+    "panel.nav.video-tutorial": true,
+    "panel.producto-top": true,
+    "panel.monedero": true,
+    "panel.soporte-chat": true,
+    "global.mantenimiento": false,
+    "global.registro-vendedores": true,
+    "global.busqueda-patente": true
+  },
+  "flagsMetadata": {
+    "global.mantenimiento": { "mensaje": "Volvemos a las 9:00" }
+  },
+  "listas": {
+    "CONDICION_PRODUCTO": [
+      { "valor": "ORIGINAL", "etiqueta": "Original", "descripcion": null, "orden": 0, "esDefault": true, "iconoUrl": null, "color": null, "metadata": null },
+      { "valor": "ALTERNATIVO", "etiqueta": "Alternativo", "descripcion": null, "orden": 1, "esDefault": false, "iconoUrl": null, "color": null, "metadata": null }
+    ],
+    "TIPO_PRECIO": [
+      { "valor": "MOSTRAR_PRECIO", "etiqueta": "Mostrar precio", "descripcion": null, "orden": 0, "esDefault": true, "iconoUrl": null, "color": null, "metadata": null },
+      { "valor": "SOLO_COTIZAR", "etiqueta": "Sólo cotizar", "descripcion": null, "orden": 1, "esDefault": false, "iconoUrl": null, "color": null, "metadata": null }
+    ],
+    "GARANTIA_PRODUCTO": [
+      { "valor": "6 meses (garantía legal)", "etiqueta": "6 meses (garantía legal)", "descripcion": null, "orden": 0, "esDefault": true, "iconoUrl": null, "color": null, "metadata": null },
+      { "valor": "1 año", "etiqueta": "1 año", "descripcion": null, "orden": 1, "esDefault": false, "iconoUrl": null, "color": null, "metadata": null },
+      { "valor": "2 años", "etiqueta": "2 años", "descripcion": null, "orden": 2, "esDefault": false, "iconoUrl": null, "color": null, "metadata": null },
+      { "valor": "3 años", "etiqueta": "3 años", "descripcion": null, "orden": 3, "esDefault": false, "iconoUrl": null, "color": null, "metadata": null },
+      { "valor": "Garantía del fabricante", "etiqueta": "Garantía del fabricante", "descripcion": null, "orden": 4, "esDefault": false, "iconoUrl": null, "color": null, "metadata": null }
+    ]
+  },
+  "categorias": [
+    {
+      "id": 1, "nombre": "Frenos", "slug": "frenos", "familia": "frenos", "orden": 0,
+      "iconoUrl": null, "iconoNombre": "Disc3", "color": "#ef4444", "imagenUrl": null,
+      "subcategorias": [
+        { "id": 10, "nombre": "Pastillas de freno", "slug": "pastillas-de-freno", "orden": 0, "imagenUrl": null },
+        { "id": 11, "nombre": "Discos de freno", "slug": "discos-de-freno", "orden": 1, "imagenUrl": null }
+      ]
+    },
+    {
+      "id": 2, "nombre": "Motor", "slug": "motor", "familia": "motor", "orden": 1,
+      "iconoUrl": null, "iconoNombre": "Cog", "color": "#f97316", "imagenUrl": null,
+      "subcategorias": [
+        { "id": 20, "nombre": "Correas", "slug": "correas", "orden": 0, "imagenUrl": null }
+      ]
+    }
+  ],
+  "marcasVehiculo": [
+    { "id": 1, "nombre": "Toyota", "slug": "toyota", "orden": 0, "iconoUrl": null, "color": null, "destacada": true },
+    { "id": 2, "nombre": "Hyundai", "slug": "hyundai", "orden": 1, "iconoUrl": null, "color": null, "destacada": true },
+    { "id": 3, "nombre": "Kia", "slug": "kia", "orden": 2, "iconoUrl": null, "color": null, "destacada": true },
+    { "id": 4, "nombre": "Nissan", "slug": "nissan", "orden": 3, "iconoUrl": null, "color": null, "destacada": false },
+    { "id": 5, "nombre": "Chevrolet", "slug": "chevrolet", "orden": 4, "iconoUrl": null, "color": null, "destacada": false },
+    { "id": 6, "nombre": "Ford", "slug": "ford", "orden": 5, "iconoUrl": null, "color": null, "destacada": false }
+  ],
+  "marcasRepuestoDestacadas": [
+    { "id": 5, "nombre": "Bosch", "slug": "bosch", "orden": 0, "iconoUrl": null, "color": null, "calidadReferencial": "Premium" },
+    { "id": 6, "nombre": "NGK", "slug": "ngk", "orden": 1, "iconoUrl": null, "color": null, "calidadReferencial": "Premium" }
+  ]
+}
