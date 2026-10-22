@@ -1,0 +1,5 @@
+# Sitio privado (panel con sesion). Se deja LEER a los buscadores a proposito: asi ven el
+# encabezado X-Robots-Tag y la etiqueta noindex y no lo muestran en los resultados.
+# Con "Disallow: /" Google no lee el noindex y puede listar la URL igual, sin descripcion.
+User-agent: *
+Allow: /

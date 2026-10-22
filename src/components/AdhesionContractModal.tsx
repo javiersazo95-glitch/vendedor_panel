@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FileSignature } from 'lucide-react';
-import { acceptAdhesionContract, getAdhesionContractPdf, isAdhesionContractPending } from '../db';
+import { acceptAdhesionContract, getAdhesionContractPdf, isAdhesionContractOutdated, isAdhesionContractPending } from '../db';
 import { useFocusTrap } from '../utils/useFocusTrap';
 
 /**
@@ -16,6 +16,7 @@ import { useFocusTrap } from '../utils/useFocusTrap';
  */
 export function AdhesionContractModal({ onLogout }: { onLogout: () => void }) {
   const [pending, setPending] = useState(false);
+  const [outdated, setOutdated] = useState(false);
   const [pdfUrl, setPdfUrl] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [sending, setSending] = useState(false);
@@ -24,7 +25,11 @@ export function AdhesionContractModal({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    void isAdhesionContractPending().then((value) => { if (!cancelled) setPending(value); });
+    void isAdhesionContractPending().then((value) => {
+      if (cancelled) return;
+      setPending(value);
+      setOutdated(isAdhesionContractOutdated());
+    });
     return () => { cancelled = true; };
   }, []);
 
@@ -64,7 +69,9 @@ export function AdhesionContractModal({ onLogout }: { onLogout: () => void }) {
 
   return <div className="modal-overlay document-viewer-overlay">
     <section ref={dialogRef} className="modal-content document-viewer adhesion-modal" role="dialog" aria-modal="true" aria-labelledby="adhesion-modal-title">
-      <div className="modal-header"><div><span className="document-viewer-icon"><FileSignature size={20} /></span><div><h2 id="adhesion-modal-title">Contrato de Adhesión</h2><small>Tu tienda quedó aprobada. Acepta el contrato para publicar y vender en RepuesTop.</small></div></div></div>
+      <div className="modal-header"><div><span className="document-viewer-icon"><FileSignature size={20} /></span><div><h2 id="adhesion-modal-title">{outdated ? 'Actualizamos el Contrato de Adhesión' : 'Contrato de Adhesión'}</h2><small>{outdated
+        ? 'Agregamos cláusulas nuevas (garantía en cada publicación, sin datos de contacto, notas de crédito y facturación). Fírmalo de nuevo para seguir usando tu cuenta.'
+        : 'Tu tienda quedó aprobada. Acepta el contrato para publicar y vender en RepuesTop.'}</small></div></div></div>
       <div className="document-viewer-frame">
         {pdfUrl
           ? <object data={pdfUrl} type="application/pdf" aria-label="Contrato de adhesión">

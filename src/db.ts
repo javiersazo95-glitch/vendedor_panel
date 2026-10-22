@@ -620,6 +620,16 @@ export async function getSellerProfileImage(): Promise<string | null> {
  * sesión, y si no se puede saber no se bloquea la pantalla, porque el backend igual lo exige al
  * publicar y devuelve el mensaje.
  */
+/**
+ * 20-oct: el contrato firmado es de una version anterior (el backend lo informa en
+ * `contratoDesactualizado` y deja `adhesionContractDoc` vacio). Lo deja anotado la ultima
+ * consulta de {@link isAdhesionContractPending}, para que el modal diga "Actualizamos el contrato".
+ */
+let adhesionOutdated = false;
+export function isAdhesionContractOutdated(): boolean {
+  return adhesionOutdated;
+}
+
 export async function isAdhesionContractPending(): Promise<boolean> {
   const session = getSession();
   if (!session) return false;
@@ -629,7 +639,8 @@ export async function isAdhesionContractPending(): Promise<boolean> {
       headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
     });
     if (!response.ok) return false;
-    const data = await response.json() as { reviewStatus?: string; adhesionContractDoc?: string | null };
+    const data = await response.json() as { reviewStatus?: string; adhesionContractDoc?: string | null; contratoDesactualizado?: boolean };
+    adhesionOutdated = Boolean(data.contratoDesactualizado);
     return data.reviewStatus === 'APPROVED' && !(data.adhesionContractDoc && data.adhesionContractDoc.trim());
   } catch {
     return false;
