@@ -70,7 +70,7 @@ export function AdhesionContractModal({ onLogout }: { onLogout: () => void }) {
   return <div className="modal-overlay document-viewer-overlay">
     <section ref={dialogRef} className="modal-content document-viewer adhesion-modal" role="dialog" aria-modal="true" aria-labelledby="adhesion-modal-title">
       <div className="modal-header"><div><span className="document-viewer-icon"><FileSignature size={20} /></span><div><h2 id="adhesion-modal-title">{outdated ? 'Actualizamos el Contrato de Adhesión' : 'Contrato de Adhesión'}</h2><small>{outdated
-        ? 'Agregamos cláusulas nuevas (garantía en cada publicación, sin datos de contacto, notas de crédito y facturación). Fírmalo de nuevo para seguir usando tu cuenta.'
+        ? 'Cambió la marcha blanca de Tienda Fundadora: 1 mes para las tiendas que postulan desde el 11 de noviembre de 2026; si tu tienda postuló antes, conservas tus 2 meses o lo que te quede. Fírmalo de nuevo para seguir usando tu cuenta.'
         : 'Tu tienda quedó aprobada. Acepta el contrato para publicar y vender en RepuesTop.'}</small></div></div></div>
       <div className="document-viewer-frame">
         {pdfUrl
