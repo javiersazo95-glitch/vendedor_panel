@@ -438,7 +438,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
                 <span className="user-name">{userEmail}</span>
                 <span className="user-role">{userRole}</span>
                 {founder ? (
-                  // Marcha blanca Fundador: 0 % de tarifa de servicio por 2 meses. El contador de dias es
+                  // Marcha blanca Fundador: 0 % de tarifa de servicio (1 mes, o 2 si postulo hasta el 10-nov). El contador de dias es
                   // sutil, y en la ultima semana (`is-ending`) sube un poco el tono para que no sorprenda.
                   <span className={`founder-badge-web${founderEnding ? ' is-ending' : ''}`}>
                     <Crown size={13} className="founder-crown-icon" /> Fundador · {founderBenefitLabel(founderUntil)}

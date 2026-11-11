@@ -1,4 +1,4 @@
-import { FOUNDER_FREE_MONTHS, flowRateLabel, standardRateLabel } from './pricing';
+import { flowRateLabel, standardRateLabel } from './pricing';
 
 export interface FounderDaysLeft {
   /** Dias enteros que quedan de marcha blanca (ceil); 0 si vencio o no hay fecha. */
@@ -44,6 +44,7 @@ export function founderEndsAtLabel(founderUntil: string | null | undefined): str
 /** Tooltip del badge Fundador: que recibe, hasta cuando, que paga igual y que viene despues. */
 export function founderTooltip(founderUntil: string | null | undefined): string {
   const hasta = founderEndsAtLabel(founderUntil);
-  const plazo = `marcha blanca de ${FOUNDER_FREE_MONTHS} meses${hasta ? ` (hasta ${hasta})` : ''}`;
+  // El panel solo conoce el termino: no se dicen meses (1 o 2 segun cuando postulo la tienda).
+  const plazo = `marcha blanca${hasta ? ` (hasta ${hasta})` : ''}`;
   return `0% de tarifa de servicio RepuesTop durante tu ${plazo}. Solo pagas Flow ${flowRateLabel()} + IVA. ${founderAfterLabel()}`;
 }

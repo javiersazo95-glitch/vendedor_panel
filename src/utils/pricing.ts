@@ -13,11 +13,12 @@ import { remoteConfig } from '../remoteConfig/remoteConfig';
 
 export const FLOW_RATE_BASE_FALLBACK = 0.0289;
 const FLOW_IVA_FALLBACK = 0.19;
-// Vendedor Fundador (2026-10-18): tarifa de servicio RepuesTop 0 % durante la marcha blanca de
-// 2 meses desde la aprobacion (primeras 100 tiendas). Solo paga la pasarela Flow.
+// Vendedor Fundador (2026-10-18): tarifa de servicio RepuesTop 0 % durante la marcha blanca desde la
+// aprobacion (primeras 100 tiendas). Solo paga la pasarela Flow. 2026-11-10: 1 mes para quien postula
+// desde el 11-nov, 2 para quien postulo hasta el 10-nov (lo decide el backend por tienda).
 const FOUNDER_APP_RATE_FALLBACK = 0;
 // La duración de la marcha blanca no es un parámetro del contrato del Mantenedor: sigue fija.
-export const FOUNDER_FREE_MONTHS = 2;
+export const FOUNDER_FREE_MONTHS = 1;
 // Comision estandar parejo para tiendas verificadas (7 % + IVA; 2026-10-18, antes 8 %). Es la
 // que rige al terminar la marcha blanca. El backend la define por tramos de subtotal
 // (`comision.tasa.alta|media|baja` con `comision.limite.media|baja`); hoy los tres tramos valen
