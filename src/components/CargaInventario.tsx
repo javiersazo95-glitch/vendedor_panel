@@ -238,7 +238,7 @@ const OPCIONES_SEPARADAS: Opcion[] = [
 const OPCION_PRECIOS_INVITADO: Opcion = {
   ...OPCION_PRECIOS,
   titulo: 'Sólo cambiar precios',
-  detalle: 'De repuestos que ya publicó la tienda. No crea productos ni toca el stock.',
+  detalle: 'De los repuestos que cargaste en este acceso. No toca el stock ni los productos que la tienda ya tenía.',
 };
 
 function opcionesDeCarga(unificada: boolean, cargaManual: boolean, cargaExpress: boolean, invitado?: ModoInvitadoValor): Opcion[] {
