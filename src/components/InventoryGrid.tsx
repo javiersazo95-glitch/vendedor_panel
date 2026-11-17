@@ -1,3 +1,4 @@
+import { useModoInvitado } from '../utils/modoInvitado';
 import { Fragment, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Edit2, EyeOff, PauseCircle, PlayCircle, Star, Trash2 } from 'lucide-react';
 import type { Product } from '../db';
@@ -29,6 +30,8 @@ const clp = (price: number) => new Intl.NumberFormat('es-CL', { style: 'currency
 const ITEMS_PER_PAGE_OPCIONES = [12, 20, 40, 80] as const;
 
 export function InventoryGrid({ products, grupos, onEdit, onDelete, onTogglePause, onManageTop }: InventoryGridProps) {
+  // Acceso asistido: el invitado de soporte solo mira; sin editar, pausar, destacar ni eliminar.
+  const { activo: invitado } = useModoInvitado();
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState<number>(20);
 
@@ -76,7 +79,7 @@ export function InventoryGrid({ products, grupos, onEdit, onDelete, onTogglePaus
         <article className={`inventory-grid-card ${topStatus.state === 'active' ? 'is-top' : ''} ${product.pausado ? 'is-paused' : ''}`}>
           <div className="inventory-grid-image"><img src={resolveImageUri(product.image)} alt={product.name} />{topStatus.state !== 'none' && <div className={`grid-top-badge ${topStatus.state === 'expired' ? 'expired' : ''}`}><img src={topVentasBadge} alt="" /><span>{topLabel(topStatus)}</span></div>}{product.pausado && <span className="grid-paused">Pausado</span>}</div>
           <div className="inventory-grid-content"><span className="grid-sku">SKU {product.sku || '—'}</span><h3 title={product.name}>{product.name}</h3><div className="grid-details"><span>{product.stock === 0 ? 'Sin stock' : `${product.stock} unidades`}</span><strong>{clp(product.price)}</strong></div></div>
-          <footer className="inventory-grid-actions"><button type="button" className="grid-action" onClick={() => onEdit(product)} title="Editar repuesto" aria-label={`Editar ${product.name}`}><Edit2 size={16} /></button><button type="button" className="grid-action grid-action-top" onClick={() => onManageTop(product)} title="Gestionar producto Top" aria-label={`Gestionar Top: ${product.name}`}><Star size={16} fill={topStatus.state === 'active' ? 'currentColor' : 'none'} /></button><button type="button" className="grid-action" onClick={() => onTogglePause(product)} title={product.pausado ? 'Reactivar publicación' : 'Pausar publicación'} aria-label={product.pausado ? `Reactivar ${product.name}` : `Pausar ${product.name}`}>{product.pausado ? <PlayCircle size={16} /> : <PauseCircle size={16} />}</button><button type="button" className="grid-action grid-action-danger" onClick={() => { if (window.confirm(`¿Estás seguro que deseas eliminar el repuesto SKU: ${product.sku}?`)) onDelete(product.id); }} title="Eliminar repuesto" aria-label={`Eliminar ${product.name}`}><Trash2 size={16} /></button></footer>
+          {!invitado && <footer className="inventory-grid-actions"><button type="button" className="grid-action" onClick={() => onEdit(product)} title="Editar repuesto" aria-label={`Editar ${product.name}`}><Edit2 size={16} /></button><button type="button" className="grid-action grid-action-top" onClick={() => onManageTop(product)} title="Gestionar producto Top" aria-label={`Gestionar Top: ${product.name}`}><Star size={16} fill={topStatus.state === 'active' ? 'currentColor' : 'none'} /></button><button type="button" className="grid-action" onClick={() => onTogglePause(product)} title={product.pausado ? 'Reactivar publicación' : 'Pausar publicación'} aria-label={product.pausado ? `Reactivar ${product.name}` : `Pausar ${product.name}`}>{product.pausado ? <PlayCircle size={16} /> : <PauseCircle size={16} />}</button><button type="button" className="grid-action grid-action-danger" onClick={() => { if (window.confirm(`¿Estás seguro que deseas eliminar el repuesto SKU: ${product.sku}?`)) onDelete(product.id); }} title="Eliminar repuesto" aria-label={`Eliminar ${product.name}`}><Trash2 size={16} /></button></footer>}
         </article>
         </Fragment>;
       })}

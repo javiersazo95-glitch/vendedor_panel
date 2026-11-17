@@ -1,3 +1,5 @@
+import type { InvitadoSesion } from './modoInvitado';
+
 export interface UserSession {
   email: string;
   role: string;
@@ -6,6 +8,8 @@ export interface UserSession {
   founder?: boolean;
   /** Fin de la marcha blanca Fundador (ISO-8601). null si el backend no la informa. */
   founderUntil?: string | null;
+  /** Acceso asistido: presente solo cuando soporte entra como INVITADO al panel de este vendedor. */
+  invitado?: InvitadoSesion;
 }
 
 const SESSION_KEY = 'repuestop_session';
@@ -25,6 +29,7 @@ function isValidUserSession(value: unknown): value is UserSession {
     typeof value.sellerId === 'string' &&
     (value.founder === undefined || typeof value.founder === 'boolean') &&
     (value.founderUntil === undefined || value.founderUntil === null || typeof value.founderUntil === 'string') &&
+    (value.invitado === undefined || (isRecord(value.invitado) && typeof value.invitado.accesoId === 'number' && typeof value.invitado.estado === 'string')) &&
     value.email.length > 0 &&
     value.token.length > 0 &&
     value.sellerId.length > 0
@@ -112,4 +117,14 @@ export function saveSession(user: UserSession): void {
 export function clearSession(): void {
   sessionStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(SESSION_KEY);
+}
+
+/** True si la pestana tiene una sesion de invitado (soporte). Lee sin tocar nada: lo usa apiFetch en cada llamada. */
+export function esModoInvitado(): boolean {
+  try {
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null');
+    return isRecord(parsed) && isRecord(parsed.user) && isRecord(parsed.user.invitado);
+  } catch {
+    return false;
+  }
 }

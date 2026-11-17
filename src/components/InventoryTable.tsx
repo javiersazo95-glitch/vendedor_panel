@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Edit2, Trash2, EyeOff, ChevronLeft, ChevronRight, PauseCircle, PlayCircle, Check, X, Loader2, Star } from 'lucide-react';
 import type { Product } from '../db';
 import { getProductTopStatus, topLabel } from '../utils/productTop';
+import { useModoInvitado } from '../utils/modoInvitado';
 import { ETIQUETAS_GRUPO, type GrupoInventario } from '../utils/inventoryOrder';
 import topVentasBadge from '../assets/top-ventas-badge-transparent.png';
 
@@ -228,6 +229,8 @@ const QuickEditCell: React.FC<QuickEditCellProps> = ({ product, field, onSave, r
 };
 
 export const InventoryTable: React.FC<InventoryTableProps> = ({ products, grupos, onEdit, onDelete, onTogglePause, onManageTop, onQuickUpdate }) => {
+  // Acceso asistido: el invitado de soporte solo mira; sin editar, pausar, destacar ni eliminar.
+  const { activo: invitado } = useModoInvitado();
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(15);
 
@@ -363,7 +366,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, grupos
                     {topLabel(topStatus) && <span className={`top-table-badge ${topStatus.state === 'expired' ? 'expired' : ''}`}><img src={topVentasBadge} alt="Insignia Top Ventas" />{topLabel(topStatus)}</span>}
                   </td>
                   <td>
-                    <div className="actions-cell">
+                    {!invitado && <div className="actions-cell">
                       <button
                         type="button"
                         className={`action-btn action-btn-top ${topStatus.state === 'active' ? 'active' : ''}`}
@@ -404,7 +407,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({ products, grupos
                       >
                         <Trash2 size={15} />
                       </button>
-                    </div>
+                    </div>}
                   </td>
                 </tr>
                 </React.Fragment>;

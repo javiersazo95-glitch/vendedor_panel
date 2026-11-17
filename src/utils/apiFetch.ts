@@ -1,4 +1,4 @@
-import { clearSession } from './session';
+import { clearSession, esModoInvitado } from './session';
 
 const DEFAULT_TIMEOUT_MS = 25000;
 
@@ -28,6 +28,20 @@ export class SessionExpiredError extends Error {
     this.name = 'SessionExpiredError';
   }
 }
+
+/**
+ * Acceso asistido: soporte (invitado) intento algo fuera de su permiso. El backend responde 403 y NO es una
+ * sesion vencida, asi que no se cierra la sesion: se avisa y se sigue trabajando.
+ */
+export class AccionNoPermitidaInvitadoError extends Error {
+  constructor() {
+    super('Soporte no puede hacer esto en modo invitado.');
+    this.name = 'AccionNoPermitidaInvitadoError';
+  }
+}
+
+/** Se emite cuando el acceso asistido ya no esta vigente (vencio o el vendedor lo revoco). */
+export const EVENTO_ACCESO_TERMINADO = 'repuestop:acceso-terminado';
 
 export class RequestTimeoutError extends Error {
   constructor() {
@@ -68,6 +82,18 @@ export async function apiFetch(
     throw err;
   } finally {
     clearTimeout(timeoutId);
+  }
+
+  if (!publico && esModoInvitado()) {
+    // 401: el acceso ya no esta vigente (vencio, revocado o token vencido): se cierra y se avisa con su pantalla.
+    // 403: una accion fuera de su permiso; la sesion sigue en pie.
+    if (response.status === 401) {
+      clearSession();
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENTO_ACCESO_TERMINADO));
+      throw new SessionExpiredError();
+    }
+    if (response.status === 403) throw new AccionNoPermitidaInvitadoError();
+    return response;
   }
 
   if (!publico && (response.status === 401 || response.status === 403)) {

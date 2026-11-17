@@ -5143,3 +5143,30 @@ h1, h2, h3, h4, h5, h6 {
 .historial-estado.ERROR { background: var(--danger-bg); color: #9f1239; }
 .historial-nota { margin: 0; font-size: 0.8rem; color: var(--text-muted); }
 .historial-paginado { display: flex; justify-content: center; align-items: center; gap: 0.75rem; font-size: 0.88rem; color: var(--text-secondary); }
+
+/* ---- Acceso asistido: soporte como invitado (17-nov) ---- */
+:root { --invitado: #f59e0b; --invitado-oscuro: #b45309; --invitado-barra: 40px; }
+.invitado-borde { position: fixed; inset: 0; z-index: 9998; pointer-events: none; box-shadow: inset 0 0 0 6px var(--invitado); }
+.invitado-barra { position: fixed; top: 0; left: 0; right: 0; z-index: 9999; height: var(--invitado-barra); display: flex; align-items: center; gap: 1rem; padding: 0 1rem; background: var(--invitado); color: #1f1300; font-size: 0.85rem; }
+.invitado-barra-texto { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invitado-barra-contador { font-variant-numeric: tabular-nums; font-weight: 800; padding: 0.15rem 0.6rem; border-radius: 999px; background: rgba(255,255,255,0.55); }
+.invitado-barra-contador.tono-ambar { background: #fff; }
+.invitado-barra-contador.tono-rojo { background: #b91c1c; color: #fff; }
+.invitado-barra-salir { border: 0; border-radius: 6px; padding: 0.25rem 0.8rem; font-weight: 700; cursor: pointer; background: #1f1300; color: #fff; }
+html.modo-invitado #root { padding-top: var(--invitado-barra); }
+html.modo-invitado .sidebar { top: var(--invitado-barra); height: calc(100vh - var(--invitado-barra)); }
+@media (max-width: 640px) { .invitado-barra { gap: 0.5rem; font-size: 0.75rem; } }
+
+.espera-invitado { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; background: var(--bg-app); }
+.espera-invitado-tarjeta { width: 100%; max-width: 520px; padding: 2rem; border-radius: 16px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px rgba(15,23,42,0.08); }
+.espera-invitado-etiqueta { display: inline-block; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--invitado-oscuro); }
+.espera-invitado-tarjeta h1 { margin: 0.5rem 0 0.75rem; font-size: 1.5rem; line-height: 1.25; }
+.espera-invitado-contador { margin: 1.25rem 0; padding: 1rem; border-radius: 12px; text-align: center; background: #f1f5f9; display: grid; gap: 0.25rem; }
+.espera-invitado-contador strong { font-size: 2rem; font-variant-numeric: tabular-nums; }
+.espera-invitado-contador.tono-ambar { background: #fef3c7; }
+.espera-invitado-contador.tono-rojo { background: #fee2e2; color: #991b1b; }
+.espera-invitado-mensaje { padding: 0.6rem 0.8rem; border-radius: 8px; background: #f1f5f9; font-size: 0.9rem; }
+.espera-invitado-acciones { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.espera-invitado-acciones button { padding: 0.55rem 1rem; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-weight: 600; cursor: pointer; }
+.espera-invitado-acciones button.secundario { margin-left: auto; }
+.espera-invitado-acciones button:disabled { opacity: 0.6; cursor: not-allowed; }

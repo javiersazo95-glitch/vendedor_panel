@@ -19,6 +19,7 @@ import { DialogoGuardarCambios } from './DialogoGuardarCambios';
 import { BotonSoporte } from './soporte/BotonSoporte';
 import { founderBenefitLabel, founderDaysLeft, founderTooltip } from '../utils/founderBenefit';
 import { useFlag } from '../remoteConfig/hooks';
+import { useModoInvitado } from '../utils/modoInvitado';
 
 interface DashboardProps {
   userEmail: string;
@@ -37,9 +38,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
   const navCargar = useFlag('panel.nav.cargar');
   const navHistorial = useFlag('panel.nav.historial');
   const navVideoTutorial = useFlag('panel.nav.video-tutorial');
-  const conMonedero = useFlag('panel.monedero');
-  const conProductoTop = useFlag('panel.producto-top');
-  const conSoporteChat = useFlag('panel.soporte-chat');
+  // Acceso asistido: soporte entra como invitado; no ve monedero, Top, chat de soporte ni cierra la sesion del vendedor.
+  const invitado = useModoInvitado();
+  const conMonedero = useFlag('panel.monedero') && !invitado.activo;
+  const conProductoTop = useFlag('panel.producto-top') && !invitado.activo;
+  const conSoporteChat = useFlag('panel.soporte-chat') && !invitado.activo;
   // 19-oct: video tutorial para tiendas (menu lateral).
   const [videoTutorialOpen, setVideoTutorialOpen] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -380,10 +383,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
         <div className="sidebar-footer">
 
 
-          <button className="nav-item" onClick={() => solicitarSalida(onLogout)} style={{ color: 'hsl(var(--danger))' }}>
-            <LogOut size={18} />
-            Cerrar Sesión
-          </button>
+          {/* El invitado sale por la barra de arriba ("Salir"), que termina su acceso y avisa al vendedor. */}
+          {!invitado.activo && (
+            <button className="nav-item" onClick={() => solicitarSalida(onLogout)} style={{ color: 'hsl(var(--danger))' }}>
+              <LogOut size={18} />
+              Cerrar Sesión
+            </button>
+          )}
         </div>
       </aside>
 
@@ -587,7 +593,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userEmail, userRole, found
               onDelete={handleDeleteProduct}
               onTogglePause={handleTogglePauseProduct}
               onManageTop={openTop}
-              onQuickUpdate={handleQuickUpdateProduct}
+              onQuickUpdate={invitado.activo ? undefined : handleQuickUpdateProduct}
             /> : <InventoryGrid
               key={`${searchQuery}-${categoryFilter}-${partBrandFilter}-${vehicleBrandFilter}-${yearFilter}-${inventoryOrder}`}
               products={sortedProducts}

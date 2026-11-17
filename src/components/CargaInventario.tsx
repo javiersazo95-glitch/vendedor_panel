@@ -1,3 +1,4 @@
+import { useModoInvitado, type ModoInvitadoValor } from '../utils/modoInvitado';
 import React, { useEffect, useState } from 'react';
 import { ArrowRight, ChevronRight, FileSpreadsheet, History, PackagePlus, Tag, Wand2 } from 'lucide-react';
 import { FullCreationUpload } from './FullCreationUpload';
@@ -233,8 +234,18 @@ const OPCIONES_SEPARADAS: Opcion[] = [
  * Los caminos que se ofrecen. `panel.carga-manual` y `panel.carga-express-precios` permiten
  * apagar "Un repuesto" y "Sólo cambiar precios y stock" desde el Mantenedor sin desplegar.
  */
-function opcionesDeCarga(unificada: boolean, cargaManual: boolean, cargaExpress: boolean): Opcion[] {
-  const base = unificada ? [OPCION_UNO, OPCION_EXCEL, OPCION_PRECIOS] : OPCIONES_SEPARADAS;
+/** En modo invitado soporte solo cambia el precio: el stock es del vendedor. */
+const OPCION_PRECIOS_INVITADO: Opcion = {
+  ...OPCION_PRECIOS,
+  titulo: 'Sólo cambiar precios',
+  detalle: 'De repuestos que ya publicó la tienda. No crea productos ni toca el stock.',
+};
+
+function opcionesDeCarga(unificada: boolean, cargaManual: boolean, cargaExpress: boolean, invitado?: ModoInvitadoValor): Opcion[] {
+  // Acceso asistido: el invitado ve solo lo que el vendedor le autorizo (uno a uno, precios, Excel).
+  const base = invitado?.activo
+    ? [OPCION_UNO, OPCION_PRECIOS_INVITADO, OPCION_EXCEL].filter((o) => o.camino === 'uno' ? invitado.puede('CREAR') : o.camino === 'precios' ? invitado.puede('PRECIOS') : invitado.puede('EXCEL'))
+    : unificada ? [OPCION_UNO, OPCION_EXCEL, OPCION_PRECIOS] : OPCIONES_SEPARADAS;
   return base.filter((opcion) =>
     (opcion.camino !== 'uno' || cargaManual) && (opcion.camino !== 'precios' || cargaExpress));
 }
@@ -259,7 +270,8 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   const MI_EXCEL_V2 = useFlag('panel.mi-excel-v2', MI_EXCEL_V2_FALLBACK);
   const cargaManual = useFlag('panel.carga-manual');
   const cargaExpress = useFlag('panel.carga-express-precios');
-  const OPCIONES = opcionesDeCarga(CARGA_EXCEL_UNIFICADA, cargaManual, cargaExpress);
+  const invitado = useModoInvitado();
+  const OPCIONES = opcionesDeCarga(CARGA_EXCEL_UNIFICADA, cargaManual, cargaExpress, invitado);
 
   if (!isOpen) return null;
 
@@ -321,7 +333,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   return (
     <div className="bulk-upload-page">
       <div className="bulk-upload-page-content carga-inventario">
-        {(CARGA_EXCEL_UNIFICADA || MI_EXCEL_V2) && (
+        {!invitado.activo && (CARGA_EXCEL_UNIFICADA || MI_EXCEL_V2) && (
           <CargasGuardadas onRetomar={(tipo) => { setRetomar(tipo); setCamino(CARGA_EXCEL_UNIFICADA ? 'excel' : 'mi-excel'); }} />
         )}
         <h3 className="carga-inventario-titulo">¿Qué tienes?</h3>
@@ -332,7 +344,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
               key={opcion.camino}
               type="button"
               className="carga-inventario-opcion"
-              onClick={() => (opcion.camino === 'uno' ? onAbrirUnoAUno() : setCamino(opcion.camino))}
+              onClick={() => (opcion.camino === 'uno' ? onAbrirUnoAUno() : setCamino(invitado.activo && opcion.camino === 'excel' ? 'plantilla' : opcion.camino))}
             >
               <span className="carga-inventario-icono">{opcion.icono}</span>
               <span className="carga-inventario-texto">

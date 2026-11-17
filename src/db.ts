@@ -1,6 +1,6 @@
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from './utils/imageHelper';
 import { apiFetch } from './utils/apiFetch';
-import { getStoredSession } from './utils/session';
+import { esModoInvitado, getStoredSession } from './utils/session';
 import { encId } from './utils/url';
 import { comprimirImagenes } from './utils/imageCompression';
 
@@ -568,6 +568,8 @@ export async function setProductTop(id: string, renovar = false): Promise<Produc
 export async function getWalletBalance(): Promise<WalletBalance> {
   const session = getSession();
   if (!session) throw new Error('No hay sesión activa.');
+  // Acceso asistido: el monedero no es del invitado (el backend responde 403); ni se pregunta.
+  if (esModoInvitado()) throw new Error('El monedero no está disponible en modo invitado.');
   const response = await apiFetch(`${API_BASE_URL}/api/v1/fichas/saldo`, {
     method: 'GET', headers: { 'Authorization': `Bearer ${session.token}`, 'Accept': 'application/json' },
   });
@@ -580,7 +582,7 @@ export async function getWalletBalance(): Promise<WalletBalance> {
  * endpoint. Por eso esta lectura opcional no usa apiFetch, que trata 403 como sesión vencida. */
 export async function getSellerProfileImage(): Promise<string | null> {
   const session = getSession();
-  if (!session) return null;
+  if (!session || esModoInvitado()) return null;
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
