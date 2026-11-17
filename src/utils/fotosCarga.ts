@@ -12,6 +12,7 @@ import { encId } from './url';
 import { conReintento429 } from './reintento429';
 import { comprimirImagen } from './imageCompression';
 import { esUrlDeImagen } from './plantillaFotos';
+import { esModoInvitado } from './session';
 
 export const MAX_IMAGES_PER_PRODUCT = 4;
 export const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
@@ -146,10 +147,31 @@ export async function subirFotosAProductos({
   onProgreso?.(0, conFotos.length);
   const base = `${API_BASE_URL}/api/v1/proveedores/${encId(sellerId)}/inventario`;
 
+  // Acceso asistido (17-nov): el invitado no puede usar /editar (cambia cualquier dato del producto). Sube solo
+  // las fotos a /fotos, que el backend acepta únicamente para lo que soporte cargó en ese mismo acceso.
+  const invitado = esModoInvitado();
+
   for (let i = 0; i < conFotos.length; i += PHOTO_UPLOAD_BATCH_SIZE) {
     const lote = conFotos.slice(i, i + PHOTO_UPLOAD_BATCH_SIZE);
     await Promise.all(lote.map(async (fila) => {
       try {
+        if (invitado) {
+          const soloFotos = new FormData();
+          for (const nombre of asignaciones[fila.clave] ?? []) {
+            const blob = await obtenerImagen(nombre);
+            if (!blob) continue;
+            const { blob: comprimido, filename } = await comprimirImagen(blob, nombre);
+            soloFotos.append('imagenes', comprimido, filename);
+          }
+          const respuesta = await conReintento429(() => apiFetch(
+            `${base}/${encId(fila.productoId)}/fotos`,
+            { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: soloFotos },
+          ), { onEspera });
+          resultados.push(respuesta.ok
+            ? { clave: fila.clave, sku: fila.sku, ok: true }
+            : { clave: fila.clave, sku: fila.sku, ok: false, mensaje: await leerMensaje(respuesta, 'No se pudo subir la foto.') });
+          return;
+        }
         const getResponse = await conReintento429(() => apiFetch(
           `${base}/${encId(fila.productoId)}`,
           { headers: { Authorization: `Bearer ${token}` } },
