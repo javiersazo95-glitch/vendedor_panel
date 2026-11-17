@@ -9,6 +9,7 @@ import {
   detectarColumnasExpress,
   itemsParaEnviar,
   NOMBRE_EXPRESS,
+  soloCambiosDePrecio,
   type AnalisisExpress,
   type FilaRetenida,
 } from '../utils/expressPreciosStock';
@@ -140,15 +141,17 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
     setError(null);
     try {
       const productos = await getAllProducts();
-      const filas: (string | number)[][] = [['Código', 'Nombre', 'Precio', 'Stock']];
+      // En modo invitado (acceso asistido) soporte solo cambia precios: el archivo va sin la columna de stock.
+      const conStock = !invitado.activo;
+      const filas: (string | number)[][] = [conStock ? ['Código', 'Nombre', 'Precio', 'Stock'] : ['Código', 'Nombre', 'Precio']];
       for (const p of productos) {
         // Un "Sólo cotizar" va sin precio: si el vendedor no lo toca, al subirlo sólo cambia el stock.
         // Igual un precio 0 guardado de antes: exportarlo haría que el archivo recién descargado
         // se rechazara a sí mismo al subirlo ("el precio tiene que ser mayor que cero").
         const sinPrecio = p.pricingMode === 'quote_only' || !(p.price > 0);
-        filas.push([p.sku, p.name, sinPrecio ? '' : p.price, p.stock]);
+        filas.push(conStock ? [p.sku, p.name, sinPrecio ? '' : p.price, p.stock] : [p.sku, p.name, sinPrecio ? '' : p.price]);
       }
-      if (productos.length === 0) filas.push(['PF-100', 'Ejemplo: pastilla de freno', 24990, 10]);
+      if (productos.length === 0) filas.push(conStock ? ['PF-100', 'Ejemplo: pastilla de freno', 24990, 10] : ['PF-100', 'Ejemplo: pastilla de freno', 24990]);
       const XLSX = await import('xlsx');
       const hoja = XLSX.utils.aoa_to_sheet(sanitizeAoaForExport(filas));
       hoja['!cols'] = [{ wch: 18 }, { wch: 48 }, { wch: 12 }, { wch: 10 }];
@@ -187,12 +190,17 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
         setError(`No encontramos la columna con el código de cada repuesto. Tu archivo tiene: ${lista}. Ponle a esa columna el título «Código» y vuelve a subirlo.`);
         return;
       }
+      if (invitado.activo && columnas.precio === null) {
+        setError(`No encontramos la columna de precio. Tu archivo tiene: ${lista}. Ponle a esa columna el título «Precio» y vuelve a subirlo.`);
+        return;
+      }
       if (columnas.precio === null && columnas.stock === null) {
         setError(`No encontramos las columnas de precio ni de stock. Tu archivo tiene: ${lista}. Ponles los títulos «Precio» y «Stock» y vuelve a subirlo.`);
         return;
       }
       const productos = await getAllProducts();
-      setAnalisis(analizarExpress(filas.slice(indiceEncabezado + 1), columnas, productos, indiceEncabezado + 2));
+      const analizado = analizarExpress(filas.slice(indiceEncabezado + 1), columnas, productos, indiceEncabezado + 2);
+      setAnalisis(invitado.activo ? soloCambiosDePrecio(analizado) : analizado);
       setPaso('confirmar');
     } catch {
       setError('No pudimos leer el archivo. Revisa que sea un Excel o CSV e inténtalo de nuevo.');
@@ -240,12 +248,17 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
 
       <div>
         <p style={{ ...TEXTO, margin: 0 }}>
-          Cambia el precio y el stock de repuestos que <strong>ya publicaste</strong>, todos de una vez.
-          No se crean productos nuevos ni se cambia nada más.
+          {invitado.activo ? (
+            <>Cambia el precio de los repuestos que <strong>cargaste en este acceso</strong>, todos de una vez.
+            El stock y los productos que la tienda ya tenía no se tocan.</>
+          ) : (
+            <>Cambia el precio y el stock de repuestos que <strong>ya publicaste</strong>, todos de una vez.
+            No se crean productos nuevos ni se cambia nada más.</>
+          )}
         </p>
         <ol style={{ ...TEXTO, margin: '0.6rem 0 0', paddingLeft: '1.3rem', lineHeight: 1.6 }}>
           <li>Descarga tus productos en Excel.</li>
-          <li>Cambia los precios y el stock que quieras. Puedes escribir los precios como siempre: <strong>$ 12.900</strong>.</li>
+          <li>{invitado.activo ? 'Cambia los precios que quieras.' : 'Cambia los precios y el stock que quieras.'} Puedes escribir los precios como siempre: <strong>$ 12.900</strong>.</li>
           <li>Sube el archivo. Antes de guardar vas a ver cada cambio.</li>
         </ol>
       </div>
@@ -268,8 +281,8 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
         }}
       >
         <UploadCloud size={32} className="dropzone-icon" />
-        <span style={{ fontSize: '1.05rem', fontWeight: 800 }}>{leyendo ? 'Leyendo el archivo…' : 'Sube el archivo con los precios y el stock'}</span>
-        <span style={TEXTO_SUAVE}>Excel (.xlsx, .xls) o CSV. Necesita una columna con el código y otra con el precio o el stock.</span>
+        <span style={{ fontSize: '1.05rem', fontWeight: 800 }}>{leyendo ? 'Leyendo el archivo…' : invitado.activo ? 'Sube el archivo con los precios' : 'Sube el archivo con los precios y el stock'}</span>
+        <span style={TEXTO_SUAVE}>{invitado.activo ? 'Excel (.xlsx, .xls) o CSV. Necesita una columna con el código y otra con el precio.' : 'Excel (.xlsx, .xls) o CSV. Necesita una columna con el código y otra con el precio o el stock.'}</span>
         <span className="btn btn-primary" style={{ ...TEXTO, minHeight: '44px', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', pointerEvents: 'none' }}>
           <FileSpreadsheet size={17} /> Elegir archivo
         </span>
@@ -304,7 +317,9 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
             {cambios.length === 0
               ? 'Este archivo no trae ningún cambio que se pueda guardar.'
               : `${cambios.length === 1 ? 'Va a cambiar 1 repuesto' : `Van a cambiar ${cambios.length} repuestos`}. Nada se guarda hasta que confirmes.`}
-            {sinCambios > 0 && ` ${sinCambios === 1 ? '1 repuesto ya tenía' : `${sinCambios} repuestos ya tenían`} ese precio y stock.`}
+            {sinCambios > 0 && (invitado.activo
+              ? ` ${sinCambios === 1 ? '1 repuesto no cambia de precio' : `${sinCambios} repuestos no cambian de precio`} (el stock no se toca en este acceso).`
+              : ` ${sinCambios === 1 ? '1 repuesto ya tenía' : `${sinCambios} repuestos ya tenían`} ese precio y stock.`)}
           </p>
         </div>
 
@@ -331,7 +346,7 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
                   <th style={CELDA}>Código</th>
                   <th style={CELDA}>Repuesto</th>
                   <th style={CELDA}>Precio</th>
-                  <th style={CELDA}>Stock</th>
+                  {!invitado.activo && <th style={CELDA}>Stock</th>}
                 </tr>
               </thead>
               <tbody>
@@ -349,11 +364,11 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
                         ? <span style={{ color: 'var(--text-secondary)' }}>{c.soloCotizar ? 'Sólo cotizar' : `${pesos(c.precioAntes)} (igual)`}</span>
                         : <>{c.soloCotizar ? 'Sólo cotizar' : pesos(c.precioAntes)} → <strong>{pesos(c.precioDespues)}</strong></>}
                     </td>
-                    <td style={CELDA}>
+                    {!invitado.activo && <td style={CELDA}>
                       {c.stockDespues === null
                         ? <span style={{ color: 'var(--text-secondary)' }}>{c.stockAntes} (igual)</span>
                         : <>{c.stockAntes} → <strong>{c.stockDespues}</strong></>}
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
@@ -412,7 +427,7 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
           <div>
             <h3 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Zap size={20} style={{ color: 'hsl(var(--primary))' }} />
-              {NOMBRE_EXPRESS}
+              {invitado.activo ? 'Cambiar precios' : NOMBRE_EXPRESS}
             </h3>
           </div>
           {!embedded && (

@@ -58,6 +58,22 @@ export interface AnalisisExpress {
   sinCambios: number;
 }
 
+/**
+ * Acceso asistido (nivel de precios): soporte solo cambia precios. El stock del archivo se descarta y las filas que
+ * solo cambiaban stock dejan de ser cambios (cuentan como "sin cambios"), para que la revisión no muestre un
+ * «2 → 20» que el backend no va a aplicar.
+ */
+export function soloCambiosDePrecio(analisis: AnalisisExpress): AnalisisExpress {
+  const conPrecio = analisis.cambios
+    .filter((c) => c.precioDespues !== null)
+    .map((c) => ({ ...c, stockDespues: null }));
+  return {
+    ...analisis,
+    cambios: conPrecio,
+    sinCambios: analisis.sinCambios + (analisis.cambios.length - conPrecio.length),
+  };
+}
+
 const CAMPOS_EXPRESS = PLANTILLA_CAMPOS.filter((c) => ['sku_proveedor', 'precio', 'stock'].includes(c.key));
 
 /** Qué columna del archivo es el código, el precio y el stock, por su encabezado. */
