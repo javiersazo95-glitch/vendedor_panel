@@ -36,6 +36,25 @@ function isValidUserSession(value: unknown): value is UserSession {
   );
 }
 
+/**
+ * Acceso asistido (hallazgo panel #1): la sesion de invitado no vence por el TTL de 2 h del vendedor, porque un
+ * acceso puede durar 8, 24 o 72 h; vence cuando termina el acceso (o la espera de la solicitud) segun el reloj
+ * del servidor. Antes se descartaba a las 2 h, se intentaba revocar con /auth/logout (prohibido al invitado) y
+ * el token seguia vivo en el servidor.
+ */
+function sesionVencida(user: UserSession, timestamp: number): boolean {
+  const invitado = user.invitado;
+  if (!invitado) {
+    return Date.now() - timestamp > SESSION_TTL_MS;
+  }
+  const fin = invitado.expiraEn ?? invitado.solicitudExpiraEn;
+  const finMs = fin ? Date.parse(fin) : NaN;
+  if (Number.isNaN(finMs)) {
+    return Date.now() - timestamp > SESSION_TTL_MS;
+  }
+  return Date.now() + (invitado.offsetMs || 0) >= finMs;
+}
+
 /** Que habia guardado: una sesion usable, una vencida por TTL, o nada aprovechable. */
 type SesionLeida =
   | { estado: 'valida'; user: UserSession }
@@ -51,7 +70,7 @@ function leerSesion(rawSession: string | null): SesionLeida {
       return { estado: 'ausente' };
     }
 
-    if (Date.now() - parsed.timestamp > SESSION_TTL_MS) {
+    if (sesionVencida(parsed.user, parsed.timestamp)) {
       return { estado: 'vencida', user: parsed.user };
     }
 

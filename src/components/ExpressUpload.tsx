@@ -1,3 +1,4 @@
+import { useModoInvitado } from '../utils/modoInvitado';
 import React, { useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Download, FileSpreadsheet, UploadCloud, XCircle, Zap } from 'lucide-react';
 import { getAllProducts, savePreciosStockBatch } from '../db';
@@ -113,6 +114,7 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
   onVolver,
   embedded = false,
 }) => {
+  const invitado = useModoInvitado();
   const [paso, setPaso] = useState<Paso>('archivo');
   const [archivoNombre, setArchivoNombre] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -205,7 +207,9 @@ export const ExpressUpload: React.FC<ExpressUploadProps> = ({
     setGuardando(true);
     setError(null);
     try {
-      const respuesta = await savePreciosStockBatch(itemsParaEnviar(analisis.cambios));
+      // Acceso asistido (hallazgo panel #2): en modo invitado soporte solo cambia precios; el stock no se envía.
+      const items = itemsParaEnviar(analisis.cambios).map((it) => (invitado.activo ? { ...it, stock: null } : it));
+      const respuesta = await savePreciosStockBatch(items);
       const errores = new Map(respuesta.filas.filter((f) => f.estado === 'ERROR').map((f) => [f.sku, f]));
       const fallidos = analisis.cambios
         .filter((c) => errores.has(c.sku))

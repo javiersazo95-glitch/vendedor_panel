@@ -31,11 +31,14 @@ function App() {
     // El ticket es de un solo uso: StrictMode corre este efecto dos veces en desarrollo y el segundo canje fallaria.
     if (!ticket || ticketUsado.current) return;
     ticketUsado.current = true;
-    // El ticket manda sobre cualquier sesion previa de la pestana: es una entrada nueva como invitado.
-    clearSession();
-    setSession(null);
+    // El ticket manda sobre cualquier sesion previa de la pestana, pero solo si el canje sale bien (hallazgo
+    // panel #4): antes se borraba la sesion ANTES de canjear, y cualquier sitio que enlazara a #ticket=basura
+    // cerraba la sesion del vendedor en el navegador dejando su token vivo en el servidor.
+    const previa = getStoredSession();
     canjearTicket(ticket)
       .then(({ token, acceso }) => {
+        if (previa && !previa.invitado) void revocarSesionVencida(previa.token).catch(() => {});
+        clearSession();
         const user: UserSession = {
           email: acceso.operadorNombre ?? 'Soporte RepuesTop',
           role: 'Soporte (invitado)',
