@@ -108,7 +108,7 @@ export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
     marcasVehiculo: MARCAS_VEHICULO_BASE,
     modelosPorMarcaVehiculo: {},
     tiposPrecio: ['MOSTRAR_PRECIO', 'SOLO_COTIZAR'],
-    condiciones: ['ORIGINAL', 'ALTERNATIVO'],
+    condiciones: ['ORIGINAL', 'ALTERNATIVO', 'USADO', 'REACONDICIONADO'],
   },
 };
 
@@ -236,13 +236,13 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
   condicion: {
     label: 'Condición',
     seccion: 'precio_condicion',
-    descripcion: 'Indica si el repuesto es original de fábrica (genuino) o alternativo homologado.',
-    ejemplo: 'ORIGINAL (genuino de fábrica) · ALTERNATIVO (homologado)',
+    descripcion: 'Indica si el repuesto es nuevo original, nuevo alternativo, usado o reacondicionado.',
+    ejemplo: 'ORIGINAL (nuevo de fábrica) · ALTERNATIVO (nuevo de otra marca) · USADO · REACONDICIONADO',
     // 'estado' y 'origen' ya no son sinónimos: en una lista de mostrador "Origen: JAPÓN" es la
     // procedencia y "Estado" el stock, y se publicaban como ORIGINAL (Fase 3).
     // 'estado' queda al final: en una lista de mostrador puede ser el stock, pero la plantilla
-    // dev lo usa para la condicion. Un valor que no sea ORIGINAL/ALTERNATIVO ya se retiene.
-    synonyms: ['condicion repuesto', 'tipo repuesto', 'original alternativo', 'original o alternativo', 'calidad', 'estado'],
+    // dev lo usa para la condicion. Un valor que no sea una condicion conocida ya se retiene.
+    synonyms: ['condicion repuesto', 'tipo repuesto', 'nuevo o usado', 'nuevo usado', 'original alternativo', 'original o alternativo', 'calidad', 'estado'],
   },
   garantia: {
     label: 'Garantía',
@@ -388,8 +388,10 @@ export const PLANTILLA_CAMPOS: CampoMeta[] = camposDesdeEsquema(ESQUEMA_FALLBACK
 const ETIQUETAS_VALOR: Record<string, string> = {
   SOLO_COTIZAR: 'Sólo cotizar',
   MOSTRAR_PRECIO: 'Mostrar precio',
-  ORIGINAL: 'Original',
-  ALTERNATIVO: 'Alternativo',
+  ORIGINAL: 'Nuevo original',
+  ALTERNATIVO: 'Nuevo alternativo',
+  USADO: 'Usado',
+  REACONDICIONADO: 'Reacondicionado',
   SI: 'Sí',
   NO: 'No',
 };

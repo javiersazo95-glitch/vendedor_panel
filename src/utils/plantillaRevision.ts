@@ -19,6 +19,7 @@
  * usa este panel no lee una lista de avisos y un dato mal publicado no se nota hasta que
  * cuesta plata. Y el vehículo o el universal son obligatorios, como en el backend.
  */
+import { condicionDesdeTexto, etiquetaCondicion } from './condicionProducto';
 import type { CampoMeta } from './plantillaMapping';
 import { ANIO_MAXIMO, ANIO_MINIMO, COLUMNAS_NUMERICAS, normalizarNumero } from './plantillaNormalizacion';
 import { STOCK_BAJO } from './inventoryOrder';
@@ -249,9 +250,9 @@ export function revisarAoA(
       agregar('precio', 'error', 'Falta el precio. Si este repuesto se cotiza, pon "SOLO_COTIZAR" en tipo de precio.');
     }
 
-    const condicion = leer('condicion').toUpperCase();
-    if (condicion && condicion !== 'ORIGINAL' && condicion !== 'ALTERNATIVO' && condicion !== 'ALT') {
-      agregar('condicion', 'error', `No reconocemos "${leer('condicion')}" como condición: escribe ORIGINAL o ALTERNATIVO.`);
+    const condicion = leer('condicion');
+    if (condicion && !condicionDesdeTexto(condicion)) {
+      agregar('condicion', 'error', `No reconocemos "${condicion}" como condición: escribe ORIGINAL, ALTERNATIVO, USADO o REACONDICIONADO.`);
     }
 
     // La garantia es texto libre (con opciones sugeridas); el backend la rechaza sobre 80.
@@ -406,8 +407,7 @@ export function fichaDesdeFila(columnas: string[], valores: string[]): FichaPrev
   const { numero } = normalizarNumero(v('precio'));
   const precio = soloCotizar ? 'Precio a consultar' : numero !== null ? formatoPrecio(numero) : 'Sin precio';
 
-  const condicionCruda = v('condicion').toUpperCase();
-  const condicion = condicionCruda === 'ALTERNATIVO' || condicionCruda === 'ALT' ? 'Alternativo' : 'Original';
+  const condicion = etiquetaCondicion(condicionDesdeTexto(v('condicion')));
 
   const universal = SI_NO.has(v('compatibilidad_general').toUpperCase());
   const anios = [v('anio_desde'), v('anio_hasta')].filter(Boolean).join('-');

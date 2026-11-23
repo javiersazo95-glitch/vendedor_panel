@@ -397,7 +397,7 @@ describe('PlantillaMapper', () => {
     universalSiHaceFalta();
     clic(/Siguiente/);
     await screen.findByRole('heading', { name: /Revisa antes de generar/ });
-    expect(screen.getByText('Alternativo', { selector: '.mapper-ficha-chip.cond' })).toBeInTheDocument();
+    expect(screen.getByText('Nuevo alternativo', { selector: '.mapper-ficha-chip.cond' })).toBeInTheDocument();
   });
 
   it('propone la categoría del catálogo que más se parece, ordenada por cuántos repuestos afecta', async () => {

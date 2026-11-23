@@ -129,10 +129,11 @@ describe('revisarAoA', () => {
     expect(r.filas[0].problemas).toEqual([]);
   });
 
-  it('retiene una condición que no es ORIGINAL ni ALTERNATIVO', () => {
+  it('acepta usados y reacondicionados, y retiene una condición que no se reconoce', () => {
     // Fase 3: antes era aviso ("se va a publicar como ORIGINAL"); quien usa el panel no lee
-    // avisos, y un "Usado" publicado como original es un dato falso en la vitrina.
-    const r = revisar([filaBase({ condicion: 'Usado' })]);
+    // avisos, y un usado publicado como original es un dato falso en la vitrina.
+    expect(revisar([filaBase({ condicion: 'Usado' })]).conError).toBe(0);
+    const r = revisar([filaBase({ condicion: 'Como nueva' })]);
     expect(r.conError).toBe(1);
     expect(r.filas[0].problemas[0]).toMatchObject({ columna: 'condicion', severidad: 'error' });
     expect(r.filas[0].problemas[0].mensaje).toContain('ORIGINAL');
@@ -205,7 +206,7 @@ describe('fichaDesdeFila', () => {
     const ficha = fichaDesdeFila(columnas, filaBase({ descripcion: 'Filtro de alto flujo' }));
     expect(ficha.nombre).toBe('Filtro de aceite');
     expect(ficha.marca).toBe('Bosch');
-    expect(ficha.condicion).toBe('Original');
+    expect(ficha.condicion).toBe('Nuevo original');
     expect(ficha.precio.replace(/\u00a0/g, ' ')).toContain('4.990');
     expect(ficha.compatibilidad).toBe('Toyota Corolla 2014-2020 1.8');
     expect(ficha.descripcion).toBe('Filtro de alto flujo');
@@ -226,7 +227,8 @@ describe('fichaDesdeFila', () => {
   it('sin precio a la vista muestra que se cotiza', () => {
     const ficha = fichaDesdeFila(columnas, filaBase({ tipo_precio: 'SOLO_COTIZAR', precio: '' }));
     expect(ficha.precio).toBe('Precio a consultar');
-    expect(fichaDesdeFila(columnas, filaBase({ condicion: 'ALTERNATIVO' })).condicion).toBe('Alternativo');
+    expect(fichaDesdeFila(columnas, filaBase({ condicion: 'ALTERNATIVO' })).condicion).toBe('Nuevo alternativo');
+    expect(fichaDesdeFila(columnas, filaBase({ condicion: 'segunda mano' })).condicion).toBe('Usado');
   });
 });
 

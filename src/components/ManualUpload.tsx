@@ -7,6 +7,7 @@ import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, 
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { claveCatalogo, mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
 import { formatearEtiquetaMotor, sonMotoresEquivalentes } from '../utils/catalogoVersiones';
+import { AVISO_USADO_TIENDA, CONDICIONES_PRODUCTO, esUsadoOReacondicionado, type CondicionProducto } from '../utils/condicionProducto';
 import { GARANTIA_MAX, esGarantiaPredefinida, normalizarGarantia } from '../utils/garantia';
 import { MODELS_FALLBACK, PART_BRANDS_FALLBACK, VEHICLE_BRANDS_FALLBACK } from '../remoteConfig/fallbacks';
 import { useCatalogo, useLista } from '../remoteConfig/hooks';
@@ -375,7 +376,7 @@ const SECTION_TITLES: Record<number, string> = {
   1: 'Información básica',
   2: 'Precio y disponibilidad',
   3: 'Compatibilidad',
-  5: 'Descripción y calidad',
+  5: 'Descripción y garantía',
 };
 
 /** Lo que le falta a una tarjeta de vehículo. Con versiones elegidas (o guardadas) no falta nada. */
@@ -780,9 +781,10 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const [stock, setStock] = useState<number>(1);
   const [requiresChassis, setRequiresChassis] = useState<'false' | 'true'>('false');
   // `CONDICION_PRODUCTO` es una lista de sistema: el Mantenedor puede ocultar o renombrar sus
-  // valores, no agregar otros, así que el tipo sigue cerrado. Sin bootstrap, Original/Alternativo.
+  // valores, no agregar otros, así que el tipo sigue cerrado. Al crear nace sin responder: es la
+  // primera pregunta del formulario.
   const opcionesCondicion = useLista('CONDICION_PRODUCTO');
-  const [condition, setCondition] = useState<'ORIGINAL' | 'ALTERNATIVO'>('ORIGINAL');
+  const [condition, setCondition] = useState<CondicionProducto | ''>('');
   // Marcas de vehículo del bootstrap del Mantenedor (activas y en su orden): valen cuando el
   // catálogo `/marcas-vehiculo` no respondió, antes de caer a la lista corta de respaldo.
   const marcasVehiculoRemotas = useCatalogo('marcasVehiculo', MARCAS_VEHICULO_SIN_BOOTSTRAP);
@@ -831,7 +833,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setStock(1);
     setRequiresChassis('false');
     setIsUniversal(false);
-    setCondition('ORIGINAL');
+    setCondition('');
     setWarranty('');
     setDescription('');
     setImage('');
@@ -844,7 +846,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setError(null);
     initialSnapshotRef.current = snapshotOf({
       sku: '', oem: '', name: '', category: '', subcategory: '', partBrand: '', pricingMode: 'show_price',
-      price: 0, stock: 1, requiresChassis: 'false', condition: 'ORIGINAL', warranty: '', description: '', isUniversal: false,
+      price: 0, stock: 1, requiresChassis: 'false', condition: '', warranty: '', description: '', isUniversal: false,
       compatibilities: defaultCard, filesCount: 0, publishedCount: 0,
     });
   }, []);
@@ -879,7 +881,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         price: editProduct.price,
         stock: editProduct.stock || 0,
         requiresChassis: editProduct.requiresChassis ? 'true' : 'false',
-        condition: editProduct.condition || 'ORIGINAL',
+        condition: editProduct.condition || ('ORIGINAL' as CondicionProducto),
         warranty: editProduct.warranty || '',
         description: editProduct.description || '',
         isUniversal: editProduct.esUniversal === true,
@@ -1178,6 +1180,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
   const missingBySection: Record<number, string[]> = {
     1: [
+      !condition && 'condición del repuesto',
       !name.trim() && 'nombre',
       !category.trim() && 'categoría',
       !partBrand.trim() && 'marca del repuesto',
@@ -1393,7 +1396,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         price: pricingMode === 'quote_only' ? 0 : Number(price),
         stock: Number(stock),
         requiresChassis: requiresChassis === 'true',
-        condition,
+        condition: condition || undefined,
         warranty: normalizarGarantia(warranty) || undefined,
         description: description.trim(),
         image: finalImage,
@@ -1517,6 +1520,32 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               </div>
               {missingNote(1)}
               <div className="form-section-grid">
+                <div className="form-group form-section-grid-full">
+                  <label className="form-label">¿En qué condición está el repuesto? {REQUIRED}</label>
+                  <div className="manual-condition-grid" role="radiogroup" aria-label="Condición del repuesto">
+                    {opcionesCondicion.flatMap((opcion) => {
+                      const local = CONDICIONES_PRODUCTO.find((c) => c.valor === opcion.valor);
+                      if (!local) return [];
+                      const elegida = condition === local.valor;
+                      return (
+                        <button
+                          key={local.valor}
+                          type="button"
+                          role="radio"
+                          aria-checked={elegida}
+                          className={`manual-condition ${elegida ? 'active' : ''}`}
+                          onClick={() => setCondition(local.valor)}
+                        >
+                          <strong>{elegida && <Check size={14} />} {opcion.etiqueta}</strong>
+                          <span>{opcion.descripcion || local.ayuda}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {esUsadoOReacondicionado(condition) && (
+                    <p className="manual-condition-notice" role="note">{AVISO_USADO_TIENDA}</p>
+                  )}
+                </div>
                 <div className="form-group form-section-grid-full">
                   <label className="form-label">Nombre del producto {REQUIRED}</label>
                   <input
@@ -2051,7 +2080,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               onBlur={markVisited(5)}
             >
               <div className="form-section-header success manual-section-header-status">
-                <div><span>5.</span> Descripción, calidad y garantía</div>
+                <div><span>5.</span> Descripción y garantía</div>
                 <SectionStatus missing={missingBySection[5]} visited={visitedSections.has(5)} />
               </div>
               {missingNote(5)}
@@ -2073,25 +2102,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                       ? `Escribe al menos ${MIN_DESCRIPTION - description.trim().length} letras más.`
                       : `${description.length}/1000`}
                   </span>
-                </div>
-
-                <div className="form-group form-section-grid-full">
-                  <label className="form-label">Calidad del producto {REQUIRED}</label>
-                  <div className="manual-chip-row">
-                    {opcionesCondicion
-                      .filter((opcion): opcion is typeof opcion & { valor: 'ORIGINAL' | 'ALTERNATIVO' } =>
-                        opcion.valor === 'ORIGINAL' || opcion.valor === 'ALTERNATIVO')
-                      .map((opcion) => (
-                        <button
-                          key={opcion.valor}
-                          type="button"
-                          className={`manual-chip ${condition === opcion.valor ? 'active' : ''}`}
-                          onClick={() => setCondition(opcion.valor)}
-                        >
-                          {opcion.etiqueta}
-                        </button>
-                      ))}
-                  </div>
                 </div>
 
                 <div className="form-group form-section-grid-full">

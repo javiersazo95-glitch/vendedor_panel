@@ -1,3 +1,4 @@
+import { condicionDesdeTexto, type CondicionProducto } from './utils/condicionProducto';
 import { API_BASE_URL, DEFAULT_PRODUCT_IMAGE_URL, resolveImageUri } from './utils/imageHelper';
 import { apiFetch } from './utils/apiFetch';
 import { esModoInvitado, getStoredSession } from './utils/session';
@@ -34,7 +35,7 @@ export interface Product {
    */
   existingPhotos?: string[];
   pricingMode?: 'show_price' | 'quote_only';
-  condition?: 'ORIGINAL' | 'ALTERNATIVO';
+  condition?: CondicionProducto;
   /** Garantia que ofrece el vendedor ("1 año", ...). Obligatoria al crear desde el formulario. */
   warranty?: string;
   requiresChassis?: boolean;
@@ -209,7 +210,8 @@ function mapDtoToProduct(dto: ProductDto): Product {
     image: dto.imageUrls && dto.imageUrls.length > 0 ? dto.imageUrls[0] : DEFAULT_PRODUCT_IMAGE_URL,
     images: dto.imageUrls ?? [],
     pricingMode: dto.pricingMode === 'QUOTE_ONLY' ? 'quote_only' : 'show_price',
-    condition: dto.condicion === 'ALTERNATIVO' ? 'ALTERNATIVO' : 'ORIGINAL',
+    // Intacta: antes todo lo que no fuera ALTERNATIVO llegaba como ORIGINAL y al editar se guardaba así.
+    condition: condicionDesdeTexto(dto.condicion) ?? 'ORIGINAL',
     warranty: dto.garantia?.trim() || undefined,
     requiresChassis: dto.requiereChasis === true,
     esUniversal: dto.esUniversal === true,

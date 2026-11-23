@@ -4241,6 +4241,16 @@ h1, h2, h3, h4, h5, h6 {
   cursor: pointer;
 }
 
+/* Condición del repuesto (23-nov): primera pregunta de la carga manual. */
+.manual-condition-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+@media (max-width: 480px) { .manual-condition-grid { grid-template-columns: 1fr; } }
+.manual-condition { display: grid; gap: 0.2rem; padding: 0.7rem 0.85rem; border: 1px solid #cfdbe9; border-radius: 0.6rem; background: #ffffff; color: #42566d; text-align: left; font: inherit; cursor: pointer; }
+.manual-condition strong { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
+.manual-condition span { font-size: 0.75rem; opacity: 0.75; line-height: 1.35; }
+.manual-condition:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.manual-condition.active { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.1); }
+.manual-condition-notice { margin: 0.6rem 0 0; padding: 0.6rem 0.75rem; border: 1px solid hsl(var(--primary) / 0.35); border-radius: 0.5rem; background: hsl(var(--primary) / 0.07); font-size: 0.8rem; line-height: 1.45; }
+
 .manual-chip-row {
   display: flex;
   flex-wrap: wrap;

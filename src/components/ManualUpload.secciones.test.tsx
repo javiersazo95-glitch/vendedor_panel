@@ -36,6 +36,7 @@ const escribir = (placeholder: string, valor: string) =>
   fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: valor } });
 
 async function completarLoObligatorio() {
+  fireEvent.click(screen.getByRole('radio', { name: /Nuevo original/ }));
   escribir('Ej. Pastillas de freno delanteras', 'Pastilla de freno');
   const categoria = screen.getByLabelText('Categoría');
   await waitFor(() => expect(categoria.querySelectorAll('option').length).toBeGreaterThan(1));
@@ -54,7 +55,7 @@ describe('1 a 1 por secciones', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Publicar repuesto' }));
 
-    expect(await screen.findByText('Falta: nombre, categoría, marca del repuesto, código (SKU).')).toBeInTheDocument();
+    expect(await screen.findByText('Falta: condición del repuesto, nombre, categoría, marca del repuesto, código (SKU).')).toBeInTheDocument();
     expect(screen.getByText('Falta: precio.')).toBeInTheDocument();
     expect(screen.getByText('Falta: marca del vehículo.')).toBeInTheDocument();
     expect(screen.getByText(`Falta: descripción (mínimo 15 letras), garantía.`)).toBeInTheDocument();
@@ -64,11 +65,28 @@ describe('1 a 1 por secciones', () => {
 
   it('cada sección muestra cuántos datos le faltan y "Listo" cuando está completa', async () => {
     abrir();
-    expect(screen.getByText('Faltan 4 datos')).toBeInTheDocument();
+    expect(screen.getByText('Faltan 5 datos')).toBeInTheDocument();
 
     await completarLoObligatorio();
 
     expect(screen.getAllByText('Listo')).toHaveLength(4);
+  });
+
+  it('pregunta primero la condición, sin preselección, y avisa a la tienda si es usado', async () => {
+    const onSave = abrir();
+    for (const nombre of [/Nuevo original/, /Nuevo alternativo/, /Usado/, /Reacondicionado/]) {
+      expect(screen.getByRole('radio', { name: nombre })).toHaveAttribute('aria-checked', 'false');
+    }
+    await completarLoObligatorio();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('radio', { name: /Usado/ }));
+    expect(screen.getByRole('note')).toHaveTextContent('Tu tienda responde por el repuesto');
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar repuesto' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    const [payload] = onSave.mock.calls[0] as unknown as [Product];
+    expect(payload.condition).toBe('USADO');
   });
 
   it('la descripción cuenta en vivo cuántas letras faltan', () => {
@@ -111,7 +129,7 @@ describe('1 a 1 por secciones', () => {
 
     expect(await screen.findByText('Listo: publicaste tu repuesto')).toBeInTheDocument();
     const [payload] = onSave.mock.calls[0] as unknown as [Product];
-    expect(payload).toMatchObject({ name: 'Pastilla de freno', sku: 'PF-100', esUniversal: true, price: 24990, warranty: '1 año' });
+    expect(payload).toMatchObject({ name: 'Pastilla de freno', sku: 'PF-100', esUniversal: true, price: 24990, warranty: '1 año', condition: 'ORIGINAL' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Publicar otro repuesto' }));
     expect((screen.getByPlaceholderText('Ej. Pastillas de freno delanteras') as HTMLInputElement).value).toBe('');

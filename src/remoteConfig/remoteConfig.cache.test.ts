@@ -232,6 +232,6 @@ describe('remoteConfig: parámetros según parametrosTipos', () => {
     localStorage.setItem(CLAVE_CACHE, JSON.stringify({ version: 7, data: bootstrap(), guardadoEn: '' }));
     remoteConfig._reiniciarParaPruebas();
     expect(remoteConfig.lista('GARANTIA_PRODUCTO')).toEqual([]);
-    expect(remoteConfig.lista('CONDICION_PRODUCTO').map((o) => o.valor)).toEqual(['ORIGINAL', 'ALTERNATIVO']);
+    expect(remoteConfig.lista('CONDICION_PRODUCTO').map((o) => o.valor)).toEqual(['ORIGINAL', 'ALTERNATIVO', 'USADO', 'REACONDICIONADO']);
   });
 });

@@ -91,8 +91,10 @@ export function opcionLista(valor: string, etiqueta: string = valor, orden = 0, 
  */
 export const LISTAS_FALLBACK: Readonly<Record<string, readonly OpcionListaDTO[]>> = {
   CONDICION_PRODUCTO: [
-    opcionLista('ORIGINAL', 'Original', 0, true),
-    opcionLista('ALTERNATIVO', 'Alternativo', 1),
+    opcionLista('ORIGINAL', 'Nuevo original', 0, true),
+    opcionLista('ALTERNATIVO', 'Nuevo alternativo', 1),
+    opcionLista('USADO', 'Usado', 2),
+    opcionLista('REACONDICIONADO', 'Reacondicionado', 3),
   ],
   TIPO_PRECIO: [
     opcionLista('MOSTRAR_PRECIO', 'Mostrar precio', 0, true),
