@@ -8,6 +8,7 @@ import { getStoredSession } from '../utils/session';
 import { encId } from '../utils/url';
 import { sanitizeRowsForExport } from '../utils/xlsxSafety';
 import { NOMBRE_EXPRESS } from '../utils/expressPreciosStock';
+import { LotesImagenesIa } from './miExcel/LotesImagenesIa';
 
 /**
  * "Historial de cargas": todas las cargas del vendedor en un solo lugar (Fase 8 del plan de
@@ -238,6 +239,8 @@ export const HistorialCargas: React.FC = () => {
         </p>
       )}
       {cargando && !historial && <p style={{ ...TEXTO, color: 'var(--text-secondary)' }}>Cargando…</p>}
+
+      <LotesImagenesIa />
 
       {historial && historial.content.length === 0 && (
         <div style={{ border: '1px dashed var(--border-color)', borderRadius: '14px', padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>

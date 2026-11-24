@@ -72,6 +72,8 @@ import { PasoRelacionar } from './PasoRelacionar';
 import { PasoCompletar, type CambioMasivo } from './PasoCompletar';
 import { PasoVistaPrevia, type RevisionServidor } from './PasoVistaPrevia';
 import { TarjetaCargaGuardada } from './TarjetaCargaGuardada';
+import { GaleriaImagenesIa } from './GaleriaImagenesIa';
+import { pedirImagenesIa, type ResultadoImagenesIa } from '../../utils/imagenesIaApi';
 
 interface Props {
   /** Tienda Fundadora: la calculadora de precio de la vista previa usa su tarifa (0% en marcha blanca). */
@@ -98,6 +100,8 @@ interface ResultadoPublicacion {
   quitados: number;
   fotos: FotoUploadResultado[];
   archivoRepetidoEl: string | null;
+  /** Imágenes referenciales con IA: lo que se encoló, o por qué no se pudo pedir. */
+  imagenesIa?: ResultadoImagenesIa | { error: string } | null;
 }
 
 const REVISION_VACIA: RevisionServidor = { estado: 'sin-revisar', porClave: {}, error: null, avisosGenerales: [] };
@@ -668,7 +672,26 @@ export function CargaExcelWizard({
     setFase('publicado');
   };
 
-  const publicar = async (retenidos: Record<string, string[]> = {}) => {
+  /**
+   * Pide las imágenes referenciales de los publicados que van sin foto. Nunca hace fallar la publicación: los
+   * repuestos ya están arriba, así que un problema aquí sólo se informa.
+   */
+  const pedirReferenciales = async (
+    sesion: { sellerId: string; token: string }, productoPorClave: Record<string, number>,
+  ): Promise<ResultadoPublicacion['imagenesIa']> => {
+    const ids = [...new Set(Object.entries(productoPorClave)
+      .filter(([clave]) => (asignaciones[clave] ?? []).length === 0)
+      .map(([, id]) => id))];
+    if (ids.length === 0) return null;
+    setProgreso({ texto: 'Pidiendo las imágenes referenciales…', hechas: 0, total: 0 });
+    try {
+      return await pedirImagenesIa(sesion, ids);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'No pudimos pedir las imágenes referenciales.' };
+    }
+  };
+
+  const publicar = async (retenidos: Record<string, string[]> = {}, imagenesIa = false) => {
     const revisado = revisadoRef.current;
     const session = getStoredSession();
     if (!revisado || revisado.firma !== firmaActual || !session || !tabla) return;
@@ -715,8 +738,11 @@ export function CargaExcelWizard({
       setPublicacionPendiente(pendiente);
       // Si se corta la luz subiendo las fotos, retomar ofrece terminarlas en vez de volver a publicar.
       await borrador.guardarConEstado({ ...estadoBorrador, publicacion: pendiente });
+      // Antes de las fotos: subirlas puede tardar y, si se corta, lo pedido ya quedó en el servidor.
+      const referenciales = imagenesIa ? await pedirReferenciales(session, productoPorClave) : null;
       const fotos = await subirFotosPublicadas(productoPorClave, skuPorClave);
       await terminarPublicacion(fotos, {
+        imagenesIa: referenciales,
         publicados, noPublicados, quitados: revisado.filas.filter(quitado).length, archivoRepetidoEl: data.archivoRepetido ? data.archivoYaCargadoEl ?? '' : null,
       });
       if (fotos.some((f) => f.ok)) onUploadSuccess();
@@ -1051,6 +1077,23 @@ export function CargaExcelWizard({
               </span>
             </div>
           )}
+          {resultado.imagenesIa && 'error' in resultado.imagenesIa && (
+            <div className="mx-alerta aviso">
+              <AlertTriangle size={16} />
+              <span>Tus repuestos se publicaron, pero no pedimos sus imágenes referenciales: {resultado.imagenesIa.error}</span>
+            </div>
+          )}
+          {resultado.imagenesIa && 'lote' in resultado.imagenesIa && resultado.imagenesIa.sinCupo > 0 && (
+            <div className="mx-alerta info">
+              Por el cupo del día, {plural(resultado.imagenesIa.sinCupo, 'repuesto quedó', 'repuestos quedaron')} sin imagen referencial.
+            </div>
+          )}
+          {resultado.imagenesIa && 'lote' in resultado.imagenesIa && resultado.imagenesIa.encolados > 0 && (
+            <div className="mx-resultado-ia">
+              <h4>Imágenes referenciales</h4>
+              <GaleriaImagenesIa lote={resultado.imagenesIa.lote} />
+            </div>
+          )}
           <div className="mx-botonera centro">
             {resultado.noPublicados.length > 0 && (
               <button type="button" className="btn btn-secondary mx-btn" onClick={() => void descargarNoPublicados()}><Download size={15} /> Descargar lo que no se publicó</button>
@@ -1262,7 +1305,7 @@ export function CargaExcelWizard({
           onQuitar={(clave) => setQuitados((prev) => (prev.includes(clave) ? prev : [...prev, clave]))}
           onVolverAIncluir={(clave) => setQuitados((prev) => prev.filter((c) => c !== clave))}
           onAtras={() => irAPaso(3)}
-          onPublicar={(retenidos) => void publicar(retenidos)}
+          onPublicar={(retenidos, imagenesIa) => void publicar(retenidos, imagenesIa)}
         />
       )}
 

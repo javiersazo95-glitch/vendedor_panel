@@ -672,3 +672,27 @@ li.aviso .mx-foco-campo { color: var(--mx-amarillo-texto); border-color: #fcd34d
   display: flex; flex-direction: column; gap: 0.25rem;
 }
 .mx-calculadora-sub { padding-left: 0.75rem; font-size: 0.78rem; opacity: 0.85; }
+
+/* Imágenes referenciales con IA (24-nov) */
+.mx-oferta-ia { margin-top: 0.9rem; padding: 0.85rem 1rem; border: 1.5px solid hsl(var(--primary) / 0.35); border-radius: 12px; background: hsl(var(--primary) / 0.05); }
+.mx-oferta-ia label { display: flex; align-items: flex-start; gap: 0.65rem; cursor: pointer; }
+.mx-oferta-ia input { width: 20px; height: 20px; margin-top: 0.1rem; flex-shrink: 0; }
+.mx-oferta-ia label b { display: flex; align-items: center; gap: 0.4rem; line-height: 1.35; }
+.mx-oferta-ia label b svg { flex-shrink: 0; }
+.mx-oferta-ia small { display: block; margin-top: 0.2rem; font-size: 0.84rem; line-height: 1.45; color: var(--text-secondary); }
+.mx-oferta-ia ul { margin: 0.5rem 0 0; padding-left: 3rem; font-size: 0.86rem; line-height: 1.5; }
+.mx-resultado-ia { width: 100%; text-align: left; border-top: 1px solid var(--border-color); padding-top: 1rem; }
+.mx-resultado-ia h4 { margin: 0 0 0.5rem; }
+.mx-galeria-ia > p { margin: 0 0 0.45rem; }
+.mx-galeria-ia .mx-barra { width: 100%; max-width: none; }
+.mx-galeria-ia-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.8rem; margin-top: 0.8rem; }
+.mx-galeria-ia-grilla article { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.55rem; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); min-width: 0; }
+.mx-galeria-ia-grilla img, .mx-galeria-ia-vacia { width: 100%; aspect-ratio: 1; border-radius: 8px; object-fit: contain; background: #fff; }
+.mx-galeria-ia-vacia { display: flex; align-items: center; justify-content: center; color: #64748b; background: #f1f5f9; }
+.mx-galeria-ia-grilla b { font-size: 0.86rem; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.mx-galeria-ia-grilla small { font-size: 0.78rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.mx-galeria-ia-acciones { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: auto; padding-top: 0.3rem; }
+.mx-lotes-ia { border: 1px solid var(--border-color); border-radius: 14px; padding: 0.9rem 1rem; }
+.mx-lotes-ia h3 { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.5rem; font-size: 1.02rem; }
+.mx-lotes-ia ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.mx-lotes-ia li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; font-size: 0.95rem; }
