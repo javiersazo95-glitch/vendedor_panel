@@ -123,18 +123,18 @@ describe('archivos crudos: lo que ya funciona', () => {
 
   it('el paso 2 pide el precio aunque el contrato del backend no lo exija', () => {
     const r = leerComoElPanel('08-sin-precio-ni-stock');
-    // El esquema sólo echa de menos el stock…
+    // El esquema no echa de menos nada (carga simple, 2026-11-16: el stock vacío vale 1)…
     expect(ESQUEMA_FALLBACK.columnasObligatorias).not.toContain('precio');
-    expect(r.faltanObligatorios).toEqual(['stock']);
-    // …pero el paso 2 también frena por el precio, que es lo que dejaría 0 publicables.
-    expect(r.faltanEnElPaso2).toEqual(['precio', 'stock']);
+    expect(r.faltanObligatorios).toEqual([]);
+    // …pero el paso 2 frena por el precio, que es lo que dejaría 0 publicables.
+    expect(r.faltanEnElPaso2).toEqual(['precio']);
   });
 
   it('el precio deja de hacer falta cuando todo el inventario es a cotizar', () => {
     const r = leerComoElPanel('08-sin-precio-ni-stock', {
       defaults: { tipo_precio: 'SOLO_COTIZAR' },
     });
-    expect(r.faltanEnElPaso2).toEqual(['stock']);
+    expect(r.faltanEnElPaso2).toEqual([]);
   });
 
   it('la única columna descriptiva es el nombre del repuesto, no la descripción larga', () => {

@@ -57,7 +57,8 @@ describe('1 a 1 por secciones', () => {
     expect(await screen.findByText('Falta: nombre, categoría, marca del repuesto, código (SKU).')).toBeInTheDocument();
     expect(screen.getByText('Falta: precio.')).toBeInTheDocument();
     expect(screen.getByText('Falta: marca del vehículo.')).toBeInTheDocument();
-    expect(screen.getByText(`Falta: descripción (mínimo 15 letras), garantía.`)).toBeInTheDocument();
+    // Carga simple (2026-11-16): la descripción es opcional y la garantía parte elegida.
+    expect(screen.queryByText(/Falta: descripción/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Faltan datos en "Información básica"/).length).toBeGreaterThan(0);
     expect(onSave).not.toHaveBeenCalled();
   });

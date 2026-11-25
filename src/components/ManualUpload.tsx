@@ -7,7 +7,7 @@ import { calculateSellerEarnings, calculateSuggestedPrice, pricingFeeBreakdown, 
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { claveCatalogo, mismoNombreCatalogo, nombresUnicosOrdenados } from '../utils/nombresCatalogoVehiculo';
 import { formatearEtiquetaMotor, sonMotoresEquivalentes } from '../utils/catalogoVersiones';
-import { GARANTIA_MAX, esGarantiaPredefinida, normalizarGarantia } from '../utils/garantia';
+import { GARANTIA_MAX, esGarantiaPredefinida, garantiaOpciones, normalizarGarantia } from '../utils/garantia';
 import { MODELS_FALLBACK, PART_BRANDS_FALLBACK, VEHICLE_BRANDS_FALLBACK } from '../remoteConfig/fallbacks';
 import { useCatalogo, useLista } from '../remoteConfig/hooks';
 
@@ -819,6 +819,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
   const resetToEmpty = useCallback(() => {
     const defaultCard = [createCompatibilityCard()];
+    const garantiaInicial = garantiaOpciones()[0] ?? '';
     setSku('');
     setOem('');
     setName('');
@@ -832,7 +833,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setRequiresChassis('false');
     setIsUniversal(false);
     setCondition('ORIGINAL');
-    setWarranty('');
+    // Carga simple (2026-11-16): la garantía parte en la primera opción (la legal de 6 meses).
+    setWarranty(garantiaInicial);
     setDescription('');
     setImage('');
     setImagePreviews([]);
@@ -844,7 +846,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setError(null);
     initialSnapshotRef.current = snapshotOf({
       sku: '', oem: '', name: '', category: '', subcategory: '', partBrand: '', pricingMode: 'show_price',
-      price: 0, stock: 1, requiresChassis: 'false', condition: 'ORIGINAL', warranty: '', description: '', isUniversal: false,
+      price: 0, stock: 1, requiresChassis: 'false', condition: 'ORIGINAL', warranty: garantiaInicial, description: '', isUniversal: false,
       compatibilities: defaultCard, filesCount: 0, publishedCount: 0,
     });
   }, []);
@@ -1192,7 +1194,8 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
           : [],
       ),
     5: [
-      description.trim().length < MIN_DESCRIPTION && `descripción (mínimo ${MIN_DESCRIPTION} letras)`,
+      // Carga simple (2026-11-16): la descripción es opcional; si se escribe, con un mínimo.
+      description.trim().length > 0 && description.trim().length < MIN_DESCRIPTION && `descripción (mínimo ${MIN_DESCRIPTION} letras)`,
       // La garantia es obligatoria al crear; un producto antiguo se puede editar sin ella.
       !editProduct && !normalizarGarantia(warranty) && 'garantía',
     ].filter((item): item is string => Boolean(item)),
@@ -2057,7 +2060,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
               {missingNote(5)}
               <div className="form-section-grid">
                 <div className="form-group form-section-grid-full">
-                  <label className="form-label">Descripción {REQUIRED}</label>
+                  <label className="form-label">Descripción {OPTIONAL}</label>
                   <textarea
                     className="form-control focus-success"
                     placeholder="Describe el repuesto: para qué sirve, medidas, qué incluye..."
@@ -2066,10 +2069,9 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                     rows={4}
                     maxLength={1000}
                     style={{ resize: 'vertical' }}
-                    required
                   />
-                  <span className={`manual-counter ${description.trim().length < MIN_DESCRIPTION ? 'short' : ''}`} aria-live="polite">
-                    {description.trim().length < MIN_DESCRIPTION
+                  <span className={`manual-counter ${description.trim().length > 0 && description.trim().length < MIN_DESCRIPTION ? 'short' : ''}`} aria-live="polite">
+                    {description.trim().length > 0 && description.trim().length < MIN_DESCRIPTION
                       ? `Escribe al menos ${MIN_DESCRIPTION - description.trim().length} letras más.`
                       : `${description.length}/1000`}
                   </span>

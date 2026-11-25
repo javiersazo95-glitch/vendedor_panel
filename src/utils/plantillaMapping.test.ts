@@ -603,7 +603,9 @@ describe('contrato de columnas de la plantilla oficial', () => {
     // según el modelo (carga con Excel unificada). Mismas columnas. 2.4.0 agrega la garantía
     // al final, obligatoria.
     expect(ESQUEMA_FALLBACK.version).toBe('2.4.0');
-    expect(ESQUEMA_FALLBACK.columnasObligatorias).toContain('garantia');
+    // Carga simple (2026-11-16): garantía y stock vacíos los completa el backend.
+    expect(ESQUEMA_FALLBACK.columnasObligatorias).not.toContain('garantia');
+    expect(ESQUEMA_FALLBACK.columnasObligatorias).not.toContain('stock');
     expect(ESQUEMA_FALLBACK.hojaCompatibilidadesColumnas).toContain('referencia_oem');
   });
 });

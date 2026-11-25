@@ -91,7 +91,8 @@ export interface EsquemaPlantilla {
 export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
   version: '2.4.0',
   columnas: [...PLANTILLA_COLUMNAS],
-  columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor', 'stock', 'garantia'],
+  // Carga simple (2026-11-16): stock y garantia vacios los completa el backend (1 y la garantia legal).
+  columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor'],
   hojaCompatibilidadesColumnas: [
     'sku_proveedor',
     'compatibilidad_marca',

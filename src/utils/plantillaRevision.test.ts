@@ -33,9 +33,9 @@ const filaBase = (over: Record<string, string> = {}): string[] => {
 };
 
 describe('revisarAoA: garantía (2.4.0)', () => {
-  it('es obligatoria: una fila sin garantía no se publica', () => {
+  it('una fila sin garantía se publica: el backend le pone la garantía legal (carga simple, 2026-11-16)', () => {
     const [fila] = revisar([filaBase({ garantia: '' })]).filas;
-    expect(fila.problemas).toEqual([expect.objectContaining({ columna: 'garantia', severidad: 'error', mensaje: 'Falta garantía.' })]);
+    expect(fila.problemas).toEqual([]);
   });
 
   it('acepta una garantía escrita a mano y rechaza una de más de 80 caracteres', () => {
