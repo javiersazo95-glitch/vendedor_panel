@@ -86,6 +86,8 @@ interface Props {
   onAnchoCompletoChange?: (activo: boolean) => void;
   /** Se entró por "Retomar" de una carga guardada: se retoma esa sin preguntar. */
   retomar?: TipoCarga | null;
+  /** Un Excel ya armado (carga con códigos): entra directo a "Completa". */
+  archivoInicial?: File | null;
 }
 
 /** Una carga guardada, lista para ofrecerla. */
@@ -119,13 +121,15 @@ function haceCuanto(iso: string | null, ahora: number): string {
 
 export function CargaExcelWizard({
   onVolver, onClose, onUploadSuccess, onBusyChange, onRegistrarGuardia, onAnchoCompletoChange, retomar: retomarTipo = null,
-  fundador = false,
+  fundador = false, archivoInicial = null,
 }: Props) {
-  const { esquema, fallo: listasCaidas, reintentar: reintentarListas } = useEsquemaPlantilla(true);
+  const { esquema, usandoRespaldo, fallo: listasCaidas, reintentar: reintentarListas } = useEsquemaPlantilla(true);
   const { mapeos, guardar: guardarMapeo } = useMapeosGuardados(true);
   const campos = useMemo(() => camposDesdeEsquema(esquema), [esquema]);
 
   const [fase, setFase] = useState<Fase>('buscando');
+  /** Se está trabajando con el Excel que armó "Con códigos" (no con otro que subió después). */
+  const [deCodigos, setDeCodigos] = useState(false);
   /** Las cargas guardadas al entrar (una por tipo como mucho). */
   const [guardadas, setGuardadas] = useState<Guardada[]>([]);
   const [errorRetomar, setErrorRetomar] = useState<string | null>(null);
@@ -359,12 +363,13 @@ export function CargaExcelWizard({
     return leerLibro(file);
   };
 
-  const handleArchivo = async (file: File) => {
+  const handleArchivo = async (file: File): Promise<boolean> => {
+    setDeCodigos(false);
     setLeyendo(true);
     setErrorArchivo(null);
     try {
       const libro = await leerArchivo(file);
-      if (!libro) return;
+      if (!libro) return false;
       const plantilla = detectarPlantilla(libro, esquema);
       const nuevoTipo: TipoCarga = plantilla ? 'plantilla' : 'mi-excel';
       // Si ya se venía guardando esta misma carga, el archivo nuevo la reemplaza. Si no, puede
@@ -392,8 +397,10 @@ export function CargaExcelWizard({
       setQuitados([]);
       setRevision(REVISION_VACIA);
       setRevisionFilas(null);
+      return plantilla !== null;
     } catch (err) {
       setErrorArchivo(err instanceof Error ? err.message : 'No se pudo leer el archivo.');
+      return false;
     } finally {
       setLeyendo(false);
     }
@@ -863,12 +870,23 @@ export function CargaExcelWizard({
         setGuardadas(validas);
         const elegida = retomarTipo ? validas.find((g) => g.estado.tipo === retomarTipo) : null;
         if (elegida) void retomar(elegida.borrador, elegida.estado);
+        else if (archivoInicial) setFase('trabajo');
         else setFase(validas.length > 0 ? 'retomar' : 'trabajo');
       })
       .catch(() => setFase('trabajo'));
     // Sólo al entrar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Carga con códigos: con las listas del servidor ya aquí, el Excel armado entra directo a "Completa".
+  const inicialRef = useRef(false);
+  useEffect(() => {
+    if (!archivoInicial || inicialRef.current || fase !== 'trabajo' || (usandoRespaldo && !listasCaidas)) return;
+    inicialRef.current = true;
+    void handleArchivo(archivoInicial).then((esPlantilla) => { if (esPlantilla) { setPaso(3); setDeCodigos(true); } });
+    // Una sola vez, cuando se puede leer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [archivoInicial, fase, usandoRespaldo, listasCaidas]);
 
   /** Descarta la carga en curso (o, desde la pregunta de retomar, la guardada de ese tipo). */
   const descartarTodo = async (tipoADescartar: TipoCarga | null = tipo) => {
@@ -1113,9 +1131,9 @@ export function CargaExcelWizard({
         <div className="mx-cabecera-titulo">
           <button type="button" className="mx-icono-btn" onClick={volverAlInicio} aria-label="Volver a ¿Qué tienes?" title="Volver"><ArrowLeft size={18} /></button>
           <div>
-            <h2>Carga tu inventario con Excel{tipo && archivo ? <span className="mx-tipo-carga">{NOMBRE_TIPO[tipo]}</span> : null}</h2>
+            <h2>{deCodigos ? 'Carga con códigos del fabricante' : 'Carga tu inventario con Excel'}{tipo && archivo && !deCodigos ? <span className="mx-tipo-carga">{NOMBRE_TIPO[tipo]}</span> : null}</h2>
             <p>
-              {tipo === 'plantilla'
+              {deCodigos ? 'Ya completamos lo que encontramos: revisa, corrige y publica.' : tipo === 'plantilla'
                 ? 'Es la plantilla de RepuesTop: te guiamos en 3 pasos.'
                 : tipo === 'mi-excel' && archivo ? 'Es tu propio Excel: te guiamos en 4 pasos.' : 'Tu propio Excel o la plantilla de RepuesTop: detectamos cuál es.'}
               {' '}Tu progreso se guarda solo y puedes retomarlo cuando quieras.

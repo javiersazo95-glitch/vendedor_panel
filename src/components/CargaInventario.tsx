@@ -1,6 +1,6 @@
 import { useModoInvitado, type ModoInvitadoValor } from '../utils/modoInvitado';
 import React, { useEffect, useState } from 'react';
-import { ArrowRight, ChevronRight, FileSpreadsheet, History, PackagePlus, Tag, Wand2 } from 'lucide-react';
+import { ArrowRight, ChevronRight, FileSpreadsheet, History, PackagePlus, ScanBarcode, Tag, Wand2 } from 'lucide-react';
 import { FullCreationUpload } from './FullCreationUpload';
 import { CargaExcelWizard } from './miExcel/CargaExcelWizard';
 import { TarjetaCargaGuardada } from './miExcel/TarjetaCargaGuardada';
@@ -9,6 +9,9 @@ import {
 } from '../utils/miExcelBorrador';
 import type { RegistrarGuardia } from '../utils/guardiaSalida';
 import { ExpressUpload } from './ExpressUpload';
+import { CargaConCodigos } from './conCodigos/CargaConCodigos';
+import { marcarPublicada } from '../utils/cargaConCodigos';
+import { FLAG_CARGA_CON_CODIGOS, FLAG_FICHA_CODIGO } from '../utils/fichaCodigoApi';
 import { HistorialCargas } from './HistorialCargas';
 import { apiFetch } from '../utils/apiFetch';
 import { API_BASE_URL } from '../utils/imageHelper';
@@ -25,7 +28,7 @@ import { useFlag } from '../remoteConfig/hooks';
  * directo a la pantalla que le sirve.
  */
 
-type Camino = 'uno' | 'excel' | 'mi-excel' | 'plantilla' | 'precios';
+type Camino = 'uno' | 'codigos' | 'excel' | 'mi-excel' | 'plantilla' | 'precios';
 
 /**
  * "Cargar mi inventario con Excel": una sola entrada para el Excel propio y la plantilla de
@@ -194,6 +197,13 @@ const OPCION_EXCEL: Opcion = {
   icono: <FileSpreadsheet size={28} />,
   paraQue: 'Para muchos repuestos de una vez',
 };
+const OPCION_CODIGOS: Opcion = {
+  camino: 'codigos',
+  titulo: 'Con códigos del fabricante',
+  detalle: 'Sube el código de la caja, precio y stock. Completamos el nombre, la categoría y los vehículos.',
+  icono: <ScanBarcode size={28} />,
+  paraQue: 'Para cargar rápido y con la compatibilidad revisada',
+};
 const OPCION_PRECIOS: Opcion = {
   camino: 'precios',
   titulo: 'Sólo cambiar precios y stock',
@@ -241,13 +251,13 @@ const OPCION_PRECIOS_INVITADO: Opcion = {
   detalle: 'De los repuestos que cargaste en este acceso. No toca el stock ni los productos que la tienda ya tenía.',
 };
 
-function opcionesDeCarga(unificada: boolean, cargaManual: boolean, cargaExpress: boolean, invitado?: ModoInvitadoValor): Opcion[] {
+function opcionesDeCarga(unificada: boolean, cargaManual: boolean, cargaExpress: boolean, conCodigos: boolean, invitado?: ModoInvitadoValor): Opcion[] {
   // Acceso asistido: el invitado ve solo lo que el vendedor le autorizo (uno a uno, precios, Excel).
   const base = invitado?.activo
-    ? [OPCION_UNO, OPCION_PRECIOS_INVITADO, OPCION_EXCEL].filter((o) => o.camino === 'uno' ? invitado.puede('CREAR') : o.camino === 'precios' ? invitado.puede('PRECIOS') : invitado.puede('EXCEL'))
-    : unificada ? [OPCION_UNO, OPCION_EXCEL, OPCION_PRECIOS] : OPCIONES_SEPARADAS;
+    ? [OPCION_UNO, OPCION_CODIGOS, OPCION_PRECIOS_INVITADO, OPCION_EXCEL].filter((o) => o.camino === 'uno' ? invitado.puede('CREAR') : o.camino === 'precios' ? invitado.puede('PRECIOS') : invitado.puede('EXCEL'))
+    : unificada ? [OPCION_UNO, OPCION_CODIGOS, OPCION_EXCEL, OPCION_PRECIOS] : [OPCION_CODIGOS, ...OPCIONES_SEPARADAS];
   return base.filter((opcion) =>
-    (opcion.camino !== 'uno' || cargaManual) && (opcion.camino !== 'precios' || cargaExpress));
+    (opcion.camino !== 'codigos' || conCodigos) && (opcion.camino !== 'uno' || cargaManual) && (opcion.camino !== 'precios' || cargaExpress));
 }
 
 export const CargaInventario: React.FC<CargaInventarioProps> = ({
@@ -271,7 +281,11 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
   const cargaManual = useFlag('panel.carga-manual');
   const cargaExpress = useFlag('panel.carga-express-precios');
   const invitado = useModoInvitado();
-  const OPCIONES = opcionesDeCarga(CARGA_EXCEL_UNIFICADA, cargaManual, cargaExpress, invitado);
+  const fichaCodigo = useFlag(FLAG_FICHA_CODIGO, false);
+  const cargaConCodigos = useFlag(FLAG_CARGA_CON_CODIGOS, false);
+  const OPCIONES = opcionesDeCarga(CARGA_EXCEL_UNIFICADA, cargaManual, cargaExpress, fichaCodigo && cargaConCodigos, invitado);
+  /** El Excel que armó "Con códigos": sigue en el asistente de siempre. */
+  const [archivoCodigos, setArchivoCodigos] = useState<File | null>(null);
 
   if (!isOpen) return null;
 
@@ -285,14 +299,27 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
     );
   }
 
-  const volver = () => { setCamino(null); setRetomar(null); };
+  const volver = () => { setCamino(null); setRetomar(null); setArchivoCodigos(null); };
 
-  if (camino === 'excel' || (camino === 'mi-excel' && MI_EXCEL_V2)) {
+  const alPublicar = () => {
+    if (camino === 'codigos') marcarPublicada(getStoredSession()?.sellerId);
+    onUploadSuccess();
+  };
+
+  if (camino === 'codigos' && !archivoCodigos) {
+    return <CargaConCodigos onVolver={volver} onListo={setArchivoCodigos} />;
+  }
+
+  // En modo invitado no hay progreso guardado: soporte revisa el Excel armado en la pantalla de la plantilla.
+  const codigosDeInvitado = camino === 'codigos' && invitado.activo;
+
+  if (camino === 'excel' || (camino === 'codigos' && !codigosDeInvitado) || (camino === 'mi-excel' && MI_EXCEL_V2)) {
     return (
       <CargaExcelWizard
-        onVolver={volver}
+        onVolver={camino === 'codigos' ? () => setArchivoCodigos(null) : volver}
+        archivoInicial={camino === 'codigos' ? archivoCodigos : null}
         onClose={onClose}
-        onUploadSuccess={onUploadSuccess}
+        onUploadSuccess={alPublicar}
         onBusyChange={onBusyChange}
         onRegistrarGuardia={onRegistrarGuardia}
         onAnchoCompletoChange={onAnchoCompletoChange}
@@ -302,16 +329,17 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
     );
   }
 
-  if (camino === 'mi-excel' || camino === 'plantilla') {
+  if (camino === 'mi-excel' || camino === 'plantilla' || codigosDeInvitado) {
     return (
       <FullCreationUpload
         key={camino}
         isOpen={isOpen}
         onClose={onClose}
-        onUploadSuccess={onUploadSuccess}
+        onUploadSuccess={alPublicar}
         embedded={embedded}
         inicio={camino === 'mi-excel' ? 'mapper' : 'plantilla'}
-        onVolver={volver}
+        archivoInicial={codigosDeInvitado ? archivoCodigos : null}
+        onVolver={codigosDeInvitado ? () => setArchivoCodigos(null) : volver}
         onBusyChange={onBusyChange}
       />
     );
@@ -338,7 +366,7 @@ export const CargaInventario: React.FC<CargaInventarioProps> = ({
         )}
         <h3 className="carga-inventario-titulo">¿Qué tienes?</h3>
         <p className="carga-inventario-sub">Elige lo que más se parece a lo que traes. Siempre puedes volver a esta pregunta.</p>
-        <div className={`carga-inventario-opciones ${OPCIONES.length === 3 ? 'tres' : ''}`}>
+        <div className={`carga-inventario-opciones ${OPCIONES.length === 3 ? 'tres' : OPCIONES.length === 4 ? 'cuatro' : ''}`}>
           {OPCIONES.map((opcion) => (
             <button
               key={opcion.camino}
