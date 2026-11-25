@@ -12,8 +12,6 @@ export interface Product {
   id: string;
   sku: string;
   oem: string;
-  /** Código del fabricante impreso en la caja: une el repuesto con su ficha técnica. */
-  codigoFabricante?: string;
   name: string;
   category: string;
   // La plantilla oficial trae subcategoria; sin este campo la carga masiva la
@@ -157,7 +155,6 @@ interface ProductDto {
   id: string | number;
   skuProveedor?: string;
   referenciaOem?: string;
-  codigoFabricante?: string | null;
   nombrePublicado?: string;
   repuestoNombre?: string;
   categoria?: string;
@@ -195,7 +192,6 @@ function mapDtoToProduct(dto: ProductDto): Product {
     id: String(dto.id),
     sku: dto.skuProveedor || '',
     oem: dto.referenciaOem || '',
-    codigoFabricante: dto.codigoFabricante || undefined,
     name: dto.nombrePublicado || dto.repuestoNombre || '',
     category: dto.categoria || 'Motor',
     subcategory: dto.subcategoria || undefined,
@@ -359,7 +355,6 @@ export async function addProduct(
   }
   formData.append('marcaRepuesto', product.partBrand);
   formData.append('referenciaOem', product.oem || '');
-  if (product.codigoFabricante) formData.append('codigoFabricante', product.codigoFabricante);
   appendCompatibilidad(formData, product);
   formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
   formData.append('precio', String(product.price));
@@ -425,7 +420,6 @@ export async function updateProduct(
     }
     formData.append('marcaRepuesto', product.partBrand);
     formData.append('referenciaOem', product.oem || '');
-    formData.append('codigoFabricante', product.codigoFabricante || '');
     appendCompatibilidad(formData, product);
     formData.append('pricingMode', product.pricingMode === 'quote_only' ? 'QUOTE_ONLY' : 'SHOW_PRICE');
     formData.append('precio', String(product.price));
@@ -461,7 +455,6 @@ export async function updateProduct(
       subcategoria: product.subcategory || undefined,
       marcaRepuesto: product.partBrand,
       referenciaOem: product.oem || '',
-      codigoFabricante: product.codigoFabricante || '',
       esUniversal: product.esUniversal === true,
       compatibilidadMarca: product.esUniversal ? '' : product.vehicleBrand,
       compatibilidadModelo: product.esUniversal ? '' : product.vehicleModel,

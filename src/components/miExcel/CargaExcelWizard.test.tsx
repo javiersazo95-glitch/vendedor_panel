@@ -11,9 +11,6 @@ vi.mock('../../utils/session', async (original) => ({
 import { CargaExcelWizard } from './CargaExcelWizard';
 import { ESQUEMA_FALLBACK } from '../../utils/plantillaMapping';
 import { cuandoSeGuardo } from '../../utils/miExcelBorrador';
-import { RemoteConfigContext } from '../../remoteConfig/context';
-import type { BootstrapDTO } from '../../remoteConfig/types';
-import { ModoInvitadoContext } from '../../utils/modoInvitado';
 
 /**
  * El asistente "Mi propio Excel": etapas, "No tengo esta columna" sin valor fijo, guardar el
@@ -490,96 +487,6 @@ describe('Mi propio Excel: vista previa y publicar', () => {
     expect(llamadas.some((l) => l.metodo === 'POST' && l.url.includes('inventario/100/editar'))).toBe(true);
     expect(llamadas.some((l) => l.metodo === 'DELETE' && l.url.endsWith('/borrador-carga?tipo=MI_EXCEL'))).toBe(true);
     expect(props.onUploadSuccess).toHaveBeenCalled();
-  });
-
-  describe('imágenes referenciales con IA', () => {
-    const cupo = { activo: true, cupoDiario: 100, restantes: 100, enCola: 0, capacidadHoy: 91, capacidadDiaria: 91 };
-    const LOTE = '0f8fad5b-d9cb-469f-a165-70867728950e';
-    const montarConFlag = (flag = true, invitado = false) => {
-      const data = { version: 1, cliente: 'PANEL', generadoEn: '', parametros: {}, parametrosTipos: {}, flags: { 'panel.imagenes-ia': flag },
-        flagsMetadata: {}, listas: {}, categorias: [], marcasVehiculo: [], marcasRepuestoDestacadas: [] } as BootstrapDTO;
-      render(
-        <RemoteConfigContext.Provider value={{ data, origen: 'red', error: null, actualizadoEn: null }}>
-          <ModoInvitadoContext.Provider value={{ activo: invitado, nivel: invitado ? 'COMPLETO' : null, tienda: 'x', puede: () => true }}>
-            <CargaExcelWizard onVolver={vi.fn()} onClose={vi.fn()} onUploadSuccess={vi.fn()} onAnchoCompletoChange={vi.fn()} retomar="mi-excel" />
-          </ModoInvitadoContext.Provider>
-        </RemoteConfigContext.Provider>,
-      );
-    };
-    const abrirConfirmacion = async () => {
-      fireEvent.click(await screen.findByRole('button', { name: /Seguir sin elegir/ }));
-      await screen.findByText(/Revisamos tu inventario:/);
-      fireEvent.click(screen.getByRole('button', { name: /Publicar 2 repuestos/ }));
-      return screen.findByRole('dialog', { name: '¿Publicar tu inventario?' });
-    };
-    const pedidas = () => llamadas.find((l) => l.metodo === 'POST' && l.url.endsWith('/imagenes-ia'));
-
-    beforeEach(() => {
-      rutas.unshift(
-        { incluye: 'imagenes-ia/cupo', respuesta: () => respuestaJson(cupo) },
-        { incluye: `imagenes-ia/lotes/${LOTE}`, respuesta: () => respuestaJson({
-          resumen: { lote: LOTE, creadoEn: '2026-11-24T12:00:00Z', total: 1, listas: 0, enProceso: 1, fallidas: 0 },
-          items: [{ productoId: 101, sku: 'PF-2', nombre: 'Disco freno', estado: 'PENDIENTE', imagenUrl: null, mensaje: null }], pagina: 0, paginas: 1,
-        }) },
-        { incluye: '/imagenes-ia', metodo: 'POST', respuesta: () => respuestaJson({ lote: LOTE, encolados: 1, sinCupo: 0, conFoto: 0, usados: 0, noValidos: 0 }) },
-      );
-    });
-
-    it('con el flag apagado no se ofrece ni se consulta el cupo', async () => {
-      montarConFlag(false);
-      const dialogo = await abrirConfirmacion();
-      expect(within(dialogo).queryByRole('region', { name: 'Imágenes referenciales' })).not.toBeInTheDocument();
-      expect(llamadas.some((l) => l.url.includes('imagenes-ia'))).toBe(false);
-    });
-
-    it('al vendedor se le ofrece sin marcar y, si no la marca, no se pide nada', async () => {
-      montarConFlag();
-      const dialogo = await abrirConfirmacion();
-      const oferta = await within(dialogo).findByRole('region', { name: 'Imágenes referenciales' });
-      expect(within(oferta).getByRole('checkbox')).not.toBeChecked();
-      expect(oferta).toHaveTextContent('Crear una imagen referencial para el repuesto sin foto');
-      expect(oferta).toHaveTextContent('hoy mismo');
-      fireEvent.click(within(dialogo).getByRole('button', { name: /Sí, publicar/ }));
-      expect(await screen.findByText('¡Listo! Tu inventario está publicado')).toBeInTheDocument();
-      expect(pedidas()).toBeUndefined();
-    });
-
-    it('si la marca, se piden solo los publicados sin foto y se ve el avance', async () => {
-      montarConFlag();
-      const dialogo = await abrirConfirmacion();
-      fireEvent.click(await within(dialogo).findByRole('checkbox'));
-      fireEvent.click(within(dialogo).getByRole('button', { name: /Sí, publicar/ }));
-      expect(await screen.findByText('Imágenes referenciales')).toBeInTheDocument();
-      expect(JSON.parse(String(pedidas()?.body))).toEqual({ productoIds: [101] });
-      expect(await screen.findByText(/1 por crear/)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Quitar la imagen de Disco freno' })).toBeInTheDocument();
-    });
-
-    it('para soporte en modo invitado parte marcada', async () => {
-      montarConFlag(true, true);
-      const dialogo = await abrirConfirmacion();
-      expect(await within(dialogo).findByRole('checkbox')).toBeChecked();
-    });
-
-    it('si no se pueden pedir, la publicación igual queda hecha y se avisa', async () => {
-      rutas.unshift({ incluye: '/imagenes-ia', metodo: 'POST', respuesta: () => respuestaJson({ message: 'No disponible por ahora.' }, 500) });
-      montarConFlag();
-      const dialogo = await abrirConfirmacion();
-      fireEvent.click(await within(dialogo).findByRole('checkbox'));
-      fireEvent.click(within(dialogo).getByRole('button', { name: /Sí, publicar/ }));
-      expect(await screen.findByText('¡Listo! Tu inventario está publicado')).toBeInTheDocument();
-      expect(screen.getByText(/No disponible por ahora/)).toBeInTheDocument();
-    });
-
-    it('sin cupo del día se explica y no se puede marcar', async () => {
-      rutas.unshift({ incluye: 'imagenes-ia/cupo', respuesta: () => respuestaJson({ ...cupo, restantes: 0 }) });
-      montarConFlag(true, true);
-      const dialogo = await abrirConfirmacion();
-      expect(await within(dialogo).findByRole('checkbox')).toBeDisabled();
-      fireEvent.click(within(dialogo).getByRole('button', { name: /Sí, publicar/ }));
-      expect(await screen.findByText('¡Listo! Tu inventario está publicado')).toBeInTheDocument();
-      expect(pedidas()).toBeUndefined();
-    });
   });
 });
 

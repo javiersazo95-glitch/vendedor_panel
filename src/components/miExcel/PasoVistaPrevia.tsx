@@ -29,11 +29,6 @@ import { liquidoDe } from '../../utils/pricing';
 import { Miniatura, Modal } from './comunes';
 import { plural } from './textos';
 import { SelectorFotos } from './SelectorFotos';
-import { OfertaImagenesIa } from './OfertaImagenesIa';
-import { useFlag } from '../../remoteConfig/hooks';
-import { getStoredSession } from '../../utils/session';
-import { useModoInvitado } from '../../utils/modoInvitado';
-import { contarParaImagenIa, FLAG_IMAGENES_IA, obtenerCupoImagenesIa, type CupoImagenesIa } from '../../utils/imagenesIaApi';
 import { ListaSugerencias } from './ListaSugerencias';
 import { sugerenciasDeTextoLibre } from '../../utils/garantia';
 
@@ -70,10 +65,9 @@ interface Props {
   onAtras: () => void;
   /**
    * Publica. Recibe los repuestos que no se publicarán (clave -> motivos): los que retiene el
-   * panel también, no sólo los que objetó el servidor. `imagenesIa`: pidió crear imágenes
-   * referenciales para los que van sin foto.
+   * panel también, no sólo los que objetó el servidor.
    */
-  onPublicar: (retenidos: Record<string, string[]>, imagenesIa: boolean) => void;
+  onPublicar: (retenidos: Record<string, string[]>) => void;
   nombreTienda?: string;
   /** La última revisión del servidor, para decir qué dato exacto impide publicar. */
   servidor?: RevisionServidorFilas | null;
@@ -503,19 +497,6 @@ export function PasoVistaPrevia(p: Props) {
   conEstado.forEach((x) => { cuenta[x.estado] += 1; });
   const publicables = cuenta.ok + cuenta.aviso;
   const conFotos = conEstado.filter((x) => x.estado !== 'error' && (p.asignaciones[x.fila.clave] ?? []).length > 0).length;
-  // Imágenes referenciales con IA (24-nov): el cupo se pide al entrar; si no responde, no se ofrecen.
-  const imagenesIaEncendidas = useFlag(FLAG_IMAGENES_IA, false);
-  const invitado = useModoInvitado();
-  const [cupoIa, setCupoIa] = useState<CupoImagenesIa | null>(null);
-  // Soporte carga justamente para dejar listo el inventario: para el invitado parte marcada.
-  const [quiereIa, setQuiereIa] = useState(invitado.activo);
-  useEffect(() => {
-    const sesion = getStoredSession();
-    if (!imagenesIaEncendidas || !sesion) return undefined;
-    let cancelado = false;
-    obtenerCupoImagenesIa(sesion).then((c) => { if (!cancelado) setCupoIa(c); }).catch(() => undefined);
-    return () => { cancelado = true; };
-  }, [imagenesIaEncendidas]);
   const filtradas = filtro === 'quitados' ? quitadas : filtro === 'todas' ? conEstado : conEstado.filter((x) => x.estado === filtro);
   const tam = POR_PAGINA[p.vista];
   const paginas = Math.max(1, Math.ceil(filtradas.length / tam));
@@ -570,9 +551,6 @@ export function PasoVistaPrevia(p: Props) {
         return 'Ningún repuesto se puede publicar todavía: corrige los que dicen «No se publicará» (toca el lápiz de cada uno).';
     }
   })();
-  const paraIa = contarParaImagenIa(conEstado.filter((x) => x.estado !== 'error')
-    .map((x) => ({ tieneFoto: (p.asignaciones[x.fila.clave] ?? []).length > 0, condicion: leer(x.fila, 'condicion') })));
-  const ofreceIa = imagenesIaEncendidas && cupoIa?.activo === true && paraIa.candidatos > 0;
   const filaTienda = enTienda ? todas.find((x) => x.fila.clave === enTienda) : null;
   const fichaAQuitar = aQuitar ? fichaDesdeFila(p.tabla.columnas, aQuitar.valores) : null;
   const filaFotos = fotosDe ? p.tabla.filas.find((f) => f.clave === fotosDe) : null;
@@ -830,8 +808,7 @@ export function PasoVistaPrevia(p: Props) {
                 setConfirmar(false);
                 p.onPublicar(Object.fromEntries(conEstado
                   .filter((x) => x.estado === 'error')
-                  .map((x) => [x.fila.clave, x.problemas.filter((pr) => pr.severidad === 'error').map((pr) => pr.mensaje)])),
-                ofreceIa && quiereIa && cupoIa.restantes > 0);
+                  .map((x) => [x.fila.clave, x.problemas.filter((pr) => pr.severidad === 'error').map((pr) => pr.mensaje)])));
               }}>Sí, publicar</button>
             </>
           )}
@@ -843,9 +820,6 @@ export function PasoVistaPrevia(p: Props) {
             {quitadas.length > 0 && <li><Trash2 size={16} /> <b>{plural(quitadas.length, 'repuesto que quitaste', 'repuestos que quitaste')}</b> no se {quitadas.length === 1 ? 'publicará' : 'publicarán'}.</li>}
             <li><ShieldCheck size={16} /> Aparecerán en la web y en la app de RepuesTop. Después puedes editarlos desde tu Inventario.</li>
           </ul>
-          {ofreceIa && (
-            <OfertaImagenesIa cupo={cupoIa} candidatos={paraIa.candidatos} usados={paraIa.usados} marcada={quiereIa} onMarcar={setQuiereIa} />
-          )}
         </Modal>
       )}
 

@@ -37,8 +37,6 @@ interface FullCreationUploadProps {
    * de su propio Excel; "plantilla" es la plantilla oficial de RepuesTop.
    */
   inicio?: 'plantilla' | 'mapper';
-  /** Un Excel ya armado (carga con códigos): queda elegido para revisar. */
-  archivoInicial?: File | null;
   /** Vuelve a "¿Qué tienes?". */
   onVolver: () => void;
   /** Avisa mientras se revisa, se publica o se suben fotos, para que el menú no deje salir. */
@@ -143,11 +141,10 @@ export const FullCreationUpload: React.FC<FullCreationUploadProps> = ({
   onUploadSuccess,
   embedded = false,
   inicio = 'plantilla',
-  archivoInicial = null,
   onVolver,
   onBusyChange,
 }) => {
-  const [dataFile, setDataFile] = useState<File | null>(archivoInicial);
+  const [dataFile, setDataFile] = useState<File | null>(null);
   // Flujo "Adaptar mi plantilla": el vendedor mapea su propio Excel y genera el archivo
   // oficial en memoria, que luego entra al mismo dry-run / carga.
   const [showMapper, setShowMapper] = useState(inicio === 'mapper');

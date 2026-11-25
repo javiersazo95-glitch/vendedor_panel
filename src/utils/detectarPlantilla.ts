@@ -20,9 +20,6 @@ const HOJAS_DE_LISTAS = ['listas', 'versiones', 'motores'];
 /** La fila de ejemplo que trae la plantilla descargada: si el vendedor no la borró, no se carga. */
 const EJEMPLO = { sku: 'SKU-001', nombre: 'Filtro de aceite Toyota Yaris' };
 
-/** Columnas opcionales agregadas al final (2.5.0). */
-const COLUMNAS_AGREGADAS = new Set(['codigo_fabricante']);
-
 const norm = (valor: unknown) => String(valor ?? '').trim().toLowerCase();
 
 export interface PlantillaDetectada {
@@ -42,11 +39,7 @@ function titulos(hoja: HojaUsuario): string[] {
 /** ¿Los títulos son exactamente esas columnas, en ese orden? */
 const mismasColumnas = (hoja: HojaUsuario, columnas: string[]) => {
   const t = titulos(hoja);
-  // Las opcionales que se agregaron al final de una versión menor pueden faltar: la plantilla
-  // descargada antes sigue siendo la plantilla.
-  let minimo = columnas.length;
-  while (minimo > 0 && COLUMNAS_AGREGADAS.has(norm(columnas[minimo - 1]))) minimo -= 1;
-  return t.length >= minimo && t.length <= columnas.length && t.every((titulo, i) => titulo === norm(columnas[i]));
+  return t.length === columnas.length && columnas.every((c, i) => t[i] === norm(c));
 };
 
 /** La versión escrita en la hoja "instrucciones" ("VERSION_PLANTILLA: 2.3.0"). */

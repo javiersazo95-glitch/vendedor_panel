@@ -72,8 +72,6 @@ import { PasoRelacionar } from './PasoRelacionar';
 import { PasoCompletar, type CambioMasivo } from './PasoCompletar';
 import { PasoVistaPrevia, type RevisionServidor } from './PasoVistaPrevia';
 import { TarjetaCargaGuardada } from './TarjetaCargaGuardada';
-import { GaleriaImagenesIa } from './GaleriaImagenesIa';
-import { pedirImagenesIa, type ResultadoImagenesIa } from '../../utils/imagenesIaApi';
 
 interface Props {
   /** Tienda Fundadora: la calculadora de precio de la vista previa usa su tarifa (0% en marcha blanca). */
@@ -86,8 +84,6 @@ interface Props {
   onAnchoCompletoChange?: (activo: boolean) => void;
   /** Se entró por "Retomar" de una carga guardada: se retoma esa sin preguntar. */
   retomar?: TipoCarga | null;
-  /** Un Excel ya armado (carga con códigos): entra directo a "Completa". */
-  archivoInicial?: File | null;
 }
 
 /** Una carga guardada, lista para ofrecerla. */
@@ -102,8 +98,6 @@ interface ResultadoPublicacion {
   quitados: number;
   fotos: FotoUploadResultado[];
   archivoRepetidoEl: string | null;
-  /** Imágenes referenciales con IA: lo que se encoló, o por qué no se pudo pedir. */
-  imagenesIa?: ResultadoImagenesIa | { error: string } | null;
 }
 
 const REVISION_VACIA: RevisionServidor = { estado: 'sin-revisar', porClave: {}, error: null, avisosGenerales: [] };
@@ -121,15 +115,13 @@ function haceCuanto(iso: string | null, ahora: number): string {
 
 export function CargaExcelWizard({
   onVolver, onClose, onUploadSuccess, onBusyChange, onRegistrarGuardia, onAnchoCompletoChange, retomar: retomarTipo = null,
-  fundador = false, archivoInicial = null,
+  fundador = false,
 }: Props) {
-  const { esquema, usandoRespaldo, fallo: listasCaidas, reintentar: reintentarListas } = useEsquemaPlantilla(true);
+  const { esquema, fallo: listasCaidas, reintentar: reintentarListas } = useEsquemaPlantilla(true);
   const { mapeos, guardar: guardarMapeo } = useMapeosGuardados(true);
   const campos = useMemo(() => camposDesdeEsquema(esquema), [esquema]);
 
   const [fase, setFase] = useState<Fase>('buscando');
-  /** Se está trabajando con el Excel que armó "Con códigos" (no con otro que subió después). */
-  const [deCodigos, setDeCodigos] = useState(false);
   /** Las cargas guardadas al entrar (una por tipo como mucho). */
   const [guardadas, setGuardadas] = useState<Guardada[]>([]);
   const [errorRetomar, setErrorRetomar] = useState<string | null>(null);
@@ -363,13 +355,12 @@ export function CargaExcelWizard({
     return leerLibro(file);
   };
 
-  const handleArchivo = async (file: File): Promise<boolean> => {
-    setDeCodigos(false);
+  const handleArchivo = async (file: File) => {
     setLeyendo(true);
     setErrorArchivo(null);
     try {
       const libro = await leerArchivo(file);
-      if (!libro) return false;
+      if (!libro) return;
       const plantilla = detectarPlantilla(libro, esquema);
       const nuevoTipo: TipoCarga = plantilla ? 'plantilla' : 'mi-excel';
       // Si ya se venía guardando esta misma carga, el archivo nuevo la reemplaza. Si no, puede
@@ -397,10 +388,8 @@ export function CargaExcelWizard({
       setQuitados([]);
       setRevision(REVISION_VACIA);
       setRevisionFilas(null);
-      return plantilla !== null;
     } catch (err) {
       setErrorArchivo(err instanceof Error ? err.message : 'No se pudo leer el archivo.');
-      return false;
     } finally {
       setLeyendo(false);
     }
@@ -679,26 +668,7 @@ export function CargaExcelWizard({
     setFase('publicado');
   };
 
-  /**
-   * Pide las imágenes referenciales de los publicados que van sin foto. Nunca hace fallar la publicación: los
-   * repuestos ya están arriba, así que un problema aquí sólo se informa.
-   */
-  const pedirReferenciales = async (
-    sesion: { sellerId: string; token: string }, productoPorClave: Record<string, number>,
-  ): Promise<ResultadoPublicacion['imagenesIa']> => {
-    const ids = [...new Set(Object.entries(productoPorClave)
-      .filter(([clave]) => (asignaciones[clave] ?? []).length === 0)
-      .map(([, id]) => id))];
-    if (ids.length === 0) return null;
-    setProgreso({ texto: 'Pidiendo las imágenes referenciales…', hechas: 0, total: 0 });
-    try {
-      return await pedirImagenesIa(sesion, ids);
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : 'No pudimos pedir las imágenes referenciales.' };
-    }
-  };
-
-  const publicar = async (retenidos: Record<string, string[]> = {}, imagenesIa = false) => {
+  const publicar = async (retenidos: Record<string, string[]> = {}) => {
     const revisado = revisadoRef.current;
     const session = getStoredSession();
     if (!revisado || revisado.firma !== firmaActual || !session || !tabla) return;
@@ -745,11 +715,8 @@ export function CargaExcelWizard({
       setPublicacionPendiente(pendiente);
       // Si se corta la luz subiendo las fotos, retomar ofrece terminarlas en vez de volver a publicar.
       await borrador.guardarConEstado({ ...estadoBorrador, publicacion: pendiente });
-      // Antes de las fotos: subirlas puede tardar y, si se corta, lo pedido ya quedó en el servidor.
-      const referenciales = imagenesIa ? await pedirReferenciales(session, productoPorClave) : null;
       const fotos = await subirFotosPublicadas(productoPorClave, skuPorClave);
       await terminarPublicacion(fotos, {
-        imagenesIa: referenciales,
         publicados, noPublicados, quitados: revisado.filas.filter(quitado).length, archivoRepetidoEl: data.archivoRepetido ? data.archivoYaCargadoEl ?? '' : null,
       });
       if (fotos.some((f) => f.ok)) onUploadSuccess();
@@ -870,23 +837,12 @@ export function CargaExcelWizard({
         setGuardadas(validas);
         const elegida = retomarTipo ? validas.find((g) => g.estado.tipo === retomarTipo) : null;
         if (elegida) void retomar(elegida.borrador, elegida.estado);
-        else if (archivoInicial) setFase('trabajo');
         else setFase(validas.length > 0 ? 'retomar' : 'trabajo');
       })
       .catch(() => setFase('trabajo'));
     // Sólo al entrar.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Carga con códigos: con las listas del servidor ya aquí, el Excel armado entra directo a "Completa".
-  const inicialRef = useRef(false);
-  useEffect(() => {
-    if (!archivoInicial || inicialRef.current || fase !== 'trabajo' || (usandoRespaldo && !listasCaidas)) return;
-    inicialRef.current = true;
-    void handleArchivo(archivoInicial).then((esPlantilla) => { if (esPlantilla) { setPaso(3); setDeCodigos(true); } });
-    // Una sola vez, cuando se puede leer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [archivoInicial, fase, usandoRespaldo, listasCaidas]);
 
   /** Descarta la carga en curso (o, desde la pregunta de retomar, la guardada de ese tipo). */
   const descartarTodo = async (tipoADescartar: TipoCarga | null = tipo) => {
@@ -1095,23 +1051,6 @@ export function CargaExcelWizard({
               </span>
             </div>
           )}
-          {resultado.imagenesIa && 'error' in resultado.imagenesIa && (
-            <div className="mx-alerta aviso">
-              <AlertTriangle size={16} />
-              <span>Tus repuestos se publicaron, pero no pedimos sus imágenes referenciales: {resultado.imagenesIa.error}</span>
-            </div>
-          )}
-          {resultado.imagenesIa && 'lote' in resultado.imagenesIa && resultado.imagenesIa.sinCupo > 0 && (
-            <div className="mx-alerta info">
-              Por el cupo del día, {plural(resultado.imagenesIa.sinCupo, 'repuesto quedó', 'repuestos quedaron')} sin imagen referencial.
-            </div>
-          )}
-          {resultado.imagenesIa && 'lote' in resultado.imagenesIa && resultado.imagenesIa.encolados > 0 && (
-            <div className="mx-resultado-ia">
-              <h4>Imágenes referenciales</h4>
-              <GaleriaImagenesIa lote={resultado.imagenesIa.lote} />
-            </div>
-          )}
           <div className="mx-botonera centro">
             {resultado.noPublicados.length > 0 && (
               <button type="button" className="btn btn-secondary mx-btn" onClick={() => void descargarNoPublicados()}><Download size={15} /> Descargar lo que no se publicó</button>
@@ -1131,9 +1070,9 @@ export function CargaExcelWizard({
         <div className="mx-cabecera-titulo">
           <button type="button" className="mx-icono-btn" onClick={volverAlInicio} aria-label="Volver a ¿Qué tienes?" title="Volver"><ArrowLeft size={18} /></button>
           <div>
-            <h2>{deCodigos ? 'Carga con códigos del fabricante' : 'Carga tu inventario con Excel'}{tipo && archivo && !deCodigos ? <span className="mx-tipo-carga">{NOMBRE_TIPO[tipo]}</span> : null}</h2>
+            <h2>Carga tu inventario con Excel{tipo && archivo ? <span className="mx-tipo-carga">{NOMBRE_TIPO[tipo]}</span> : null}</h2>
             <p>
-              {deCodigos ? 'Ya completamos lo que encontramos: revisa, corrige y publica.' : tipo === 'plantilla'
+              {tipo === 'plantilla'
                 ? 'Es la plantilla de RepuesTop: te guiamos en 3 pasos.'
                 : tipo === 'mi-excel' && archivo ? 'Es tu propio Excel: te guiamos en 4 pasos.' : 'Tu propio Excel o la plantilla de RepuesTop: detectamos cuál es.'}
               {' '}Tu progreso se guarda solo y puedes retomarlo cuando quieras.
@@ -1323,7 +1262,7 @@ export function CargaExcelWizard({
           onQuitar={(clave) => setQuitados((prev) => (prev.includes(clave) ? prev : [...prev, clave]))}
           onVolverAIncluir={(clave) => setQuitados((prev) => prev.filter((c) => c !== clave))}
           onAtras={() => irAPaso(3)}
-          onPublicar={(retenidos, imagenesIa) => void publicar(retenidos, imagenesIa)}
+          onPublicar={(retenidos) => void publicar(retenidos)}
         />
       )}
 

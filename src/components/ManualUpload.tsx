@@ -10,13 +10,7 @@ import { formatearEtiquetaMotor, sonMotoresEquivalentes } from '../utils/catalog
 import { AVISO_USADO_TIENDA, CONDICIONES_PRODUCTO, esUsadoOReacondicionado, type CondicionProducto } from '../utils/condicionProducto';
 import { GARANTIA_MAX, esGarantiaPredefinida, normalizarGarantia } from '../utils/garantia';
 import { MODELS_FALLBACK, PART_BRANDS_FALLBACK, VEHICLE_BRANDS_FALLBACK } from '../remoteConfig/fallbacks';
-import { useCatalogo, useFlag, useLista } from '../remoteConfig/hooks';
-import { AutocompletarCodigo } from './AutocompletarCodigo';
-import { getStoredSession } from '../utils/session';
-import {
-  descripcionPropuesta, FLAG_FICHA_CODIGO, gruposSeguros, guardarUltimaEleccion, leerUltimaEleccion, nombrePropuesto,
-  type FichaCodigo, type GrupoVehiculo,
-} from '../utils/fichaCodigoApi';
+import { useCatalogo, useLista } from '../remoteConfig/hooks';
 
 function sanitizeCodeInput(value: string): string {
   return value
@@ -71,8 +65,6 @@ type CompatibilityCard = {
    * conservan tal cual (antes la tarjeta se borraba en silencio y al guardar se perdían).
    */
   savedWithoutDetail?: boolean;
-  /** 25-nov: lo puso el código del fabricante. Se ve en una línea y no pide listas al catálogo hasta que se edite. */
-  segunCodigo?: boolean;
   /**
    * El grupo tal como estaba en `compatibilityGroupsJson`. Si el detalle no llegó, se vuelve a
    * guardar esto y no lo que muestra la tarjeta (que es la marca y el modelo del producto).
@@ -209,22 +201,6 @@ function createCompatibilityCard(product?: Product | null): CompatibilityCard {
   };
 }
 
-/** Un vehículo de la ficha del código, con sus versiones ya elegidas. */
-function cardDesdeGrupo(grupo: GrupoVehiculo): CompatibilityCard {
-  return {
-    ...createCompatibilityCard(),
-    vehicleBrand: grupo.marca,
-    vehicleModel: grupo.modelo,
-    vehicleYear: grupo.anioDesde ?? 0,
-    vehicleYearTo: grupo.anioHasta ?? grupo.anioDesde ?? 0,
-    motor: grupo.motor ?? '',
-    vehicleVersionIds: grupo.vehiculoCatalogoIds.map(String),
-    modelOptions: [grupo.modelo],
-    versionOptions: grupo.vehiculoCatalogoIds.map((id, i) => ({ id, nombre: grupo.versiones[i] || `Versión ${id}` })),
-    segunCodigo: true,
-  };
-}
-
 function vehicleDetailLabel(detail: VehicleCatalogDetail) {
   const parts = [detail.version, detail.motor, detail.transmision]
     .map((part) => part?.trim())
@@ -339,7 +315,6 @@ function createCompatibilityCardFromDetails(details: VehicleCatalogDetail[], pro
 }
 
 type SnapshotFields = {
-  codigo: string;
   sku: string;
   oem: string;
   name: string;
@@ -370,7 +345,6 @@ function snapshotOf(fields: SnapshotFields): string {
   // dependía de cómo se armó el objeto (el de edición y el actual no coincidían), así que al
   // cerrar sin tocar nada siempre preguntaba "¿Descartar cambios no guardados?".
   return JSON.stringify({
-    codigo: fields.codigo.trim(),
     sku: fields.sku.trim(),
     oem: fields.oem.trim(),
     name: fields.name.trim(),
@@ -792,8 +766,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   founder = false,
   onVerInventario,
 }) => {
-  const conFichaCodigo = useFlag(FLAG_FICHA_CODIGO, false);
-  const [codigo, setCodigo] = useState('');
   const [sku, setSku] = useState('');
   const [oem, setOem] = useState('');
   const [name, setName] = useState('');
@@ -842,14 +814,13 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
   const initialPublishedCountRef = useRef(0);
 
   const computeSnapshot = useCallback(() => snapshotOf({
-    codigo, sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis,
+    sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis,
     condition, warranty, description, isUniversal, compatibilities, filesCount: imageFiles.length,
     publishedCount: imagePreviews.filter((preview) => !preview.startsWith('blob:')).length,
-  }), [codigo, sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, warranty, description, isUniversal, compatibilities, imageFiles.length, imagePreviews]);
+  }), [sku, oem, name, category, subcategory, partBrand, pricingMode, price, stock, requiresChassis, condition, warranty, description, isUniversal, compatibilities, imageFiles.length, imagePreviews]);
 
   const resetToEmpty = useCallback(() => {
     const defaultCard = [createCompatibilityCard()];
-    setCodigo('');
     setSku('');
     setOem('');
     setName('');
@@ -874,7 +845,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
     setSavedResult(null);
     setError(null);
     initialSnapshotRef.current = snapshotOf({
-      codigo: '', sku: '', oem: '', name: '', category: '', subcategory: '', partBrand: '', pricingMode: 'show_price',
+      sku: '', oem: '', name: '', category: '', subcategory: '', partBrand: '', pricingMode: 'show_price',
       price: 0, stock: 1, requiresChassis: 'false', condition: '', warranty: '', description: '', isUniversal: false,
       compatibilities: defaultCard, filesCount: 0, publishedCount: 0,
     });
@@ -900,7 +871,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       // from a prop" pattern, not an accidental render loop — reviewed,
       // deliberate exception (QA-SRC-002).
       const base = {
-        codigo: editProduct.codigoFabricante || '',
         sku: editProduct.sku,
         oem: editProduct.oem || '',
         name: editProduct.name,
@@ -929,7 +899,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       // Las que no caben en los 4 recuadros (una carga masiva admite más) se conservan siempre.
       hiddenPublishedRef.current = published.slice(MAX_PHOTOS);
       initialPublishedCountRef.current = published.length;
-      setCodigo(base.codigo);
       setSku(base.sku);
       setOem(base.oem);
       setName(base.name);
@@ -1050,7 +1019,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
     Promise.all(
       compatibilities.map(async (card) => {
-        if (card.savedWithoutDetail || card.segunCodigo) {
+        if (card.savedWithoutDetail) {
           return { id: card.id, modelOptions: card.modelOptions, versionOptions: card.versionOptions, motorOptions: card.motorOptions || [] };
         }
         if (!card.vehicleBrand) {
@@ -1289,7 +1258,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       current.map((card) => {
         if (card.id !== id) return card;
         const next = { ...card, ...fields };
-        next.segunCodigo = false;
         if (fields.vehicleBrand !== undefined) {
           next.vehicleModel = '';
           next.vehicleVersionIds = [];
@@ -1322,32 +1290,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
         return next;
       }),
     );
-  };
-
-  /**
-   * Lo que trae el código reemplaza lo que identifica al repuesto y sus vehículos. Precio, stock, SKU ya escrito,
-   * fotos y descripción propia no se tocan; condición y garantía se proponen con lo último que publicó la tienda.
-   */
-  const aplicarFicha = (ficha: FichaCodigo) => {
-    const seguros = gruposSeguros(ficha);
-    const marcaDelCatalogo = catalogPartBrands.find((marca) => mismoNombreCatalogo(marca, ficha.marca));
-    const ultima = leerUltimaEleccion(getStoredSession()?.sellerId);
-    setCodigo(ficha.codigo);
-    setName(nombrePropuesto(ficha));
-    if (ficha.categoria) setCategory(ficha.categoria);
-    setSubcategory(ficha.categoria ? ficha.subcategoria ?? '' : '');
-    setPartBrand(marcaDelCatalogo ?? ficha.marca);
-    setOem((actual) => actual || sanitizeCodeInput(ficha.referenciaOem ?? ''));
-    setSku((actual) => actual || sanitizeCodeInput(ficha.codigo).slice(0, 30));
-    setCondition((actual) => actual || (ultima.condicion ?? ''));
-    setWarranty((actual) => actual || (ultima.garantia ?? ''));
-    setDescription((actual) => actual.trim() ? actual : descripcionPropuesta(ficha, seguros));
-    setIsUniversal(false);
-    setCompatibilities(seguros.length > 0 ? seguros.map(cardDesdeGrupo) : [createCompatibilityCard()]);
-  };
-
-  const agregarVehiculoDelCodigo = (grupo: GrupoVehiculo) => {
-    setCompatibilities((current) => [...current.filter(cardHasData), cardDesdeGrupo(grupo)]);
   };
 
   const addCompatibility = () => {
@@ -1437,7 +1379,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
       const productPayload: Omit<Product, 'id' | 'lastUpdated'> & { id?: string } = {
         sku: sanitizeCodeInput(sku),
-        codigoFabricante: codigo.trim() || undefined,
         // Fase 7: el OEM del producto se escribe siempre arriba; la referencia de la primera
         // tarjeta queda como respaldo (antes un universal nuevo no podía tener OEM).
         oem: sanitizeCodeInput(oem || (isUniversal ? '' : primaryCompatibility.oem)),
@@ -1478,11 +1419,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
       }
 
       await onSave(productPayload, imageFiles.length > 0 ? imageFiles : null);
-      if (!editProduct) {
-        guardarUltimaEleccion(getStoredSession()?.sellerId, {
-          condicion: condition || undefined, garantia: normalizarGarantia(warranty) || undefined,
-        });
-      }
       setSavedResult({ name: productPayload.name, edited: Boolean(editProduct) });
       initialSnapshotRef.current = computeSnapshot();
     } catch (err: unknown) {
@@ -1570,18 +1506,6 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
                 <AlertTriangle size={18} style={{ flexShrink: 0 }} />
                 <span>{error}</span>
               </div>
-            )}
-
-            {conFichaCodigo && (
-              <AutocompletarCodigo
-                key={editProduct?.id ?? 'nuevo'}
-                codigo={codigo}
-                onCodigo={setCodigo}
-                condicion={condition || undefined}
-                hayDatos={Boolean(name.trim() || (!isUniversal && compatibilities.some(cardHasData)) || isUniversal)}
-                onAplicar={aplicarFicha}
-                onAgregarVehiculo={agregarVehiculoDelCodigo}
-              />
             )}
 
             <div
@@ -1914,23 +1838,7 @@ export const ManualUpload: React.FC<ManualUploadProps> = ({
 
                 {!isUniversal && (
                   <div className="manual-compat-grid">
-                {compatibilities.map((card, index) => card.segunCodigo ? (
-                  <div className="ac-fila" key={card.id}>
-                    <div>
-                      <strong>{card.vehicleBrand} {card.vehicleModel}</strong>
-                      <span>
-                        {card.vehicleYear === card.vehicleYearTo ? card.vehicleYear : `${card.vehicleYear} a ${card.vehicleYearTo}`}
-                        {card.motor ? ` · motor ${card.motor}` : ''} · {card.vehicleVersionIds.length} {card.vehicleVersionIds.length === 1 ? 'versión' : 'versiones'} · según el código
-                      </span>
-                    </div>
-                    <button type="button" onClick={() => updateCompatibility(card.id, {})} aria-label={`Editar ${card.vehicleBrand} ${card.vehicleModel}`}>Editar</button>
-                    {compatibilities.length > 1 && (
-                      <button type="button" className="ac-quitar" onClick={() => removeCompatibility(card.id)} aria-label={`Quitar ${card.vehicleBrand} ${card.vehicleModel}`}>
-                        <Trash2 size={16} /> Quitar
-                      </button>
-                    )}
-                  </div>
-                ) : (
+                {compatibilities.map((card, index) => (
                   <div className="manual-compat-card" key={card.id}>
                     <div className="manual-compat-card-header">
                       <strong>Vehículo {index + 1}</strong>

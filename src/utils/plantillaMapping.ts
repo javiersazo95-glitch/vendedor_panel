@@ -50,8 +50,6 @@ export const PLANTILLA_COLUMNAS = [
   'requiere_chasis',
   // 2.4.0: garantia del producto, obligatoria como al publicar uno a uno.
   'garantia',
-  // 2.5.0: código impreso en la caja. Opcional.
-  'codigo_fabricante',
 ] as const;
 
 /**
@@ -91,7 +89,7 @@ export interface EsquemaPlantilla {
  * y no de la base de datos (tipo de precio, condición) sí se copian.
  */
 export const ESQUEMA_FALLBACK: EsquemaPlantilla = {
-  version: '2.5.0',
+  version: '2.4.0',
   columnas: [...PLANTILLA_COLUMNAS],
   columnasObligatorias: ['nombre_publicado', 'categoria', 'marca_repuesto', 'sku_proveedor', 'stock', 'garantia'],
   hojaCompatibilidadesColumnas: [
@@ -318,14 +316,6 @@ const PLANTILLA_TEXTOS: Record<string, CampoTexto> = {
     descripcion: 'Código original asignado por la fábrica automotriz del vehículo.',
     ejemplo: 'Ej: 04465-02220',
     synonyms: ['oem', 'codigo oem', 'numero oem', 'ref oem', 'original oem'],
-  },
-  codigo_fabricante: {
-    label: 'Código del fabricante',
-    seccion: 'opcionales',
-    descripcion: 'El código impreso en la caja del repuesto. Con él tu publicación puede mostrar la ficha técnica del fabricante.',
-    ejemplo: 'Ej: GDB3424',
-    // Sólo títulos que no pueden ser otra cosa: "código" o "referencia" a secas suelen ser el SKU o el OEM.
-    synonyms: ['codigo fabricante', 'codigo del fabricante', 'cod fabricante', 'codigo de fabrica', 'codigo caja', 'codigo de la caja'],
   },
   descripcion: {
     label: 'Descripción',
